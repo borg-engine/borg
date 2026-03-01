@@ -1265,9 +1265,19 @@ const NETDOCUMENTS_TOOLS = [
 // TOOL HANDLERS
 // ═══════════════════════════════════════════════════════════════════════
 
+const MUTATION_TOOLS = new Set([
+  "clio_create_time_entry",
+  "clio_create_task",
+  "imanage_upload",
+  "imanage_checkout",
+  "imanage_checkin",
+  "netdocuments_upload",
+]);
+
 async function handleTool(name, args) {
+  const isMutation = MUTATION_TOOLS.has(name);
   const key = cacheKey(name, args);
-  const hit = cached(key);
+  const hit = !isMutation && cached(key);
   if (hit) return hit;
 
   let result;
@@ -1584,30 +1594,30 @@ async function handleTool(name, args) {
       break;
     }
 
-    // ── CanLII (query param auth only — no header auth supported) ──
+    // ── CanLII ─────────────────────────────────────────────────────
     case "canlii_search": {
       if (!CANLII_KEY) throw new Error("CanLII API key not configured. Request access at https://www.canlii.org/en/tools/api.html");
-      const params = { api_key: CANLII_KEY, query: args.query };
+      const params = { query: args.query };
       if (args.databases) params.databases = args.databases;
       if (args.resultCount) params.resultCount = args.resultCount;
       if (args.offset) params.offset = args.offset;
-      result = await fetchJSON(`${CANLII_BASE}/search?${qs(params)}`);
+      result = await fetchJSON(`${CANLII_BASE}/search?${qs(params)}`, { headers: { "X-Api-Key": CANLII_KEY } });
       break;
     }
     case "canlii_get_case": {
       if (!CANLII_KEY) throw new Error("CanLII API key not configured.");
-      result = await fetchJSON(`${CANLII_BASE}/caseBrowse/${validateId(args.databaseId)}/${validateId(args.caseId)}?api_key=${CANLII_KEY}`);
+      result = await fetchJSON(`${CANLII_BASE}/caseBrowse/${validateId(args.databaseId)}/${validateId(args.caseId)}`, { headers: { "X-Api-Key": CANLII_KEY } });
       break;
     }
     case "canlii_case_citations": {
       if (!CANLII_KEY) throw new Error("CanLII API key not configured.");
       const type = args.type || "citedCases";
-      result = await fetchJSON(`${CANLII_BASE}/caseCitator/${validateId(args.databaseId)}/${validateId(args.caseId)}/${validateId(type)}?api_key=${CANLII_KEY}`);
+      result = await fetchJSON(`${CANLII_BASE}/caseCitator/${validateId(args.databaseId)}/${validateId(args.caseId)}/${validateId(type)}`, { headers: { "X-Api-Key": CANLII_KEY } });
       break;
     }
     case "canlii_get_legislation": {
       if (!CANLII_KEY) throw new Error("CanLII API key not configured.");
-      result = await fetchJSON(`${CANLII_BASE}/legislationBrowse/${validateId(args.databaseId)}/${validateId(args.legislationId)}?api_key=${CANLII_KEY}`);
+      result = await fetchJSON(`${CANLII_BASE}/legislationBrowse/${validateId(args.databaseId)}/${validateId(args.legislationId)}`, { headers: { "X-Api-Key": CANLII_KEY } });
       break;
     }
 
@@ -1856,6 +1866,7 @@ async function handleTool(name, args) {
       throw new Error(`Unknown tool: ${name}`);
   }
 
+  if (isMutation) return result;
   return setCache(key, result);
 }
 

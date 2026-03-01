@@ -53,6 +53,8 @@ export function ProjectsPanel() {
   const [sending, setSending] = useState(false);
   const esRef = useRef<EventSource | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const sseRetriesRef = useRef(0);
+  const sseRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const totalBytes = useMemo(
     () => files.reduce((sum, f) => sum + f.size_bytes, 0),
@@ -78,21 +80,43 @@ export function ProjectsPanel() {
   useEffect(() => {
     if (!activeProjectId) return;
     const threadKey = `project:${activeProjectId}`;
-    if (esRef.current) esRef.current.close();
-    const es = new EventSource("/api/chat/events");
-    esRef.current = es;
-    es.onmessage = (e) => {
-      try {
-        const msg: ChatMessage = JSON.parse(e.data);
-        if ((msg.thread ?? "") !== threadKey) return;
-        setMessages((prev) => [...prev, msg]);
-        if (msg.role === "assistant") setSending(false);
-      } catch {
-        // ignore malformed event
-      }
+    sseRetriesRef.current = 0;
+
+    function connectSSE() {
+      if (esRef.current) esRef.current.close();
+      const es = new EventSource("/api/chat/events");
+      esRef.current = es;
+
+      es.onopen = () => { sseRetriesRef.current = 0; };
+
+      es.onmessage = (e) => {
+        try {
+          const msg: ChatMessage = JSON.parse(e.data);
+          if ((msg.thread ?? "") !== threadKey) return;
+          setMessages((prev) => [...prev, msg]);
+          if (msg.role === "assistant") setSending(false);
+        } catch {
+          // ignore malformed event
+        }
+      };
+
+      es.onerror = () => {
+        es.close();
+        esRef.current = null;
+        setSending(false);
+        if (sseRetriesRef.current < 5) {
+          const delay = Math.min(1000 * Math.pow(2, sseRetriesRef.current), 30000);
+          sseRetriesRef.current++;
+          sseRetryTimerRef.current = setTimeout(connectSSE, delay);
+        }
+      };
+    }
+
+    connectSSE();
+    return () => {
+      esRef.current?.close();
+      if (sseRetryTimerRef.current) clearTimeout(sseRetryTimerRef.current);
     };
-    es.onerror = () => {};
-    return () => es.close();
   }, [activeProjectId]);
 
   useEffect(() => {

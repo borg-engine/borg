@@ -475,7 +475,8 @@ pub(crate) async fn run_chat_agent(
         system_prompt,
     ];
 
-    let session_id = sessions.lock().await.get(chat_key).cloned();
+    let session_id = sessions.lock().await.get(chat_key).cloned()
+        .or_else(|| db.get_session(&format!("chat-{}", sanitize_chat_key(chat_key))).ok().flatten());
     if let Some(ref sid) = session_id {
         args.push("--resume".to_string());
         args.push(sid.clone());
@@ -505,7 +506,9 @@ pub(crate) async fn run_chat_agent(
     let (text, new_session_id) = borg_agent::event::parse_stream(&raw);
 
     if let Some(sid) = new_session_id {
-        sessions.lock().await.insert(chat_key.to_string(), sid);
+        sessions.lock().await.insert(chat_key.to_string(), sid.clone());
+        let folder = format!("chat-{}", sanitize_chat_key(chat_key));
+        let _ = db.set_session(&folder, &sid);
     }
 
     // Store bot response

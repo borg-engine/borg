@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
@@ -514,7 +515,7 @@ impl Db {
             .context("task_stats total")?;
         let active: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM pipeline_tasks WHERE status NOT IN ('done','merged','failed')",
+                "SELECT COUNT(*) FROM pipeline_tasks WHERE status NOT IN ('done','merged','failed','blocked','pending_review')",
                 [],
                 |r| r.get(0),
             )
@@ -1108,7 +1109,7 @@ impl Db {
                 repo_path,
                 source,
                 notify_chat,
-                Utc::now().to_rfc3339(),
+                now_str(),
                 mode
             ],
         )
@@ -1152,7 +1153,7 @@ impl Db {
     pub fn active_task_count(&self) -> i64 {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.query_row(
-            "SELECT COUNT(*) FROM pipeline_tasks WHERE status NOT IN ('done','merged','failed')",
+            "SELECT COUNT(*) FROM pipeline_tasks WHERE status NOT IN ('done','merged','failed','blocked','pending_review')",
             [],
             |r| r.get(0),
         )
@@ -1383,6 +1384,37 @@ impl Db {
         )
         .context("set_session")?;
         Ok(())
+    }
+
+    pub fn get_seed_cooldowns(&self) -> Result<HashMap<(String, String), i64>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn
+            .prepare("SELECT folder, session_id FROM sessions WHERE folder LIKE 'seed:%'")
+            .context("get_seed_cooldowns")?;
+        let rows = stmt
+            .query_map([], |r| {
+                let folder: String = r.get(0)?;
+                let ts: String = r.get(1)?;
+                Ok((folder, ts))
+            })
+            .context("get_seed_cooldowns")?;
+        let mut map = HashMap::new();
+        for row in rows {
+            if let Ok((folder, ts)) = row {
+                let parts: Vec<&str> = folder.splitn(3, ':').collect();
+                if parts.len() == 3 {
+                    if let Ok(t) = ts.parse::<i64>() {
+                        map.insert((parts[1].to_string(), parts[2].to_string()), t);
+                    }
+                }
+            }
+        }
+        Ok(map)
+    }
+
+    pub fn set_seed_cooldown(&self, repo_path: &str, seed_name: &str, ts: i64) -> Result<()> {
+        let folder = format!("seed:{repo_path}:{seed_name}");
+        self.set_session(&folder, &ts.to_string())
     }
 
     pub fn expire_sessions(&self, max_age_hours: i64) -> Result<usize> {

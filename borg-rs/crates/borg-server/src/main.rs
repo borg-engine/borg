@@ -455,7 +455,7 @@ async fn main() -> anyhow::Result<()> {
                                 .nth(1)
                                 .unwrap_or("")
                                 .to_string();
-                            let sender_name = batch.messages.first().cloned().unwrap_or_default();
+                            let sender_name = batch.sender_name.clone();
                             tokio::spawn(async move {
                                 match routes::run_chat_agent(
                                     &batch.chat_key,
@@ -560,9 +560,11 @@ async fn main() -> anyhow::Result<()> {
 
     // Observer (log monitoring)
     if !config.observer_config.is_empty() {
+        let observer_api_key = std::env::var("ANTHROPIC_API_KEY")
+            .unwrap_or_else(|_| config.oauth_token.clone());
         let observer = Observer::load(
             &config.observer_config,
-            &config.oauth_token,
+            &observer_api_key,
             &config.telegram_token,
         );
         tokio::spawn(async move { observer.run().await });

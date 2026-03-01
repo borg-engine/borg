@@ -35,7 +35,8 @@ function BorgLogo({ size = "desktop" }: { size?: "desktop" | "mobile" }) {
   const [offsets, setOffsets] = useState<Offsets>(() =>
     LETTERS.map(() => ({ x: 0, y: 0 }))
   );
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const flickerTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const shiftTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Letter flicker — picks 1-4 letters per tick with decreasing probability
   useEffect(() => {
@@ -67,20 +68,21 @@ function BorgLogo({ size = "desktop" }: { size?: "desktop" | "mobile" }) {
             return next;
           });
         }, 60 + Math.random() * 80);
-        timers.current.push(restore);
+        flickerTimers.current.push(restore);
         scheduleFlicker();
       }, delay);
-      timers.current.push(timer);
+      flickerTimers.current.push(timer);
     }
 
     scheduleFlicker();
-    return () => timers.current.forEach(clearTimeout);
+    return () => {
+      flickerTimers.current.forEach(clearTimeout);
+      flickerTimers.current = [];
+    };
   }, []);
 
   // Positional shifts
   useEffect(() => {
-    const shiftTimers: ReturnType<typeof setTimeout>[] = [];
-
     function scheduleShift() {
       const delay = 3000 + Math.random() * 8000;
       const t = setTimeout(() => {
@@ -106,15 +108,18 @@ function BorgLogo({ size = "desktop" }: { size?: "desktop" | "mobile" }) {
             return next;
           });
         }, 30 + Math.random() * 20);
-        shiftTimers.push(restore);
+        shiftTimers.current.push(restore);
 
         scheduleShift();
       }, delay);
-      shiftTimers.push(t);
+      shiftTimers.current.push(t);
     }
 
     scheduleShift();
-    return () => shiftTimers.forEach(clearTimeout);
+    return () => {
+      shiftTimers.current.forEach(clearTimeout);
+      shiftTimers.current = [];
+    };
   }, []);
 
   return (

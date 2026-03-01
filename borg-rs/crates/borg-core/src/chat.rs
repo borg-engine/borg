@@ -14,6 +14,7 @@ pub enum ChatState {
     /// Collecting messages; window expires at this instant.
     Collecting {
         window_deadline: Instant,
+        sender_name: String,
         messages: Vec<String>,
     },
     /// Agent is running for this chat.
@@ -56,6 +57,7 @@ pub struct ChatCollector {
 #[derive(Debug)]
 pub struct MessageBatch {
     pub chat_key: String,
+    pub sender_name: String,
     pub messages: Vec<String>,
 }
 
@@ -82,6 +84,7 @@ impl ChatCollector {
         &self,
         inner: &mut CollectorInner,
         chat_key: String,
+        sender_name: String,
         messages: Vec<String>,
     ) -> Option<MessageBatch> {
         if !self.can_dispatch_inner(inner) {
@@ -93,7 +96,7 @@ impl ChatCollector {
         }
         inner.chats.insert(chat_key.clone(), ChatState::Running);
         inner.running += 1;
-        Some(MessageBatch { chat_key, messages })
+        Some(MessageBatch { chat_key, sender_name, messages })
     }
 
     /// Process an incoming message. Returns Some(batch) if ready to dispatch.
@@ -116,13 +119,14 @@ impl ChatCollector {
 
             ChatState::Idle => {
                 if self.window_ms == 0 {
-                    self.try_dispatch(&mut inner, chat_key, vec![msg.text])
+                    self.try_dispatch(&mut inner, chat_key, msg.sender_name, vec![msg.text])
                 } else {
                     let deadline = Instant::now() + Duration::from_millis(self.window_ms);
                     inner.chats.insert(
                         chat_key,
                         ChatState::Collecting {
                             window_deadline: deadline,
+                            sender_name: msg.sender_name,
                             messages: vec![msg.text],
                         },
                     );
@@ -132,17 +136,19 @@ impl ChatCollector {
 
             ChatState::Collecting {
                 window_deadline,
+                sender_name,
                 mut messages,
             } => {
                 messages.push(msg.text);
 
                 if Instant::now() >= window_deadline {
-                    self.try_dispatch(&mut inner, chat_key, messages)
+                    self.try_dispatch(&mut inner, chat_key, sender_name, messages)
                 } else {
                     inner.chats.insert(
                         chat_key,
                         ChatState::Collecting {
                             window_deadline,
+                            sender_name,
                             messages,
                         },
                     );
@@ -158,22 +164,25 @@ impl ChatCollector {
         let mut inner = self.state.lock().await;
         let now = Instant::now();
         let mut ready = Vec::new();
-
-        let can_dispatch = self.can_dispatch_inner(&inner);
+        let mut running = inner.running;
 
         for (chat_key, chat_state) in inner.chats.iter_mut() {
             match chat_state {
                 ChatState::Collecting {
                     window_deadline,
+                    sender_name,
                     messages,
                 } => {
-                    if now >= *window_deadline && can_dispatch {
+                    let at_limit = self.max_agents > 0 && running >= self.max_agents;
+                    if now >= *window_deadline && !at_limit {
                         let batch = MessageBatch {
                             chat_key: chat_key.clone(),
+                            sender_name: std::mem::take(sender_name),
                             messages: std::mem::take(messages),
                         };
                         *chat_state = ChatState::Running;
                         ready.push(batch);
+                        running += 1;
                     }
                 },
                 ChatState::Cooldown { deadline } => {
@@ -186,7 +195,7 @@ impl ChatCollector {
             }
         }
 
-        inner.running += ready.len() as u32;
+        inner.running = running;
 
         ready
     }

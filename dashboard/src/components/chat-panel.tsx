@@ -35,6 +35,8 @@ export function ChatPanel() {
   const lastTsRef = useRef<number>(0);
 
   const abortRef = useRef<AbortController | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchMessages = useCallback(() => {
     abortRef.current?.abort();
@@ -84,7 +86,13 @@ export function ChatPanel() {
         if (msg.role === "user") return;
         setMessages((prev) => [...prev, msg]);
         lastTsRef.current = Math.max(lastTsRef.current, Number(msg.ts) || 0);
-        if (msg.role === "assistant") setSending(false);
+        if (msg.role === "assistant") {
+          setSending(false);
+          if (sendingTimeoutRef.current) {
+            clearTimeout(sendingTimeoutRef.current);
+            sendingTimeoutRef.current = null;
+          }
+        }
       } catch {
         // ignore
       }
@@ -96,14 +104,18 @@ export function ChatPanel() {
       if (sseRetriesRef.current < 5) {
         const delay = Math.min(1000 * Math.pow(2, sseRetriesRef.current), 30000);
         sseRetriesRef.current++;
-        setTimeout(() => connect(), delay);
+        retryTimerRef.current = setTimeout(() => connect(), delay);
       }
     };
   }, [thread]);
 
   useEffect(() => {
     connect();
-    return () => esRef.current?.close();
+    return () => {
+      esRef.current?.close();
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      if (sendingTimeoutRef.current) clearTimeout(sendingTimeoutRef.current);
+    };
   }, [connect]);
 
   // Poll fallback
@@ -117,7 +129,13 @@ export function ChatPanel() {
           if (newTs > lastTsRef.current) {
             setMessages(msgs);
             lastTsRef.current = newTs;
-            if (msgs[msgs.length - 1]?.role === "assistant") setSending(false);
+            if (msgs[msgs.length - 1]?.role === "assistant") {
+              setSending(false);
+              if (sendingTimeoutRef.current) {
+                clearTimeout(sendingTimeoutRef.current);
+                sendingTimeoutRef.current = null;
+              }
+            }
           }
         })
         .catch(() => {});
@@ -135,6 +153,12 @@ export function ChatPanel() {
 
     setInput("");
     setSending(true);
+
+    if (sendingTimeoutRef.current) clearTimeout(sendingTimeoutRef.current);
+    sendingTimeoutRef.current = setTimeout(() => {
+      setSending(false);
+      sendingTimeoutRef.current = null;
+    }, 60000);
 
     const userMsg: ChatMessage = {
       role: "user",
@@ -154,6 +178,10 @@ export function ChatPanel() {
       });
     } catch {
       setSending(false);
+      if (sendingTimeoutRef.current) {
+        clearTimeout(sendingTimeoutRef.current);
+        sendingTimeoutRef.current = null;
+      }
     }
   }
 

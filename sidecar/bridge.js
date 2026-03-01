@@ -226,11 +226,18 @@ function handleAgentCommand(cmd) {
 }
 
 function startAgentSession(session_id, cmd) {
+  const existing = agentSessions.get(session_id);
+  if (existing) {
+    existing.process.kill('SIGTERM');
+    agentSessions.delete(session_id);
+    emit('agent', { event: 'replaced', session_id });
+  }
+
   const { instruction, model, oauth_token, worktree_path, session_dir, allowed_tools, resume_session } = cmd;
 
   const args = [
     '--output-format', 'stream-json',
-    '--model', model || 'claude-opus-4-5',
+    '--model', model || 'claude-sonnet-4-6',
     '--allowedTools', allowed_tools || 'Read,Glob,Grep,Write,Edit,Bash',
     '--max-turns', '200',
   ];

@@ -292,11 +292,14 @@ function OutputSelector({ outputs }: { outputs: TaskOutput[] }) {
     });
   }, [outputs]);
 
+  const lastLabeled = labeled[labeled.length - 1];
   const [selectedKey, setSelectedKey] = useState(
-    labeled[labeled.length - 1].phase + "-" + labeled[labeled.length - 1].id
+    lastLabeled ? lastLabeled.phase + "-" + lastLabeled.id : ""
   );
 
-  const selected = labeled.find((o) => o.phase + "-" + o.id === selectedKey) ?? labeled[labeled.length - 1];
+  const selected = labeled.find((o) => o.phase + "-" + o.id === selectedKey) ?? lastLabeled;
+
+  if (!selected) return null;
   const isDiff = selected.phase.endsWith("_diff");
   const hasStream = !!selected.raw_stream;
 

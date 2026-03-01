@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Clock, ChevronDown, ChevronUp, Mic, MicOff } from "lucide-react";
 import { useTaskMessages, useSendTaskMessage } from "@/lib/api";
 import type { TaskMessage } from "@/lib/types";
@@ -15,29 +14,9 @@ export function TaskChat({ taskId }: TaskChatProps) {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const queryClient = useQueryClient();
 
   const { data: messages = [] } = useTaskMessages(taskId);
   const { mutateAsync: sendMessage, isPending: sending } = useSendTaskMessage(taskId);
-
-  // SSE: listen for task_message events on the existing /api/logs stream
-  useEffect(() => {
-    if (!open) return;
-    const es = new EventSource("/api/logs");
-
-    es.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (d.type === "task_message" && d.task_id === taskId) {
-          queryClient.invalidateQueries({ queryKey: ["task_messages", taskId] });
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    return () => es.close();
-  }, [open, taskId, queryClient]);
 
   // Auto-scroll when messages arrive
   useEffect(() => {

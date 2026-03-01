@@ -134,11 +134,15 @@ impl AgentBackend for ClaudeBackend {
         let mcp_config_path = if ctx.task.mode == "lawborg" {
             let mcp_dir = format!("{}/mcp", ctx.session_dir);
             std::fs::create_dir_all(&mcp_dir).ok();
-            let legal_mcp_server =
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../sidecar/lawborg-mcp/server.js")
-                    .canonicalize()
-                    .unwrap_or_default();
+            let legal_mcp_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../sidecar/lawborg-mcp/server.js");
+            let legal_mcp_server = match legal_mcp_path.canonicalize() {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!("lawborg MCP server not found at {}: {e}", legal_mcp_path.display());
+                    return Err(anyhow::anyhow!("lawborg MCP server not found: {e}"));
+                }
+            };
             let mut env_vars = serde_json::Map::new();
             // Pass all available BYOK keys as env vars
             for (provider, key) in &ctx.api_keys {

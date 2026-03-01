@@ -177,7 +177,11 @@ async fn analyze(
     api_key: &str,
 ) -> Result<AnalysisResult> {
     let log_slice = if logs.len() > MAX_LOG_BYTES {
-        &logs[logs.len() - MAX_LOG_BYTES..]
+        let mut start = logs.len() - MAX_LOG_BYTES;
+        while start < logs.len() && !logs.is_char_boundary(start) {
+            start += 1;
+        }
+        &logs[start..]
     } else {
         logs
     };

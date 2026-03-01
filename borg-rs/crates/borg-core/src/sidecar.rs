@@ -101,36 +101,35 @@ impl Sidecar {
     }
 
     pub fn send_discord(&self, channel_id: &str, text: &str, reply_to: Option<&str>) {
-        let escaped = json_escape(text);
-        let mut cmd = format!(
-            r#"{{"target":"discord","cmd":"send","channel_id":"{channel_id}","text":"{escaped}""#
-        );
+        let mut obj = serde_json::json!({
+            "target": "discord", "cmd": "send",
+            "channel_id": channel_id, "text": text,
+        });
         if let Some(id) = reply_to {
-            cmd.push_str(&format!(r#","reply_to":"{id}""#));
+            obj["reply_to"] = serde_json::Value::String(id.to_string());
         }
-        cmd.push('}');
-        self.send_raw(cmd);
+        self.send_raw(obj.to_string());
     }
 
     pub fn send_whatsapp(&self, jid: &str, text: &str, quote_id: Option<&str>) {
-        let escaped = json_escape(text);
-        let mut cmd =
-            format!(r#"{{"target":"whatsapp","cmd":"send","jid":"{jid}","text":"{escaped}""#);
+        let mut obj = serde_json::json!({
+            "target": "whatsapp", "cmd": "send",
+            "jid": jid, "text": text,
+        });
         if let Some(id) = quote_id {
-            cmd.push_str(&format!(r#","quote_id":"{id}""#));
+            obj["quote_id"] = serde_json::Value::String(id.to_string());
         }
-        cmd.push('}');
-        self.send_raw(cmd);
+        self.send_raw(obj.to_string());
     }
 
     pub fn send_discord_typing(&self, channel_id: &str) {
-        let cmd = format!(r#"{{"target":"discord","cmd":"typing","channel_id":"{channel_id}"}}"#);
-        self.send_raw(cmd);
+        let cmd = serde_json::json!({"target": "discord", "cmd": "typing", "channel_id": channel_id});
+        self.send_raw(cmd.to_string());
     }
 
     pub fn send_whatsapp_typing(&self, jid: &str) {
-        let cmd = format!(r#"{{"target":"whatsapp","cmd":"typing","jid":"{jid}"}}"#);
-        self.send_raw(cmd);
+        let cmd = serde_json::json!({"target": "whatsapp", "cmd": "typing", "jid": jid});
+        self.send_raw(cmd.to_string());
     }
 
     fn send_raw(&self, cmd: String) {
@@ -300,16 +299,6 @@ fn str_val(v: &Value, key: &str) -> String {
     v[key].as_str().unwrap_or("").to_string()
 }
 
-/// Escape a string for embedding inside a JSON string literal.
-fn json_escape(s: &str) -> String {
-    // serde_json::to_string produces `"..."` including quotes; strip them
-    let quoted = serde_json::to_string(s).unwrap_or_default();
-    if quoted.len() < 2 {
-        return String::new();
-    }
-    quoted[1..quoted.len() - 1].to_string()
-}
-
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -368,17 +357,4 @@ mod tests {
         assert!(parse_event(line).is_none());
     }
 
-    #[test]
-    fn json_escape_special_chars() {
-        let s = json_escape("hello\nworld\t\"quote\"");
-        assert!(s.contains("\\n"));
-        assert!(s.contains("\\t"));
-        assert!(s.contains("\\\""));
-        assert!(!s.starts_with('"'));
-    }
-
-    #[test]
-    fn json_escape_empty() {
-        assert_eq!(json_escape(""), "");
-    }
 }

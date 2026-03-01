@@ -12,22 +12,26 @@ fi
 # Read all stdin into a private temp file
 INPUT_FILE=$(mktemp /tmp/borg-input.XXXXXX)
 chmod 600 "$INPUT_FILE"
-trap 'rm -f "$INPUT_FILE"' EXIT
 
 cat > "$INPUT_FILE"
 
-# Parse input JSON
-eval "$(bun -e "
+# Parse input JSON — write to a temp vars file and source it (avoids eval injection)
+VARS_FILE=$(mktemp /tmp/borg-vars.XXXXXX)
+chmod 600 "$VARS_FILE"
+
+bun -e "
 const d=JSON.parse(require('fs').readFileSync('$INPUT_FILE','utf8'));
 const esc = s => s.replace(/'/g, \"'\\\\''\");
-console.log('PROMPT=\'' + esc(d.prompt||'') + '\'');
-console.log('MODEL=\'' + esc(d.model||'claude-sonnet-4-6') + '\'');
-console.log('SESSION_ID=\'' + esc(d.resumeSessionId||d.sessionId||'') + '\'');
-console.log('ASSISTANT_NAME=\'' + esc(d.assistantName||'Borg') + '\'');
-console.log('SYSTEM_PROMPT=\'' + esc(d.systemPrompt||'') + '\'');
-console.log('ALLOWED_TOOLS=\'' + esc(d.allowedTools||'') + '\'');
-console.log('WORKDIR=\'' + esc(d.workdir||'') + '\'');
-")"
+process.stdout.write('PROMPT=\'' + esc(d.prompt||'') + \"'\\n\");
+process.stdout.write('MODEL=\'' + esc(d.model||'claude-sonnet-4-6') + \"'\\n\");
+process.stdout.write('SESSION_ID=\'' + esc(d.resumeSessionId||d.sessionId||'') + \"'\\n\");
+process.stdout.write('ASSISTANT_NAME=\'' + esc(d.assistantName||'Borg') + \"'\\n\");
+process.stdout.write('SYSTEM_PROMPT=\'' + esc(d.systemPrompt||'') + \"'\\n\");
+process.stdout.write('ALLOWED_TOOLS=\'' + esc(d.allowedTools||'') + \"'\\n\");
+process.stdout.write('WORKDIR=\'' + esc(d.workdir||'') + \"'\\n\");
+" 2>/dev/null > "$VARS_FILE"
+# shellcheck source=/dev/null
+source "$VARS_FILE"
 
 # Change to workdir if specified (must be under /workspace)
 if [ -n "$WORKDIR" ]; then
@@ -79,12 +83,18 @@ else
     FULL_PROMPT="$PROMPT"
 fi
 
-# Run Claude Code — capture exit code and stderr for diagnostics
-exitcode=0
-echo "$FULL_PROMPT" | claude "${CLAUDE_ARGS[@]}" 2>/tmp/claude_stderr.log || exitcode=$?
+# Run Claude Code — capture output to a temp file so we can check if it's empty
+CLAUDE_OUT=$(mktemp /tmp/borg-claude-out.XXXXXX)
+trap 'rm -f "$INPUT_FILE" "$VARS_FILE" "$CLAUDE_OUT"' EXIT
 
-# If no stdout was produced, dump stderr so the pipeline can see what went wrong
-if [ ! -s /dev/stdout ] && [ -s /tmp/claude_stderr.log ]; then
+exitcode=0
+echo "$FULL_PROMPT" | claude "${CLAUDE_ARGS[@]}" >"$CLAUDE_OUT" 2>/tmp/claude_stderr.log || exitcode=$?
+
+# Stream output to stdout
+cat "$CLAUDE_OUT"
+
+# If no output was produced, emit an error so the pipeline can see what went wrong
+if [ ! -s "$CLAUDE_OUT" ] && [ -s /tmp/claude_stderr.log ]; then
     echo '{"type":"error","message":"Claude CLI produced no output. Stderr:"}'
     cat /tmp/claude_stderr.log >&2
 fi

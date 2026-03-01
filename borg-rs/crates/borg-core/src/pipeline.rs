@@ -97,6 +97,7 @@ impl Pipeline {
                 }
             }
         }
+        let seed_cooldowns = db.get_seed_cooldowns().unwrap_or_default();
         let p = Self {
             db,
             backends,
@@ -105,7 +106,7 @@ impl Pipeline {
             event_tx: tx,
             stream_manager: TaskStreamManager::new(),
             force_restart,
-            seed_cooldowns: Mutex::new(HashMap::new()),
+            seed_cooldowns: Mutex::new(seed_cooldowns),
             last_self_update_secs: std::sync::atomic::AtomicI64::new(0),
             startup_heads,
             in_flight: Mutex::new(HashSet::new()),
@@ -455,6 +456,11 @@ impl Pipeline {
                     }
                 }
                 map.insert(task.id, now);
+                // Prune stale entries to prevent unbounded growth
+                if map.len() > 100 {
+                    let cutoff = now - cooldown * 2;
+                    map.retain(|_, &mut ts| ts > cutoff);
+                }
             }
         }
 
@@ -1297,12 +1303,9 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
         // Derive PR URL by calling `gh pr view` if any queue entry exists.
         let pr_url: Option<String> = if let Some(entry) = queue_entries.first() {
-            let out = tokio::process::Command::new("sh")
-                .arg("-c")
-                .arg(format!(
-                    "gh pr view {} --json url --jq .url 2>/dev/null",
-                    entry.branch
-                ))
+            let out = tokio::process::Command::new("gh")
+                .args(["pr", "view", &entry.branch, "--json", "url", "--jq", ".url"])
+                .stderr(std::process::Stdio::null())
                 .output()
                 .await
                 .ok();
@@ -1562,19 +1565,21 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             let title = self
                 .db
                 .get_task(entry.task_id)?
-                .map(|t| {
-                    t.title
-                        .chars()
-                        .take(100)
-                        .map(|c| if "\"\\$`".contains(c) { ' ' } else { c })
-                        .collect::<String>()
-                })
+                .map(|t| t.title.chars().take(100).collect::<String>())
                 .unwrap_or_else(|| entry.branch.clone());
 
-            let create_out = self.run_test_command(repo_path, &format!(
-                r#"gh pr create --base main --head {0} --title "{1}" --body "Automated implementation.""#,
-                entry.branch, title
-            )).await?;
+            let gh_out = tokio::process::Command::new("gh")
+                .args(["pr", "create", "--base", "main", "--head", &entry.branch,
+                       "--title", &title, "--body", "Automated implementation."])
+                .current_dir(repo_path)
+                .output()
+                .await
+                .context("gh pr create")?;
+            let create_out = TestOutput {
+                stdout: String::from_utf8_lossy(&gh_out.stdout).to_string(),
+                stderr: String::from_utf8_lossy(&gh_out.stderr).to_string(),
+                exit_code: gh_out.status.code().unwrap_or(1),
+            };
 
             if create_out.exit_code != 0 {
                 let err = &create_out.stderr[..create_out.stderr.len().min(300)];
@@ -1780,10 +1785,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             if repo.is_self {
                 let key = (repo.path.clone(), "github_open_issues".to_string());
                 {
-                    let cooldowns = self.seed_cooldowns.lock().await;
+                    let mut cooldowns = self.seed_cooldowns.lock().await;
                     if now - cooldowns.get(&key).copied().unwrap_or(0) >= cooldown {
+                        cooldowns.insert(key.clone(), now);
                         drop(cooldowns);
-                        self.seed_cooldowns.lock().await.insert(key, now);
+                        let _ = self.db.set_seed_cooldown(&key.0, &key.1, now);
                         info!("seed scan: 'github_open_issues' for {}", repo.path);
                         if let Err(e) = self.seed_from_open_issues(repo) {
                             warn!("seed github_open_issues for {}: {e}", repo.path);
@@ -1811,12 +1817,13 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 }
                 let key = (repo.path.clone(), seed_cfg.name.clone());
                 {
-                    let cooldowns = self.seed_cooldowns.lock().await;
+                    let mut cooldowns = self.seed_cooldowns.lock().await;
                     if now - cooldowns.get(&key).copied().unwrap_or(0) < cooldown {
                         continue;
                     }
+                    cooldowns.insert(key.clone(), now);
                 }
-                self.seed_cooldowns.lock().await.insert(key, now);
+                let _ = self.db.set_seed_cooldown(&key.0, &key.1, now);
                 info!("seed scan: '{}' for {}", seed_cfg.name, repo.path);
                 if let Err(e) = self.run_seed(repo, &mode.name, &seed_cfg).await {
                     warn!("seed {} for {}: {e}", seed_cfg.name, repo.path);

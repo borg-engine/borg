@@ -297,7 +297,7 @@ export function useLogs() {
         // Debounced cache invalidation — at most once per second
         if (!invalidateTimer.current) {
           invalidateTimer.current = setTimeout(() => {
-            queryClient.invalidateQueries();
+            queryClient.invalidateQueries({ queryKey: ["tasks"] });
             invalidateTimer.current = null;
           }, 1000);
         }
@@ -451,6 +451,9 @@ export function useTaskStream(taskId: number | null, active: boolean) {
       setStreaming(false);
       return;
     }
+
+    // Clear stale events on every reconnect (taskId change or retry)
+    setEvents([]);
 
     const es = new EventSource(`/api/tasks/${taskId}/stream`);
     esRef.current = es;
