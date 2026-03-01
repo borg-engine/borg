@@ -186,10 +186,10 @@ export interface ProjectFile {
 }
 
 // sweborg phases (default fallback)
-const SWE_DISPLAY_PHASES = ["backlog", "spec", "qa", "impl", "done", "merged"] as const;
+const SWE_DISPLAY_PHASES = ["backlog", "implement", "validate", "lint_fix", "rebase", "done", "merged"] as const;
 const SWE_PHASE_LABELS: Record<string, string> = {
-  backlog: "Backlog", spec: "Spec", qa: "QA", impl: "Implement",
-  done: "Testing", merged: "Merged",
+  backlog: "Backlog", implement: "Implement", validate: "Validate",
+  lint_fix: "Lint Fix", rebase: "Rebase", done: "Done", merged: "Merged",
 };
 
 // lawborg phases
@@ -223,20 +223,9 @@ export const PHASES = SWE_DISPLAY_PHASES;
 export const PHASE_LABELS = SWE_PHASE_LABELS;
 
 export function isActiveStatus(status: string) {
-  const all = ["backlog", "spec", "qa", "qa_fix", "impl", "retry", "rebase",
-               "research", "draft", "review", "audit", "improve"];
-  return all.includes(status);
+  return !["done", "merged", "failed", "blocked"].includes(status);
 }
 
-export function effectivePhase(status: string, mode?: string): string {
-  if (mode === "lawborg" || mode === "legal") return status;
-  if (mode === "webborg") {
-    if (status === "rebase") return "improve";
-    if (status === "failed") return "improve";
-    return status;
-  }
-  if (status === "retry" || status === "rebase") return "impl";
-  if (status === "failed") return "impl";
-  if (status === "qa_fix") return "qa";
+export function effectivePhase(status: string, _mode?: string): string {
   return status;
 }
