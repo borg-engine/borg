@@ -266,7 +266,7 @@ function AppInner() {
         <div className="min-h-0 flex-1 overflow-hidden">
           {view === "tasks" && (
             <div className="flex h-full">
-              <div className="w-[300px] shrink-0 overflow-hidden border-r border-white/[0.06]">
+              <div className="w-[450px] shrink-0 overflow-hidden border-r border-white/[0.06]">
                 <TaskList
                   selectedId={selectedTaskId}
                   onSelect={handleSelectTask}
