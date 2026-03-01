@@ -1,5 +1,12 @@
 # CLAUDE.md
 
+## Agent Behavior (IMPORTANT)
+
+- MUST default to `model: "sonnet"` for all subagents. Only use Haiku for trivial lookups.
+- MUST NOT enter plan mode without explicitly asking the user first. Default to task lists.
+
+## Overview
+
 Borg is an autonomous AI agent orchestrator written in Rust. It connects to Telegram, WhatsApp, and Discord to respond to chat messages (via Claude Code subprocess), and runs an engineering pipeline that autonomously creates, tests, and merges code changes.
 
 ## Project Structure
@@ -56,11 +63,6 @@ All config is in `.env` (or process environment). Key variables:
 - **Session persistence**: Per-task session dirs (`store/sessions/task-{id}/`) bind-mounted into Docker containers so agents resume across retries.
 - **Per-repo prompts**: Pipeline agents receive repo-specific context via `.borg/prompt.md` or explicit `prompt_file` in WATCHED_REPOS.
 - **Self-update**: Pipeline detects merges to main on the primary repo, rebuilds, and restarts via `execve`.
-
-## Agent Behavior
-
-- **Plan mode**: Never enter plan mode without asking the user first. Default to creating task lists instead. Only use plan mode if the task genuinely requires it and the user agrees.
-- **Subagents**: Default to Sonnet 4.6 (`model: "sonnet"`) for subagents. Use Haiku for very lightweight tasks (simple file lookups, trivial searches). The main agent runs Opus (user-specified, changeable by user).
 
 ## Code Style
 
