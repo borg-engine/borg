@@ -6,7 +6,7 @@ import { TaskChat } from "./task-chat";
 import { repoName, isActiveStatus, type TaskOutput } from "@/lib/types";
 import { useUIMode } from "@/lib/ui-mode";
 import { cn } from "@/lib/utils";
-import { formatToolInput, parseRawStream } from "@/lib/stream-utils";
+import { parseRawStream, type ParsedStreamEvent } from "@/lib/stream-utils";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -177,7 +177,7 @@ function StreamView({ raw }: { raw: string }) {
   );
 }
 
-function StreamEventBlock({ event: ev }: { event: StreamEvent }) {
+function StreamEventBlock({ event: ev }: { event: ParsedStreamEvent }) {
   const [expanded, setExpanded] = useState(false);
 
   if (ev.type === "system") {

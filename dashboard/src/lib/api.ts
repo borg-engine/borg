@@ -298,6 +298,7 @@ export function useLogs() {
         if (!invalidateTimer.current) {
           invalidateTimer.current = setTimeout(() => {
             queryClient.invalidateQueries({ queryKey: ["tasks"] });
+            queryClient.invalidateQueries({ queryKey: ["status"] });
             invalidateTimer.current = null;
           }, 1000);
         }

@@ -1303,12 +1303,16 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
         // Derive PR URL by calling `gh pr view` if any queue entry exists.
         let pr_url: Option<String> = if let Some(entry) = queue_entries.first() {
-            let out = tokio::process::Command::new("gh")
-                .args(["pr", "view", &entry.branch, "--json", "url", "--jq", ".url"])
-                .stderr(std::process::Stdio::null())
-                .output()
-                .await
-                .ok();
+            let out = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                tokio::process::Command::new("gh")
+                    .args(["pr", "view", &entry.branch, "--json", "url", "--jq", ".url"])
+                    .stderr(std::process::Stdio::null())
+                    .output(),
+            )
+            .await
+            .ok()
+            .and_then(|r| r.ok());
             out.and_then(|o| {
                 let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
                 if s.is_empty() {
@@ -1364,13 +1368,18 @@ Make only the minimal changes the linter requires. Do not refactor or change log
     // ── Test runner ───────────────────────────────────────────────────────
 
     async fn run_test_command(&self, dir: &str, cmd: &str) -> Result<TestOutput> {
-        let output = tokio::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .current_dir(dir)
-            .output()
-            .await
-            .context("run test command")?;
+        let timeout = std::time::Duration::from_secs(self.config.agent_timeout_s.max(300) as u64);
+        let output = tokio::time::timeout(
+            timeout,
+            tokio::process::Command::new("sh")
+                .arg("-c")
+                .arg(cmd)
+                .current_dir(dir)
+                .output(),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("run_test_command timed out after {}s: {cmd}", timeout.as_secs()))?
+        .context("run test command")?;
 
         Ok(TestOutput {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),

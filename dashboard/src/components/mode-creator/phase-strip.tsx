@@ -93,8 +93,8 @@ export function PhaseStrip({
       for (const row of rows) {
         const overlaps = row.some(
           (e) =>
-            Math.max(e.toIndex, edge.toIndex) < Math.min(e.fromIndex, edge.fromIndex) ||
-            Math.max(e.fromIndex, edge.fromIndex) < Math.min(e.toIndex, edge.toIndex)
+            !(Math.max(e.toIndex, edge.toIndex) < Math.min(e.fromIndex, edge.fromIndex) ||
+              Math.max(e.fromIndex, edge.fromIndex) < Math.min(e.toIndex, edge.toIndex))
         );
         if (!overlaps) {
           row.push(edge);

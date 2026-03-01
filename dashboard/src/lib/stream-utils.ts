@@ -110,7 +110,7 @@ export function parseStreamEvents(events: StreamEvent[]): TermLine[] {
   return lines;
 }
 
-interface ParsedStreamEvent {
+export interface ParsedStreamEvent {
   type: string;
   subtype?: string;
   tool?: string;

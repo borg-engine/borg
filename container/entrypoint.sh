@@ -19,8 +19,8 @@ cat > "$INPUT_FILE"
 VARS_FILE=$(mktemp /tmp/borg-vars.XXXXXX)
 chmod 600 "$VARS_FILE"
 
-bun -e "
-const d=JSON.parse(require('fs').readFileSync('$INPUT_FILE','utf8'));
+INPUT_FILE="$INPUT_FILE" bun -e "
+const d=JSON.parse(require('fs').readFileSync(process.env.INPUT_FILE,'utf8'));
 const esc = s => s.replace(/'/g, \"'\\\\''\");
 process.stdout.write('PROMPT=\'' + esc(d.prompt||'') + \"'\\n\");
 process.stdout.write('MODEL=\'' + esc(d.model||'claude-sonnet-4-6') + \"'\\n\");
@@ -29,7 +29,7 @@ process.stdout.write('ASSISTANT_NAME=\'' + esc(d.assistantName||'Borg') + \"'\\n
 process.stdout.write('SYSTEM_PROMPT=\'' + esc(d.systemPrompt||'') + \"'\\n\");
 process.stdout.write('ALLOWED_TOOLS=\'' + esc(d.allowedTools||'') + \"'\\n\");
 process.stdout.write('WORKDIR=\'' + esc(d.workdir||'') + \"'\\n\");
-" 2>/dev/null > "$VARS_FILE"
+" > "$VARS_FILE" || { echo "Failed to parse input JSON" >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$VARS_FILE"
 
@@ -85,18 +85,19 @@ fi
 
 # Run Claude Code — capture output to a temp file so we can check if it's empty
 CLAUDE_OUT=$(mktemp /tmp/borg-claude-out.XXXXXX)
-trap 'rm -f "$INPUT_FILE" "$VARS_FILE" "$CLAUDE_OUT"' EXIT
+STDERR_FILE=$(mktemp /tmp/borg-stderr.XXXXXX)
+trap 'rm -f "$INPUT_FILE" "$VARS_FILE" "$CLAUDE_OUT" "$STDERR_FILE"' EXIT
 
 exitcode=0
-echo "$FULL_PROMPT" | claude "${CLAUDE_ARGS[@]}" >"$CLAUDE_OUT" 2>/tmp/claude_stderr.log || exitcode=$?
+printf '%s\n' "$FULL_PROMPT" | claude "${CLAUDE_ARGS[@]}" >"$CLAUDE_OUT" 2>"$STDERR_FILE" || exitcode=$?
 
 # Stream output to stdout
 cat "$CLAUDE_OUT"
 
 # If no output was produced, emit an error so the pipeline can see what went wrong
-if [ ! -s "$CLAUDE_OUT" ] && [ -s /tmp/claude_stderr.log ]; then
+if [ ! -s "$CLAUDE_OUT" ] && [ -s "$STDERR_FILE" ]; then
     echo '{"type":"error","message":"Claude CLI produced no output. Stderr:"}'
-    cat /tmp/claude_stderr.log >&2
+    cat "$STDERR_FILE" >&2
 fi
 
 exit "$exitcode"

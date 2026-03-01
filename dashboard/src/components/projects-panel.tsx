@@ -159,10 +159,12 @@ export function ProjectsPanel() {
     if (!text) return;
     setMessageInput("");
     setSending(true);
+    const timeout = setTimeout(() => setSending(false), 60_000);
     try {
       await sendProjectChat(activeProjectId, text);
     } catch {
       setSending(false);
+      clearTimeout(timeout);
     }
   }
 
