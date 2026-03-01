@@ -793,14 +793,22 @@ pub(crate) async fn unblock_task(
     match state.db.get_task(id).map_err(internal)? {
         None => Err(StatusCode::NOT_FOUND),
         Some(task) if task.status != "blocked" => Err(StatusCode::CONFLICT),
-        Some(_) => {
+        Some(task) => {
             state
                 .db
                 .insert_task_message(id, "user", &body.response)
                 .map_err(internal)?;
+            let next_phase = borg_core::modes::get_mode(&task.mode)
+                .map(|m| {
+                    m.phases.iter()
+                        .find(|p| p.phase_type == borg_core::types::PhaseType::Agent)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| "implement".to_string())
+                })
+                .unwrap_or_else(|| "implement".to_string());
             state
                 .db
-                .update_task_status(id, "implement", None)
+                .update_task_status(id, &next_phase, None)
                 .map_err(internal)?;
             Ok(StatusCode::OK)
         },

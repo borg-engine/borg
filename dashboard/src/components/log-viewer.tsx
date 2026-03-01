@@ -53,14 +53,16 @@ export function LogViewer({ logs }: { logs: LogEvent[] }) {
     setAutoScroll((prev) => (prev === atBottom ? prev : atBottom));
   }
 
-  const rawFilteredLogs =
-    viewMode === "live"
-      ? levelFilter === "all"
-        ? logs
-        : logs.filter((l) => l.level === levelFilter)
-      : [];
+  const rawFilteredLogs = useMemo(
+    () =>
+      viewMode === "live"
+        ? levelFilter === "all"
+          ? logs
+          : logs.filter((l) => l.level === levelFilter)
+        : [],
+    [viewMode, levelFilter, logs],
+  );
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const filteredLogs: KeyedLogEvent[] = useMemo(() => {
     const prev = prevKeyedLogsRef.current;
     const result: KeyedLogEvent[] = rawFilteredLogs.map((log, i) =>

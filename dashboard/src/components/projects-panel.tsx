@@ -164,6 +164,7 @@ export function ProjectsPanel() {
       await sendProjectChat(activeProjectId, text);
     } catch {
       setSending(false);
+    } finally {
       clearTimeout(timeout);
     }
   }

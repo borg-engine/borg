@@ -12,12 +12,15 @@ fi
 # Read all stdin into a private temp file
 INPUT_FILE=$(mktemp /tmp/borg-input.XXXXXX)
 chmod 600 "$INPUT_FILE"
+VARS_FILE=$(mktemp /tmp/borg-vars.XXXXXX)
+chmod 600 "$VARS_FILE"
+CLAUDE_OUT=""
+STDERR_FILE=""
+trap 'rm -f "$INPUT_FILE" "$VARS_FILE" "$CLAUDE_OUT" "$STDERR_FILE"' EXIT
 
 cat > "$INPUT_FILE"
 
 # Parse input JSON — write to a temp vars file and source it (avoids eval injection)
-VARS_FILE=$(mktemp /tmp/borg-vars.XXXXXX)
-chmod 600 "$VARS_FILE"
 
 INPUT_FILE="$INPUT_FILE" bun -e "
 const d=JSON.parse(require('fs').readFileSync(process.env.INPUT_FILE,'utf8'));
@@ -86,7 +89,6 @@ fi
 # Run Claude Code — capture output to a temp file so we can check if it's empty
 CLAUDE_OUT=$(mktemp /tmp/borg-claude-out.XXXXXX)
 STDERR_FILE=$(mktemp /tmp/borg-stderr.XXXXXX)
-trap 'rm -f "$INPUT_FILE" "$VARS_FILE" "$CLAUDE_OUT" "$STDERR_FILE"' EXIT
 
 exitcode=0
 printf '%s\n' "$FULL_PROMPT" | claude "${CLAUDE_ARGS[@]}" >"$CLAUDE_OUT" 2>"$STDERR_FILE" || exitcode=$?

@@ -60,6 +60,7 @@ export function ModeCreatorPanel() {
   }, [busy, state.mode, refetchAll, refetchCustom]);
 
   const handleDiscard = useCallback(() => {
+    if (!state.original) return;
     const orig = JSON.parse(state.original) as PipelineModeFull;
     dispatch({ type: "LOAD_MODE", mode: orig, readOnly: state.isReadOnly });
     setMsg("");

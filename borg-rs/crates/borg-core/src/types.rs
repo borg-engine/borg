@@ -209,8 +209,6 @@ pub struct PhaseConfig {
 
     // Transitions
     pub next: String,
-    /// On test failure, check if error is in test files → route to qa_fix.
-    pub has_qa_fix_routing: bool,
     /// Start with a fresh session (no resume).
     pub fresh_session: bool,
 
@@ -288,7 +286,6 @@ impl Default for PhaseConfig {
             allow_no_changes: false,
             compile_check: false,
             next: "done".into(),
-            has_qa_fix_routing: false,
             fresh_session: false,
             fix_instruction: String::new(),
             retry_phase: String::new(),

@@ -816,15 +816,13 @@ impl Pipeline {
                 Ok(ref out) if out.exit_code == 0 => {},
                 Ok(out) => {
                     let error_msg = format!("{}\n{}", out.stdout, out.stderr);
-                    if phase.has_qa_fix_routing && self.error_is_in_test_files(&out.stderr) {
-                        self.db
-                            .update_task_status(task.id, "qa_fix", Some(&error_msg))?;
-                    } else {
-                        self.fail_or_retry(task, "retry", &error_msg)?;
-                    }
+                    self.fail_or_retry(task, "retry", &error_msg)?;
                     return Ok(());
                 },
-                Err(e) => warn!("test command error for task #{}: {}", task.id, e),
+                Err(e) => {
+                    warn!("test command error for task #{}: {}", task.id, e);
+                    return Ok(());
+                },
             }
         }
 
@@ -902,7 +900,7 @@ impl Pipeline {
             },
             Err(e) => {
                 warn!("task #{} validate: test command error: {e}", task.id);
-                self.advance_phase(task, phase, mode)?;
+                return Ok(());
             },
         }
 
@@ -1391,11 +1389,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         })
     }
 
-    fn error_is_in_test_files(&self, error: &str) -> bool {
-        ["_test.", "/tests/", "test_", ".test.", "spec."]
-            .iter()
-            .any(|p| error.contains(p))
-    }
+
 
     // ── Integration merge ─────────────────────────────────────────────────
 

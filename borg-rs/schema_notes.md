@@ -12,11 +12,10 @@ These must be present before the process starts (before the DB is opened) or are
 | `DISCORD_TOKEN` | Secret |
 | `ANTHROPIC_API_KEY` | Secret |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Secret, rotates from credentials file |
-| `PIPELINE_REPO` | Needed to locate the DB file itself |
+| `PIPELINE_REPO` | Primary repo for self-update; parsed before DB is ready |
 | `DATA_DIR` | Needed to locate the DB file itself |
-| `WHATSAPP_AUTH_DIR` | Path to Baileys auth state; needed at sidecar start |
-| `WHATSAPP_ENABLED` | Determines whether sidecar starts at all |
-| `DISCORD_ENABLED` | Same |
+| `WA_AUTH_DIR` | Path to Baileys auth state; needed at sidecar start |
+| `WA_DISABLED` | Set `true` to disable WhatsApp bridge |
 | `PIPELINE_ADMIN_CHAT` | Used before DB is ready for startup notifications |
 | `WATCHED_REPOS` | Static topology parsed at boot; repos table is authoritative at runtime |
 | `DASHBOARD_DIST_DIR` | Static filesystem path |
@@ -108,10 +107,10 @@ All `payload` values are JSON objects. Unknown keys are ignored for forward comp
 {"title": "Add rate limiting", "description": "...", "mode": "sweborg", "created_by": "alice"}
 
 // status_changed
-{"from": "spec", "to": "qa"}
+{"from": "implement", "to": "validate"}
 
 // phase_completed
-{"phase": "impl", "attempt": 2, "exit_code": 0, "duration_ms": 45230}
+{"phase": "implement", "attempt": 2, "exit_code": 0, "duration_ms": 45230}
 
 // test_output
 {"exit_code": 1, "stdout": "running 14 tests\n...", "stderr": "FAILED: test_foo"}
@@ -120,7 +119,7 @@ All `payload` values are JSON objects. Unknown keys are ignored for forward comp
 {"pr_number": 42, "url": "https://github.com/org/repo/pull/42", "branch": "borg/task-17-add-rate-limiting"}
 
 // error
-{"message": "docker run failed: OOM", "phase": "impl", "attempt": 1}
+{"message": "docker run failed: OOM", "phase": "implement", "attempt": 1}
 ```
 
 ---

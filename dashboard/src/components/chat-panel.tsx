@@ -44,7 +44,7 @@ export function ChatPanel() {
     const controller = new AbortController();
     abortRef.current = controller;
     fetch(`/api/chat/messages?thread=${encodeURIComponent(thread)}`, { signal: controller.signal })
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
       .then((msgs: ChatMessage[]) => {
         if (controller.signal.aborted) return;
         setMessages(msgs);

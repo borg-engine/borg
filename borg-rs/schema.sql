@@ -97,7 +97,7 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_status ON pipeline_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_pipeline_repo ON pipeline_tasks(repo_path);
 
 -- Statuses: backlog → implement → validate → lint_fix → rebase → done → merged
---           spec, qa, qa_fix, impl, retry, review, pending_review (mode-specific)
+--           review, pending_review (mode-specific)
 --           blocked (paused, awaiting human input), failed (terminal, recyclable)
 
 CREATE TABLE IF NOT EXISTS integration_queue (

@@ -200,16 +200,23 @@ async fn analyze(
         "messages": [{"role": "user", "content": user_content}]
     });
 
-    let resp: Value = client
-        .post("https://api.anthropic.com/v1/messages")
-        .header("content-type", "application/json")
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .json(&body)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let resp: Value = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        async {
+            client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("content-type", "application/json")
+                .header("x-api-key", api_key)
+                .header("anthropic-version", "2023-06-01")
+                .json(&body)
+                .send()
+                .await?
+                .json()
+                .await
+        },
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("observer analyze timed out"))??;
 
     let text = resp["content"][0]["text"].as_str().unwrap_or("{}");
     let inner: Value = serde_json::from_str(strip_fences(text)).unwrap_or(Value::Null);
@@ -310,7 +317,12 @@ async fn collect_logs(entry: &Entry) -> Result<String> {
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::null());
 
-    let output = cmd.output().await?;
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        cmd.output(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("collect_logs timed out for {}", entry.name))??;
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
