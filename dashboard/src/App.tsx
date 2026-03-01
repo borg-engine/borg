@@ -209,9 +209,9 @@ function AppInner() {
     <div className="flex h-screen bg-[#09090b] text-foreground antialiased">
       {/* Sidebar nav — expands on hover */}
       <nav className="group/nav flex w-[52px] hover:w-[160px] shrink-0 flex-col items-start border-r border-white/[0.06] bg-[#09090b] pb-3 transition-[width] duration-200 overflow-hidden">
-        <div className="borg-logo mb-3 w-[52px] shrink-0 bg-orange-500 aspect-square">
-          <BorgLogo />
-          <div className="borg-logo-ghost grid grid-cols-2 grid-rows-2" aria-hidden>
+        <div className="borg-logo mb-3 w-full shrink-0 bg-orange-500 h-[52px]">
+          <BorgLogo expanded />
+          <div className="borg-logo-ghost grid grid-cols-2 grid-rows-2 group-hover/nav:grid-cols-4 group-hover/nav:grid-rows-1" aria-hidden>
             {"BORG".split("").map((c, i) => (
               <span key={i} className="flex items-center justify-center text-[22px]">{c}</span>
             ))}

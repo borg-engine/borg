@@ -29,7 +29,7 @@ function randomShift(): { x: number; y: number } {
 
 type Offsets = { x: number; y: number }[];
 
-function BorgLogo({ size = "desktop" }: { size?: "desktop" | "mobile" }) {
+function BorgLogo({ size = "desktop", expanded }: { size?: "desktop" | "mobile"; expanded?: boolean }) {
   const textSize = size === "desktop" ? "text-[22px]" : "text-[16px]";
   const [cells, setCells] = useState(LETTERS);
   const [offsets, setOffsets] = useState<Offsets>(() =>
@@ -126,7 +126,7 @@ function BorgLogo({ size = "desktop" }: { size?: "desktop" | "mobile" }) {
   }, []);
 
   return (
-    <div className="borg-logo-text grid h-full w-full grid-cols-2 grid-rows-2">
+    <div className={`borg-logo-text grid h-full w-full grid-cols-2 grid-rows-2 ${expanded ? "group-hover/nav:grid-cols-4 group-hover/nav:grid-rows-1" : ""}`}>
       {cells.map((c, i) => (
         <span
           key={i}
