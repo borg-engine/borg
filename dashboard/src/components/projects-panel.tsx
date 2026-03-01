@@ -8,7 +8,9 @@ import {
   useProjectFiles,
   useProjects,
 } from "@/lib/api";
+import { Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useDictation } from "@/lib/dictation";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -51,6 +53,9 @@ export function ProjectsPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
+  const dictation = useDictation((transcript) => {
+    setMessageInput((prev) => (prev ? prev + " " + transcript : transcript));
+  });
   const esRef = useRef<EventSource | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const sseRetriesRef = useRef(0);
@@ -314,6 +319,20 @@ export function ProjectsPanel() {
                     rows={2}
                     className="flex-1 resize-none rounded border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[12px] text-zinc-200 outline-none placeholder:text-zinc-600"
                   />
+                  {dictation.supported && (
+                    <button
+                      onClick={dictation.toggle}
+                      title={dictation.listening ? "Stop dictation" : "Start dictation"}
+                      className={cn(
+                        "shrink-0 rounded px-2.5 py-2 transition-colors",
+                        dictation.listening
+                          ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                          : "text-zinc-600 hover:text-zinc-400 hover:bg-white/[0.06]"
+                      )}
+                    >
+                      {dictation.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                    </button>
+                  )}
                   <button
                     onClick={handleSendMessage}
                     disabled={sending || !messageInput.trim()}
