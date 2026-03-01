@@ -20,7 +20,7 @@ impl CourtListenerClient {
             http: reqwest::Client::builder()
                 .user_agent("LegalMCP/0.2 (borg-legal-agent)")
                 .build()
-                .unwrap_or_default(),
+                .expect("failed to build HTTP client"),
         }
     }
 
@@ -51,7 +51,7 @@ impl CourtListenerClient {
     }
 
     pub async fn citation_lookup(&self, cite: &str) -> Result<SearchResult> {
-        let url = format!("{BASE}/search/?q={}&type=o", urlencoding::encode(cite));
+        let url = format!("{BASE}/search/?citation={}&type=o", urlencoding::encode(cite));
         Ok(self.http.get(&url).send().await?.error_for_status()?.json().await?)
     }
 }

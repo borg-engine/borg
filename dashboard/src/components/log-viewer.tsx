@@ -1,6 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import type { LogEvent, DbEvent } from "@/lib/types";
+
+interface KeyedLogEvent extends LogEvent {
+  _key: number;
+}
 
 const LEVEL_FILTERS = ["all", "info", "warn", "err"] as const;
 const CATEGORY_FILTERS = ["all", "system", "chat", "agent", "pipeline"] as const;
@@ -16,6 +20,8 @@ export function LogViewer({ logs }: { logs: LogEvent[] }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const keyCounterRef = useRef(0);
+  const prevKeyedLogsRef = useRef<KeyedLogEvent[]>([]);
 
   // Fetch historical events when switching to events view or changing filters
   useEffect(() => {
@@ -44,15 +50,25 @@ export function LogViewer({ logs }: { logs: LogEvent[] }) {
     const el = containerRef.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
-    setAutoScroll(atBottom);
+    setAutoScroll((prev) => (prev === atBottom ? prev : atBottom));
   }
 
-  const filteredLogs =
+  const rawFilteredLogs =
     viewMode === "live"
       ? levelFilter === "all"
         ? logs
         : logs.filter((l) => l.level === levelFilter)
       : [];
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const filteredLogs: KeyedLogEvent[] = useMemo(() => {
+    const prev = prevKeyedLogsRef.current;
+    const result: KeyedLogEvent[] = rawFilteredLogs.map((log, i) =>
+      i < prev.length ? { ...log, _key: prev[i]._key } : { ...log, _key: keyCounterRef.current++ }
+    );
+    prevKeyedLogsRef.current = result;
+    return result;
+  }, [rawFilteredLogs]);
 
   return (
     <div className="flex h-full flex-col">
@@ -129,7 +145,7 @@ export function LogViewer({ logs }: { logs: LogEvent[] }) {
       >
         <div className="p-3">
           {viewMode === "live" ? (
-            filteredLogs.map((log, i) => <LogLine key={i} log={log} />)
+            filteredLogs.map((log) => <LogLine key={log._key} log={log} />)
           ) : loadingEvents ? (
             <div className="text-[11px] text-zinc-600 py-4 text-center">Loading events...</div>
           ) : events.length === 0 ? (

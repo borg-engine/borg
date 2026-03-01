@@ -98,7 +98,15 @@ fn parse_dotenv() -> HashMap<String, String> {
             continue;
         }
         if let Some((k, v)) = line.split_once('=') {
-            map.insert(k.trim().to_string(), v.trim().to_string());
+            let v = v.trim();
+            let v = if (v.starts_with('"') && v.ends_with('"'))
+                || (v.starts_with('\'') && v.ends_with('\''))
+            {
+                &v[1..v.len() - 1]
+            } else {
+                v
+            };
+            map.insert(k.trim().to_string(), v.to_string());
         }
     }
     map
@@ -203,11 +211,16 @@ pub fn refresh_oauth_token(credentials_path: &str, current: &str) -> String {
     let expiry = read_oauth_expiry(credentials_path).unwrap_or(0);
     if expiry > 0 && expiry < now_ms + 300_000 {
         tracing::info!("OAuth token expired or near-expiry, refreshing via CLI");
-        let _ = std::process::Command::new("claude")
+        match std::process::Command::new("claude")
             .args(["auth", "status"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status();
+            .status()
+        {
+            Ok(s) if !s.success() => tracing::warn!("OAuth refresh failed (exit {})", s.code().unwrap_or(-1)),
+            Err(e) => tracing::warn!("OAuth refresh command failed: {e}"),
+            _ => {}
+        }
     }
 
     read_oauth_from_credentials(credentials_path)

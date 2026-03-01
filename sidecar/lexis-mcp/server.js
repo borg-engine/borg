@@ -12,6 +12,11 @@ const LEXMACHINA_BASE = process.env.LEXMACHINA_BASE_URL || "https://api.lexmachi
 const INTELLIGIZE_BASE = process.env.INTELLIGIZE_BASE_URL || "https://api.intelligize.com/v1";
 const COGNITIVE_BASE = process.env.COGNITIVE_BASE_URL || "https://api.lexisnexis.com/cognitive/v1";
 
+function validateId(id) {
+  if (!/^[a-zA-Z0-9._-]+$/.test(String(id))) throw new Error(`Invalid ID: ${id}`);
+  return id;
+}
+
 async function apiCall(base, path, method = "GET", body = null) {
   const url = `${base}${path}`;
   const opts = {
@@ -287,7 +292,7 @@ async function handleTool(name, args) {
     case "lexis_search":
       return apiCall(LEXIS_BASE, "/search", "POST", args);
     case "lexis_retrieve":
-      return apiCall(LEXIS_BASE, `/documents/${args.document_id}`);
+      return apiCall(LEXIS_BASE, `/documents/${validateId(args.document_id)}`);
     case "lexis_shepards":
       return apiCall(LEXIS_BASE, `/shepards/${encodeURIComponent(args.citation)}`);
 
@@ -295,7 +300,7 @@ async function handleTool(name, args) {
     case "statenet_search_bills":
       return apiCall(STATENET_BASE, "/bills/search", "POST", args);
     case "statenet_get_bill":
-      return apiCall(STATENET_BASE, `/bills/${args.bill_id}`);
+      return apiCall(STATENET_BASE, `/bills/${validateId(args.bill_id)}`);
     case "statenet_search_regulations":
       return apiCall(STATENET_BASE, "/regulations/search", "POST", args);
     case "statenet_get_statute":
@@ -305,9 +310,9 @@ async function handleTool(name, args) {
     case "lexmachina_search_cases":
       return apiCall(LEXMACHINA_BASE, "/cases/search", "POST", args);
     case "lexmachina_case_details":
-      return apiCall(LEXMACHINA_BASE, `/cases/${args.case_id}`);
+      return apiCall(LEXMACHINA_BASE, `/cases/${validateId(args.case_id)}`);
     case "lexmachina_judge_profile":
-      return apiCall(LEXMACHINA_BASE, `/judges/${args.judge_id}`);
+      return apiCall(LEXMACHINA_BASE, `/judges/${validateId(args.judge_id)}`);
     case "lexmachina_party_history": {
       const qs = new URLSearchParams({ name: args.party_name });
       return apiCall(LEXMACHINA_BASE, `/parties?${qs}`);

@@ -122,7 +122,9 @@ impl Git {
             return false;
         }
         tracing::warn!("dirty working tree in {}, stashing before git operation", self.repo_path);
-        let _ = self.exec(&self.repo_path, &["stash", "push", "-m", "borg-auto-stash"]);
+        if let Err(e) = self.exec(&self.repo_path, &["stash", "push", "-m", "borg-auto-stash"]) {
+            tracing::warn!("git stash failed in {}: {e}", self.repo_path);
+        }
         true
     }
 

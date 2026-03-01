@@ -13,7 +13,7 @@ impl EdgarClient {
             http: reqwest::Client::builder()
                 .user_agent("LegalMCP/0.2 (borg-legal-agent; contact@neuralcollective.ai)")
                 .build()
-                .unwrap_or_default(),
+                .expect("failed to build HTTP client"),
         }
     }
 

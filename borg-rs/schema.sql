@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS chat_agent_runs (
   started_at TEXT DEFAULT (datetime('now')),
   completed_at TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_chat_runs_jid ON chat_agent_runs(jid, status);
 
 -- ── Pipeline ──────────────────────────────────────────────────────────────
 
@@ -94,10 +95,11 @@ CREATE TABLE IF NOT EXISTS pipeline_tasks (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_pipeline_status ON pipeline_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_pipeline_repo ON pipeline_tasks(repo_path);
 
 -- Statuses: backlog → implement → validate → lint_fix → rebase → done → merged
---           blocked (paused, awaiting human input)
---           failed (terminal, recyclable)
+--           spec, qa, qa_fix, impl, retry, review, pending_review (mode-specific)
+--           blocked (paused, awaiting human input), failed (terminal, recyclable)
 
 CREATE TABLE IF NOT EXISTS integration_queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,6 +142,8 @@ CREATE TABLE IF NOT EXISTS proposals (
   triage_reasoning TEXT DEFAULT '',
   created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status, triage_score);
+CREATE INDEX IF NOT EXISTS idx_proposals_repo ON proposals(repo_path);
 
 -- ── Projects (document workspaces) ───────────────────────────────────────
 
@@ -208,7 +212,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
   key_value TEXT NOT NULL,                -- the actual API key / token
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_api_keys_owner ON api_keys(owner, provider);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_owner ON api_keys(owner, provider);
 
 -- ── Misc / legacy ─────────────────────────────────────────────────────────
 
@@ -217,8 +221,7 @@ CREATE TABLE IF NOT EXISTS state (
   value TEXT NOT NULL
 );
 
--- Legacy unstructured event log. Still written by the Zig borg process.
--- New code should write to pipeline_events instead.
+-- Legacy unstructured event log. New code should write to pipeline_events instead.
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,

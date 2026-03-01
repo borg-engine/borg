@@ -147,7 +147,9 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         }
       }
 
-      const sel = state.selectedPhaseIndex === action.index ? null : state.selectedPhaseIndex;
+      let sel = state.selectedPhaseIndex;
+      if (sel === action.index) sel = null;
+      else if (sel !== null && sel > action.index) sel -= 1;
       return { ...markDirty(state, { ...state.mode, phases }), selectedPhaseIndex: sel };
     }
 
@@ -182,7 +184,9 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case "REMOVE_SEED": {
       const seeds = [...state.mode.seed_modes];
       seeds.splice(action.index, 1);
-      const exp = state.expandedSeedIndex === action.index ? null : state.expandedSeedIndex;
+      let exp = state.expandedSeedIndex;
+      if (exp === action.index) exp = null;
+      else if (exp !== null && exp > action.index) exp -= 1;
       return { ...markDirty(state, { ...state.mode, seed_modes: seeds }), expandedSeedIndex: exp };
     }
 

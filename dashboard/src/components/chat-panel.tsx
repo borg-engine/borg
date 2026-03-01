@@ -120,11 +120,15 @@ export function ChatPanel() {
 
   // Poll fallback
   useEffect(() => {
+    let pollAbort: AbortController | null = null;
     const interval = setInterval(() => {
-      fetch(`/api/chat/messages?thread=${encodeURIComponent(thread)}`)
+      pollAbort?.abort();
+      const ctrl = new AbortController();
+      pollAbort = ctrl;
+      fetch(`/api/chat/messages?thread=${encodeURIComponent(thread)}`, { signal: ctrl.signal })
         .then((r) => r.json())
         .then((msgs: ChatMessage[]) => {
-          if (msgs.length === 0) return;
+          if (ctrl.signal.aborted || msgs.length === 0) return;
           const newTs = Math.max(...msgs.map((m) => Number(m.ts) || 0));
           if (newTs > lastTsRef.current) {
             setMessages(msgs);
@@ -140,7 +144,10 @@ export function ChatPanel() {
         })
         .catch(() => {});
     }, 3000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      pollAbort?.abort();
+    };
   }, [thread]);
 
   useEffect(() => {
@@ -251,7 +258,7 @@ export function ChatPanel() {
 
       <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-2">
         {messages.map((msg, i) => (
-          <MessageBubble key={i} msg={msg} />
+          <MessageBubble key={`${msg.ts}-${msg.role}-${i}`} msg={msg} />
         ))}
         <div ref={bottomRef} />
       </div>

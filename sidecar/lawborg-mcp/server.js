@@ -63,6 +63,7 @@ const rateLimiters = [
   { test: url => url.includes("congress.gov"),         limiter: new RateLimiter(1000, 3600000),  label: "Congress.gov" },
   { test: url => url.includes("canlii.org"),           limiter: new RateLimiter(300, 3600000),   label: "CanLII" },
   { test: url => url.includes("openstates.org"),       limiter: new RateLimiter(600, 3600000),   label: "Open States" },
+  { test: url => url.includes("eur-lex.europa.eu"),   limiter: new RateLimiter(60, 60000),      label: "EUR-Lex" },
 ];
 
 function checkRateLimit(url) {
@@ -71,7 +72,7 @@ function checkRateLimit(url) {
   }
 }
 
-// ── Simple LRU cache ───────────────────────────────────────────────────
+// ── Simple FIFO cache ──────────────────────────────────────────────────
 const cache = new Map();
 const CACHE_TTL = 10 * 60 * 1000; // 10 min
 const MAX_CACHE = 200;
@@ -1359,7 +1360,8 @@ async function handleTool(name, args) {
       const params = {};
       if (args.type) params.type = args.type;
       if (args.count) params.count = args.count;
-      result = await fetchJSON(`${EDGAR_DATA}/submissions/CIK${cik}.json`);
+      const qstr = Object.keys(params).length ? `?${qs(params)}` : "";
+      result = await fetchJSON(`${EDGAR_DATA}/submissions/CIK${cik}.json${qstr}`);
       break;
     }
     case "edgar_company_facts": {
@@ -1532,15 +1534,10 @@ async function handleTool(name, args) {
 
     // ── EUR-Lex ────────────────────────────────────────────────────
     case "eurlex_search": {
-      // EUR-Lex search via the public search API
-      const params = { text: args.text, page: args.page || 1, pageSize: args.pageSize || 20 };
-      if (args.type) params.type = args.type;
-      if (args.date_from) params.date_from = args.date_from;
-      if (args.date_to) params.date_to = args.date_to;
-      // Use the web search endpoint as the REST API has limited public access
       const searchUrl = `https://eur-lex.europa.eu/search.html?textScope=ti-te&text=${encodeURIComponent(args.text)}&qid=1&type=quick&lang=en&DTS_SUBDOM=LEGISLATION`;
-      // Fall back to scraping the search page summary
+      checkRateLimit(searchUrl);
       const resp = await fetch(searchUrl, { headers: { "User-Agent": UA, Accept: "text/html" } });
+      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
       const html = await resp.text();
       // Extract CELEX numbers from results
       const celexMatches = [...html.matchAll(/CELEX[^"]*?(\d{5}[A-Z]\d{4})/g)].map(m => m[1]);

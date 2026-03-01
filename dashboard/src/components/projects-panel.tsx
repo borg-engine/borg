@@ -271,7 +271,7 @@ export function ProjectsPanel() {
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex-1 overflow-y-auto p-3">
                 {messages.map((msg, idx) => (
-                  <div key={idx} className={cn("mb-2 flex", msg.role === "user" ? "justify-end" : "justify-start")}>
+                  <div key={`${msg.ts}-${msg.role}-${idx}`} className={cn("mb-2 flex", msg.role === "user" ? "justify-end" : "justify-start")}>
                     <div
                       className={cn(
                         "max-w-[85%] rounded-lg px-3 py-2 text-[12px] leading-relaxed",

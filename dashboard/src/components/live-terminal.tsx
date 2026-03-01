@@ -3,10 +3,31 @@ import type { StreamEvent } from "@/lib/api";
 import { parseStreamEvents, type TermLine } from "@/lib/stream-utils";
 import { cn } from "@/lib/utils";
 
+interface LiveTerminalProps {
+  events: StreamEvent[];
+  streaming: boolean;
+}
+
+interface KeyedTermLine extends TermLine {
+  _key: number;
+}
+
 export function LiveTerminal({ events, streaming }: LiveTerminalProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const lines = useMemo(() => parseStreamEvents(events), [events]);
+  const keyCounterRef = useRef(0);
+  const prevLinesRef = useRef<KeyedTermLine[]>([]);
+
+  const lines = useMemo(() => {
+    const parsed = parseStreamEvents(events);
+    const prev = prevLinesRef.current;
+    const reused = parsed.length >= prev.length ? prev : [];
+    const result: KeyedTermLine[] = parsed.map((line, i) =>
+      i < reused.length ? { ...line, _key: reused[i]._key } : { ...line, _key: keyCounterRef.current++ }
+    );
+    prevLinesRef.current = result;
+    return result;
+  }, [events]);
 
   useEffect(() => {
     if (bottomRef.current) {
@@ -42,8 +63,8 @@ export function LiveTerminal({ events, streaming }: LiveTerminalProps) {
           </div>
         )}
 
-        {lines.map((line, i) => (
-          <TermLineView key={i} line={line} />
+        {lines.map((line) => (
+          <TermLineView key={line._key} line={line} />
         ))}
 
         {streaming && (

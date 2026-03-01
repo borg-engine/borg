@@ -264,11 +264,15 @@ fn project_chat_key(project_id: i64) -> String {
 }
 
 fn rand_suffix() -> u64 {
-    let nanos = std::time::SystemTime::now()
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    let s = RandomState::new();
+    let mut h = s.build_hasher();
+    h.write_u64(std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .subsec_nanos();
-    (nanos as u64) & 0xFFFFF
+        .as_nanos() as u64);
+    h.finish()
 }
 
 fn get_custom_modes(db: &Db) -> Vec<PipelineMode> {
@@ -1063,7 +1067,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                     lint_cmd: String::new(),
                     backend: String::new(),
                 },
-                session_dir: format!("store/sessions/triage-{}", proposal.id),
+                session_dir: format!("{}/sessions/triage-{}", state.config.data_dir, proposal.id),
                 worktree_path: proposal.repo_path.clone(),
                 oauth_token: oauth.clone(),
                 model: model.clone(),

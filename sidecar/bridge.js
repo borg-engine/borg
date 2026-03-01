@@ -91,7 +91,11 @@ async function handleDiscordCommand(cmd) {
       if (i === 0 && cmd.reply_to) {
         opts.reply = { messageReference: cmd.reply_to, failIfNotExists: false };
       }
-      await channel.send({ content: chunks[i], ...opts });
+      try {
+        await channel.send({ content: chunks[i], ...opts });
+      } catch (e) {
+        emit('discord', { event: 'error', channel_id: cmd.channel_id, message: e.message });
+      }
     }
   } else if (cmd.cmd === 'typing') {
     const channel = await discordClient.channels.fetch(cmd.channel_id).catch(() => null);
@@ -116,7 +120,6 @@ async function startWhatsApp() {
   let waRetries = 0;
 
   async function connect() {
-    waRetries = 0;
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
     waSock = makeWASocket({
@@ -151,6 +154,7 @@ async function startWhatsApp() {
       }
 
       if (connection === 'open') {
+        waRetries = 0;
         emit('whatsapp', { event: 'connected', jid: waSock.user?.id || '' });
       }
     });
@@ -194,12 +198,16 @@ async function startWhatsApp() {
 
 async function handleWhatsAppCommand(cmd) {
   if (!waSock) return;
-  if (cmd.cmd === 'send') {
-    const opts = {};
-    if (cmd.quote_id) opts.quoted = { key: { remoteJid: cmd.jid, id: cmd.quote_id } };
-    await waSock.sendMessage(cmd.jid, { text: cmd.text }, opts);
-  } else if (cmd.cmd === 'typing') {
-    await waSock.sendPresenceUpdate('composing', cmd.jid);
+  try {
+    if (cmd.cmd === 'send') {
+      const opts = {};
+      if (cmd.quote_id) opts.quoted = { key: { remoteJid: cmd.jid, id: cmd.quote_id } };
+      await waSock.sendMessage(cmd.jid, { text: cmd.text }, opts);
+    } else if (cmd.cmd === 'typing') {
+      await waSock.sendPresenceUpdate('composing', cmd.jid);
+    }
+  } catch (e) {
+    emit('whatsapp', { event: 'error', jid: cmd.jid, message: e.message });
   }
 }
 
@@ -317,13 +325,14 @@ function startAgentSession(session_id, cmd) {
 
 const rl = createInterface({ input: process.stdin });
 rl.on('line', async (line) => {
+  let cmd;
   try {
-    const cmd = JSON.parse(line);
+    cmd = JSON.parse(line);
     if (cmd.target === 'discord') await handleDiscordCommand(cmd);
     else if (cmd.target === 'whatsapp') await handleWhatsAppCommand(cmd);
     else if (cmd.target === 'agent') handleAgentCommand(cmd);
   } catch (e) {
-    emit('system', { event: 'error', message: e.message });
+    emit('system', { event: 'error', target: cmd?.target, message: e.message, stack: e.stack });
   }
 });
 

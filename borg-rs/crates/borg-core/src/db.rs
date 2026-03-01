@@ -707,7 +707,7 @@ impl Db {
             [],
             |r| r.get(0),
         )
-        .unwrap_or(0)
+        .unwrap_or_else(|e| { tracing::warn!("count_unscored_proposals: {e}"); 0 })
     }
 
     pub fn list_untriaged_proposals(&self) -> Result<Vec<Proposal>> {
@@ -937,11 +937,11 @@ impl Db {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
              ON CONFLICT(path) DO UPDATE SET \
                name = excluded.name, \
-               mode = excluded.mode, \
-               test_cmd = excluded.test_cmd, \
-               prompt_file = excluded.prompt_file, \
+               mode = COALESCE(NULLIF(excluded.mode, ''), repos.mode), \
+               test_cmd = COALESCE(NULLIF(excluded.test_cmd, ''), repos.test_cmd), \
+               prompt_file = COALESCE(NULLIF(excluded.prompt_file, ''), repos.prompt_file), \
                auto_merge = excluded.auto_merge, \
-               backend = excluded.backend",
+               backend = COALESCE(NULLIF(excluded.backend, ''), repos.backend)",
             params![
                 path,
                 name,
@@ -1157,7 +1157,7 @@ impl Db {
             [],
             |r| r.get(0),
         )
-        .unwrap_or(0)
+        .unwrap_or_else(|e| { tracing::warn!("active_task_count: {e}"); 0 })
     }
 
     pub fn get_recent_merged_tasks(&self, limit: i64) -> Result<Vec<Task>> {
@@ -1567,13 +1567,9 @@ impl Db {
         key_value: &str,
     ) -> Result<i64> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        // Upsert: if same owner+provider exists, update
         conn.execute(
-            "DELETE FROM api_keys WHERE owner = ?1 AND provider = ?2",
-            params![owner, provider],
-        )?;
-        conn.execute(
-            "INSERT INTO api_keys (owner, provider, key_name, key_value) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO api_keys (owner, provider, key_name, key_value) VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(owner, provider) DO UPDATE SET key_name=excluded.key_name, key_value=excluded.key_value",
             params![owner, provider, key_name, key_value],
         )?;
         Ok(conn.last_insert_rowid())

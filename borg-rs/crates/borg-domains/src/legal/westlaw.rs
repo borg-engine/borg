@@ -58,7 +58,7 @@ impl WestlawClient {
 
     pub async fn litigation_analytics(&self, query_type: &str, query: &str) -> Result<serde_json::Value> {
         let body = serde_json::json!({ "query": query });
-        Ok(self.http.post(format!("{}/analytics/{query_type}", self.base_url))
+        Ok(self.http.post(format!("{}/analytics/{}", self.base_url, urlencoding::encode(query_type)))
             .bearer_auth(&self.api_key).json(&body).send().await?
             .error_for_status()?.json().await?)
     }
