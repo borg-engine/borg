@@ -36,10 +36,10 @@ These can be read/written via the dashboard or API without restarting the proces
 | `agent_timeout_s` | `1000` | |
 | `max_chat_agents` | `4` | |
 | `chat_rate_limit` | `5` | Messages per window |
-| `pipeline_max_agents` | `4` | |
+| `pipeline_max_agents` | `2` | |
 | `pipeline_max_backlog` | `5` | Max concurrent tasks |
 | `pipeline_seed_cooldown_s` | `3600` | Min seconds between seed scans |
-| `pipeline_tick_s` | `30` | Main loop interval |
+| `pipeline_tick_s` | `10` | Main loop interval |
 | `pipeline_proposal_threshold` | `8` | Min triage score to auto-promote |
 | `remote_check_interval_s` | `300` | Git fetch interval for self-update |
 | `container_image` | `borg-agent:latest` | |
