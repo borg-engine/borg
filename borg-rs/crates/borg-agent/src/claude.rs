@@ -97,20 +97,13 @@ impl AgentBackend for ClaudeBackend {
         let instruction =
             crate::instruction::build_instruction(task, phase, &ctx, file_listing.as_deref());
 
-        let allowed_tools = if phase.allowed_tools.is_empty() {
-            "Read,Glob,Grep,Write,Edit,Bash".to_string()
-        } else {
-            phase.allowed_tools.clone()
-        };
-
         let mut claude_args = vec![
             "--model".to_string(),
             ctx.model.clone(),
             "--output-format".to_string(),
             "stream-json".to_string(),
             "--verbose".to_string(),
-            "--allowedTools".to_string(),
-            allowed_tools,
+            "--dangerously-skip-permissions".to_string(),
             "--max-turns".to_string(),
             "200".to_string(),
         ];

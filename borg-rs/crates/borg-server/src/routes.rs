@@ -466,19 +466,72 @@ pub(crate) async fn run_chat_agent(
 
     let system_prompt = config.chat_system_prompt();
 
+    // Detect project mode for MCP wiring
+    let project_mode = parse_project_chat_key(chat_key)
+        .and_then(|pid| db.get_project(pid).ok().flatten())
+        .map(|p| p.mode);
+    let is_legal = matches!(project_mode.as_deref(), Some("lawborg" | "legal"));
+
     let mut args = vec![
         "--model".to_string(),
         config.model.clone(),
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
-        "--allowedTools".to_string(),
-        "Read".to_string(),
+        "--dangerously-skip-permissions".to_string(),
         "--max-turns".to_string(),
         "10".to_string(),
         "--append-system-prompt".to_string(),
         system_prompt,
     ];
+
+    // Wire up lawborg MCP server for legal project chats
+    if is_legal {
+        let legal_mcp_path = if let Ok(p) = std::env::var("LAWBORG_MCP_SERVER") {
+            std::path::PathBuf::from(p)
+        } else {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../sidecar/lawborg-mcp/server.js")
+        };
+        if let Ok(mcp_server) = legal_mcp_path.canonicalize() {
+            let mcp_dir = format!("{session_dir}/mcp");
+            std::fs::create_dir_all(&mcp_dir).ok();
+            let mut env_vars = serde_json::Map::new();
+            let providers = ["lexisnexis", "westlaw", "clio", "imanage",
+                "netdocuments", "congress", "openstates", "canlii", "regulations_gov"];
+            for provider in providers {
+                if let Ok(Some(key)) = db.get_api_key("global", provider) {
+                    let env_name = match provider {
+                        "lexisnexis" => "LEXISNEXIS_API_KEY",
+                        "westlaw" => "WESTLAW_API_KEY",
+                        "clio" => "CLIO_API_KEY",
+                        "imanage" => "IMANAGE_API_KEY",
+                        "netdocuments" => "NETDOCUMENTS_API_KEY",
+                        "congress" => "CONGRESS_API_KEY",
+                        "openstates" => "OPENSTATES_API_KEY",
+                        "canlii" => "CANLII_API_KEY",
+                        "regulations_gov" => "REGULATIONS_GOV_API_KEY",
+                        _ => continue,
+                    };
+                    env_vars.insert(env_name.into(), serde_json::Value::String(key));
+                }
+            }
+            let config_json = serde_json::json!({
+                "mcpServers": {
+                    "legal": {
+                        "command": "bun",
+                        "args": ["run", mcp_server],
+                        "env": env_vars,
+                    }
+                }
+            });
+            let config_path = format!("{mcp_dir}/mcp-config.json");
+            if std::fs::write(&config_path, config_json.to_string()).is_ok() {
+                args.push("--mcp-config".to_string());
+                args.push(config_path);
+            }
+        }
+    }
 
     let session_id = sessions.lock().await.get(chat_key).cloned()
         .or_else(|| db.get_session(&format!("chat-{}", sanitize_chat_key(chat_key))).ok().flatten());
