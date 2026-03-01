@@ -152,8 +152,9 @@ function buildParams(args, fields) {
 }
 
 function validateId(id) {
-  if (!/^[a-zA-Z0-9._-]+$/.test(String(id))) throw new Error(`Invalid ID: ${id}`);
-  return id;
+  const s = String(id);
+  if (!/^[a-zA-Z0-9._-]+$/.test(s)) throw new Error(`Invalid ID: ${id}`);
+  return s;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1468,6 +1469,8 @@ async function handleTool(name, args) {
       const apiKey = CONGRESS_KEY;
       if (!apiKey) throw new Error("Congress.gov API key not configured. Get a free key at https://api.congress.gov/sign-up/");
       const params = { query: args.query, format: "json" };
+      if (args.congress) params.congress = args.congress;
+      if (args.type) params.type = args.type;
       if (args.offset) params.offset = args.offset;
       if (args.limit) params.limit = args.limit;
       result = await fetchJSON(`${CONGRESS}/bill?${qs(params)}`, {
@@ -1542,7 +1545,7 @@ async function handleTool(name, args) {
       if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
       const html = await resp.text();
       // Extract CELEX numbers from results
-      const celexMatches = [...html.matchAll(/CELEX[^"]*?(\d{5}[A-Z]\d{4})/g)].map(m => m[1]);
+      const celexMatches = [...html.matchAll(/CELEX[^"]*?(\d{1,2}\d{4}[A-Z]{1,5}\d{4})/g)].map(m => m[1]);
       result = { query: args.text, celex_numbers: [...new Set(celexMatches)].slice(0, 20), note: "Use eurlex_get_document with a CELEX number to get full text" };
       break;
     }

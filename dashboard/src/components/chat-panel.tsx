@@ -37,6 +37,7 @@ export function ChatPanel() {
   const abortRef = useRef<AbortController | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectRef = useRef<() => void>(() => {});
 
   const fetchMessages = useCallback(() => {
     abortRef.current?.abort();
@@ -104,10 +105,14 @@ export function ChatPanel() {
       if (sseRetriesRef.current < 5) {
         const delay = Math.min(1000 * Math.pow(2, sseRetriesRef.current), 30000);
         sseRetriesRef.current++;
-        retryTimerRef.current = setTimeout(() => connect(), delay);
+        retryTimerRef.current = setTimeout(() => connectRef.current(), delay);
       }
     };
   }, [thread]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     connect();

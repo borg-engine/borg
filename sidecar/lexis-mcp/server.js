@@ -322,9 +322,10 @@ async function handleTool(name, args) {
     case "intelligize_search_filings":
       return apiCall(INTELLIGIZE_BASE, "/filings/search", "POST", args);
     case "intelligize_get_filing": {
+      const fid = validateId(args.filing_id);
       const path = args.section
-        ? `/filings/${args.filing_id}?section=${encodeURIComponent(args.section)}`
-        : `/filings/${args.filing_id}`;
+        ? `/filings/${fid}?section=${encodeURIComponent(args.section)}`
+        : `/filings/${fid}`;
       return apiCall(INTELLIGIZE_BASE, path);
     }
     case "intelligize_search_clauses":

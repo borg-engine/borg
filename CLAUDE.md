@@ -10,6 +10,7 @@ borg-rs/                # Rust implementation (active codebase)
     borg-core/          # Pipeline, DB, config, agent traits, modes
     borg-agent/         # Claude + Ollama agent backends
     borg-server/        # Axum HTTP server, routes, logging
+    borg-domains/       # Domain-specific pipeline modes (swe, legal, web, crew, sales, data)
 container/
   Dockerfile            # Pipeline agent image (bun + claude CLI)
   entrypoint.sh         # Agent entrypoint: parses JSON input, runs claude
@@ -35,7 +36,7 @@ All config is in `.env` (or process environment). Key variables:
 
 - `PIPELINE_REPO`, `PIPELINE_TEST_CMD` — primary repo path and test command
 - `PIPELINE_AUTO_MERGE=true|false` — auto-merge PRs for primary repo (default: true)
-- `WATCHED_REPOS=path:cmd|path:cmd` — additional repos, append `!manual` to disable auto-merge. Optional third field for prompt file: `path:cmd:prompt_file`
+- `WATCHED_REPOS=path:test_cmd:prompt_file:mode:lint_cmd|...` — additional repos (pipe-separated). Append `!manual` to `test_cmd` to disable auto-merge. Fields after `test_cmd` are optional.
 - `WEB_BIND=0.0.0.0` — bind address for dashboard (default: 127.0.0.1)
 - `CONTINUOUS_MODE=true` — auto-seed tasks when pipeline is idle
 - `CONTAINER_SETUP=path/to/setup.sh` — script sourced at container start

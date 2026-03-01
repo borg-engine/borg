@@ -74,7 +74,7 @@ pub struct Task {
     pub repo_path: String,
     /// Git branch name for this task's worktree.
     pub branch: String,
-    /// Current pipeline phase / status (e.g. "backlog", "spec", "impl", "done").
+    /// Current pipeline phase / status (e.g. "backlog", "implement", "validate", "done", "failed", "blocked").
     pub status: String,
     pub attempt: i64,
     pub max_attempts: i64,
@@ -119,7 +119,7 @@ pub struct QueueEntry {
     pub task_id: i64,
     pub branch: String,
     pub repo_path: String,
-    /// "pending" | "merging" | "merged" | "failed"
+    /// "queued" | "merging" | "merged" | "excluded" | "pending_review"
     pub status: String,
     pub queued_at: DateTime<Utc>,
     pub pr_number: i64,

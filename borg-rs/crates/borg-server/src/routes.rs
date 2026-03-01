@@ -491,15 +491,21 @@ pub(crate) async fn run_chat_agent(
 
     let token = refresh_oauth_token(&config.credentials_path, &config.oauth_token);
 
-    let out = tokio::process::Command::new("claude")
-        .args(&args)
-        .current_dir(&session_dir)
-        .env("HOME", &session_dir)
-        .env("CLAUDE_CODE_OAUTH_TOKEN", &token)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await?;
+    let timeout = std::time::Duration::from_secs(config.agent_timeout_s.max(300) as u64);
+    let out = tokio::time::timeout(
+        timeout,
+        tokio::process::Command::new("claude")
+            .args(&args)
+            .current_dir(&session_dir)
+            .env("HOME", &session_dir)
+            .env("CLAUDE_CODE_OAUTH_TOKEN", &token)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("chat agent timed out after {}s", timeout.as_secs()))?
+    ?;
 
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);

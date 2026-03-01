@@ -205,9 +205,9 @@ function formatDate(ts: unknown): string {
 }
 
 function LogLine({ log }: { log: LogEvent }) {
-  const ts = formatTime((log as unknown as { ts?: unknown }).ts);
-  const level = safeText((log as unknown as { level?: unknown }).level, "info");
-  const message = safeText((log as unknown as { message?: unknown }).message, "");
+  const ts = formatTime(log.ts);
+  const level = safeText(log.level, "info");
+  const message = safeText(log.message, "");
   return (
     <div className="whitespace-pre-wrap break-all py-px font-mono text-[12px] md:text-[11px] leading-relaxed">
       <span className="text-zinc-600">{ts}</span>{" "}
@@ -218,11 +218,11 @@ function LogLine({ log }: { log: LogEvent }) {
 }
 
 function EventLine({ event }: { event: DbEvent }) {
-  const ts = formatTime((event as unknown as { ts?: unknown }).ts);
-  const date = formatDate((event as unknown as { ts?: unknown }).ts);
-  const level = safeText((event as unknown as { level?: unknown }).level, "info");
-  const category = safeText((event as unknown as { category?: unknown }).category, "system");
-  const message = safeText((event as unknown as { message?: unknown }).message, "");
+  const ts = formatTime(event.ts);
+  const date = formatDate(event.ts);
+  const level = safeText(event.level, "info");
+  const category = safeText(event.category, "system");
+  const message = safeText(event.message, "");
   return (
     <div className="whitespace-pre-wrap break-all py-px font-mono text-[12px] md:text-[11px] leading-relaxed">
       <span className="text-zinc-600">

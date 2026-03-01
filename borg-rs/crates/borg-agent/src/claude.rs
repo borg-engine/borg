@@ -134,8 +134,12 @@ impl AgentBackend for ClaudeBackend {
         let mcp_config_path = if ctx.task.mode == "lawborg" {
             let mcp_dir = format!("{}/mcp", ctx.session_dir);
             std::fs::create_dir_all(&mcp_dir).ok();
-            let legal_mcp_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../sidecar/lawborg-mcp/server.js");
+            let legal_mcp_path = if let Ok(p) = std::env::var("LAWBORG_MCP_SERVER") {
+                std::path::PathBuf::from(p)
+            } else {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../sidecar/lawborg-mcp/server.js")
+            };
             let legal_mcp_server = match legal_mcp_path.canonicalize() {
                 Ok(p) => p,
                 Err(e) => {
@@ -170,7 +174,8 @@ impl AgentBackend for ClaudeBackend {
                 }
             });
             let config_path = format!("{}/mcp-config.json", mcp_dir);
-            std::fs::write(&config_path, config_json.to_string()).ok();
+            std::fs::write(&config_path, config_json.to_string())
+                .with_context(|| format!("failed to write MCP config to {config_path}"))?;
             Some(config_path)
         } else {
             None

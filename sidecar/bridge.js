@@ -279,13 +279,19 @@ function startAgentSession(session_id, cmd) {
 
   agentSessions.set(session_id, { process: proc });
 
-  let outputLines = [];
+  let lastResult = '';
+  let lastSessionId = null;
 
   proc.stdout.on('data', (data) => {
     const lines = data.toString().split('\n').filter(l => l.trim());
     for (const line of lines) {
-      outputLines.push(line);
       emit('agent', { event: 'stream_line', session_id, line });
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === 'result' && obj.result) lastResult = obj.result;
+        if ((obj.type === 'system' || obj.type === 'result') && obj.session_id)
+          lastSessionId = obj.session_id;
+      } catch {}
     }
   });
 
@@ -298,21 +304,7 @@ function startAgentSession(session_id, cmd) {
 
   proc.on('close', (code) => {
     agentSessions.delete(session_id);
-
-    let output = '';
-    let new_session_id = null;
-    for (const line of outputLines) {
-      try {
-        const obj = JSON.parse(line);
-        if (obj.type === 'result' && obj.result) output = obj.result;
-        if (obj.type === 'system' && obj.session_id) new_session_id = obj.session_id;
-        if (obj.type === 'result' && obj.session_id) new_session_id = obj.session_id;
-      } catch (e) {
-        emit('agent', { event: 'parse_warning', session_id, error: e.message });
-      }
-    }
-
-    emit('agent', { event: 'complete', session_id, output, new_session_id, exit_code: code ?? 0 });
+    emit('agent', { event: 'complete', session_id, output: lastResult, new_session_id: lastSessionId, exit_code: code ?? 0 });
   });
 
   proc.on('error', (err) => {

@@ -103,10 +103,10 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_repo ON pipeline_tasks(repo_path);
 
 CREATE TABLE IF NOT EXISTS integration_queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id INTEGER NOT NULL,
+  task_id INTEGER NOT NULL REFERENCES pipeline_tasks(id),
   branch TEXT NOT NULL,
   repo_path TEXT DEFAULT '',
-  status TEXT DEFAULT 'queued',  -- queued | merging | merged | excluded
+  status TEXT DEFAULT 'queued',  -- queued | merging | merged | excluded | pending_review
   error_msg TEXT DEFAULT '',
   unknown_retries INTEGER DEFAULT 0,
   pr_number INTEGER DEFAULT 0,
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS integration_queue (
 
 CREATE TABLE IF NOT EXISTS task_outputs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id INTEGER NOT NULL,
+  task_id INTEGER NOT NULL REFERENCES pipeline_tasks(id),
   phase TEXT NOT NULL,
   output TEXT NOT NULL,
   raw_stream TEXT DEFAULT '',    -- full NDJSON agent stream

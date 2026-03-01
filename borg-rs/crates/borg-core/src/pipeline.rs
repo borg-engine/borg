@@ -376,21 +376,24 @@ impl Pipeline {
 
         if dispatched == 0
             && self.in_flight.lock().await.is_empty()
-            && !self
+            && self
                 .seeding_active
-                .load(std::sync::atomic::Ordering::Relaxed)
+                .compare_exchange(
+                    false,
+                    true,
+                    std::sync::atomic::Ordering::AcqRel,
+                    std::sync::atomic::Ordering::Relaxed,
+                )
+                .is_ok()
         {
             let pipeline = Arc::clone(&self);
             tokio::spawn(async move {
-                pipeline
-                    .seeding_active
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 if let Err(e) = pipeline.seed_if_idle().await {
                     warn!("seed_if_idle error: {e}");
                 }
                 pipeline
                     .seeding_active
-                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                    .store(false, std::sync::atomic::Ordering::Release);
             });
         }
 
@@ -758,7 +761,7 @@ impl Pipeline {
         }
 
         if let Some(ref artifact) = phase.check_artifact {
-            if !crate::ipc::check_artifact(&wt_path, artifact) && result.output.is_empty() {
+            if !crate::ipc::check_artifact(&wt_path, artifact) {
                 self.fail_or_retry(
                     task,
                     &phase.name,
