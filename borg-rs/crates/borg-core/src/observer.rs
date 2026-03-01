@@ -3,7 +3,7 @@ use reqwest::Client;
 use serde_json::Value;
 use tracing::{info, warn};
 
-const HAIKU: &str = "claude-haiku-4-5-20251001";
+const HAIKU: &str = "claude-haiku-4-5-20251001"; // TODO: make configurable via OBSERVER_MODEL env
 const MAX_LOG_BYTES: usize = 50_000;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]

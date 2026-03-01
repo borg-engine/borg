@@ -24,7 +24,7 @@ const FED_REGISTER = "https://www.federalregister.gov/api/v1";
 const REGULATIONS = "https://api.regulations.gov/v4";
 const CONGRESS = "https://api.congress.gov/v3";
 const UK_LEG = "https://www.legislation.gov.uk";
-const EURLEX = "https://eur-lex.europa.eu/eurlex-ws/rest";
+// EUR-Lex is accessed via public search HTML + legal-content URLs (no REST API key needed)
 const OPENSTATES = "https://v3.openstates.org";
 const CANLII_BASE = "https://api.canlii.org/v1";
 const USPTO = "https://developer.uspto.gov/ibd-api/v1";
@@ -1552,6 +1552,7 @@ async function handleTool(name, args) {
     case "eurlex_get_document": {
       const lang = validateId(args.language || "EN");
       const url = `https://eur-lex.europa.eu/legal-content/${lang}/TXT/HTML/?uri=CELEX:${validateId(args.celex)}`;
+      checkRateLimit(url);
       const resp = await fetch(url, { headers: { "User-Agent": UA } });
       if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
       const html = await resp.text();

@@ -178,3 +178,16 @@ fn test_markers_not_present_in_plain_ndjson_escape() {
     // Raw NDJSON with escaped newlines must not falsely trigger on its own.
     let _ = raw; // used above as documentation only
 }
+
+// =============================================================================
+// Content-then-empty pair → None (last empty pair nullifies prior content)
+// =============================================================================
+
+#[test]
+fn test_empty_last_pair_nullifies_prior_content() {
+    let text = format!("{START}\nActual content.\n{END}\n{START}\n   \n{END}");
+    assert!(
+        extract_phase_result(&text).is_none(),
+        "whitespace-only last pair should nullify prior content"
+    );
+}

@@ -124,7 +124,10 @@ pub struct ProjectFileRow {
 fn parse_ts(s: &str) -> DateTime<Utc> {
     NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
         .map(|ndt| ndt.and_utc())
-        .unwrap_or_else(|_| Utc::now())
+        .unwrap_or_else(|e| {
+            tracing::warn!("failed to parse timestamp '{s}': {e}");
+            Utc::now()
+        })
 }
 
 fn now_str() -> String {

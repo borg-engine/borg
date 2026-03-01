@@ -15,6 +15,7 @@ function emit(source, obj) {
 }
 
 function splitText(text, limit) {
+  if (limit <= 0) return [text];
   if (text.length <= limit) return [text];
   const chunks = [];
   let remaining = text;
@@ -330,7 +331,7 @@ rl.on('line', async (line) => {
 
 rl.on('close', () => {
   if (discordClient) discordClient.destroy();
-  if (waSock) waSock.end();
+  if (waSock?.ws) waSock.ws.close();
   process.exit(0);
 });
 

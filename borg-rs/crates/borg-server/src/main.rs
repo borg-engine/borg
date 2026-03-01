@@ -426,9 +426,9 @@ async fn main() -> anyhow::Result<()> {
                 let sc_sessions: Arc<TokioMutex<HashMap<String, String>>> =
                     Arc::new(TokioMutex::new(HashMap::new()));
                 let collector = Arc::new(ChatCollector::new(
-                    config.chat_collection_window_ms as u64,
+                    config.chat_collection_window_ms.max(0) as u64,
                     config.max_chat_agents,
-                    config.chat_cooldown_ms as u64,
+                    config.chat_cooldown_ms.max(0) as u64,
                 ));
 
                 // Flush expired collection windows periodically

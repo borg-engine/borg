@@ -228,6 +228,7 @@ pub(crate) const SETTINGS_DEFAULTS: &[(&str, &str)] = &[
 
 fn sanitize_chat_key(key: &str) -> String {
     key.chars()
+        .take(128)
         .map(|c| {
             if c.is_alphanumeric() || c == '-' {
                 c
@@ -1547,8 +1548,9 @@ pub(crate) async fn post_chat(
         .sender
         .clone()
         .unwrap_or_else(|| "web-user".to_string());
-    let ts = Utc::now().timestamp();
+    let ts = Utc::now().timestamp_millis();
     let msg_id = format!("{}-{}", thread, ts);
+    let ts = ts / 1000;
 
     state
         .db

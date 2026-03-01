@@ -82,14 +82,13 @@ CREATE TABLE IF NOT EXISTS pipeline_tasks (
   repo_id INTEGER REFERENCES repos(id),
   branch TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'backlog',
-  attempt INTEGER DEFAULT 0,
-  max_attempts INTEGER DEFAULT 5,
-  last_error TEXT DEFAULT '',
-  created_by TEXT DEFAULT '',
-  notify_chat TEXT DEFAULT '',
-  session_id TEXT DEFAULT '',
-  dispatched_at TEXT DEFAULT '',
-  mode TEXT DEFAULT 'sweborg',
+  attempt INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  last_error TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  notify_chat TEXT NOT NULL DEFAULT '',
+  session_id TEXT NOT NULL DEFAULT '',
+  mode TEXT NOT NULL DEFAULT 'sweborg',
   backend TEXT,                  -- backend that actually ran this task
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
@@ -112,6 +111,7 @@ CREATE TABLE IF NOT EXISTS integration_queue (
   pr_number INTEGER DEFAULT 0,
   queued_at TEXT DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_integration_queue_status ON integration_queue(status);
 
 CREATE TABLE IF NOT EXISTS task_outputs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

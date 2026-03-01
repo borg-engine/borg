@@ -30,7 +30,7 @@ async function apiCall(base, path, method = "GET", body = null) {
   const resp = await fetch(url, opts);
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`${resp.status} ${resp.statusText}: ${text}`);
+    throw new Error(`${resp.status} ${resp.statusText}: ${text.slice(0, 500)}`);
   }
   return resp.json();
 }

@@ -129,7 +129,9 @@ impl Git {
     }
 
     fn auto_unstash(&self) {
-        let _ = self.exec(&self.repo_path, &["stash", "pop"]);
+        if let Err(e) = self.exec(&self.repo_path, &["stash", "pop"]) {
+            tracing::warn!("git stash pop failed in {}: {e}", self.repo_path);
+        }
     }
 
     pub fn checkout(&self, branch: &str) -> Result<()> {
