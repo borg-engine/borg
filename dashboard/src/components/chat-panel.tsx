@@ -32,6 +32,7 @@ export function ChatPanel() {
   const [thread, setThread] = useState("web:dashboard");
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [showThreads, setShowThreads] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const esRef = useRef<EventSource | null>(null);
@@ -52,11 +53,16 @@ export function ChatPanel() {
         .then((msgs: ChatMessage[]) => {
           if (controller.signal.aborted) return;
           setMessages(msgs);
+          setFetchError(null);
           if (msgs.length > 0) {
             lastTsRef.current = Math.max(...msgs.map((m) => Number(m.ts) || 0));
           }
         })
-        .catch(() => {});
+        .catch((err: unknown) => {
+          if (controller.signal.aborted) return;
+          console.error("Failed to fetch messages:", err);
+          setFetchError("Failed to load messages — sync paused");
+        });
     });
   }, [thread]);
 
@@ -65,7 +71,7 @@ export function ChatPanel() {
       fetch("/api/chat/threads", { headers: authHeaders() })
         .then((r) => r.json())
         .then((t: ChatThread[]) => setThreads(t))
-        .catch(() => {});
+        .catch((err: unknown) => { console.error("Failed to fetch threads:", err); });
     });
   }, []);
 
@@ -160,7 +166,7 @@ export function ChatPanel() {
             }
           }
         })
-        .catch(() => {});
+        .catch((err: unknown) => { console.error("Poll fetch failed:", err); });
     }, 3000);
     return () => {
       clearInterval(interval);
@@ -269,6 +275,11 @@ export function ChatPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-2">
+        {fetchError && (
+          <div className="rounded-md bg-red-500/[0.08] px-3 py-2 text-[11px] text-red-400/80">
+            {fetchError}
+          </div>
+        )}
         {messages.map((msg, i) => (
           <MessageBubble key={`${msg.ts}-${msg.role}-${i}`} msg={msg} />
         ))}
