@@ -81,40 +81,42 @@ export function ChatPanel() {
   const sseRetriesRef = useRef(0);
   const connect = useCallback(() => {
     if (esRef.current) esRef.current.close();
-    const es = new EventSource(sseUrl("/api/chat/events"));
-    esRef.current = es;
+    tokenReady.then(() => {
+      const es = new EventSource(sseUrl("/api/chat/events"));
+      esRef.current = es;
 
-    es.onopen = () => { sseRetriesRef.current = 0; };
+      es.onopen = () => { sseRetriesRef.current = 0; };
 
-    es.onmessage = (e) => {
-      try {
-        const msg: ChatMessage = JSON.parse(e.data);
-        const msgThread = msg.thread || "web:dashboard";
-        if (msgThread !== thread) return;
-        if (msg.role === "user") return;
-        setMessages((prev) => [...prev, msg]);
-        lastTsRef.current = Math.max(lastTsRef.current, Number(msg.ts) || 0);
-        if (msg.role === "assistant") {
-          setSending(false);
-          if (sendingTimeoutRef.current) {
-            clearTimeout(sendingTimeoutRef.current);
-            sendingTimeoutRef.current = null;
+      es.onmessage = (e) => {
+        try {
+          const msg: ChatMessage = JSON.parse(e.data);
+          const msgThread = msg.thread || "web:dashboard";
+          if (msgThread !== thread) return;
+          if (msg.role === "user") return;
+          setMessages((prev) => [...prev, msg]);
+          lastTsRef.current = Math.max(lastTsRef.current, Number(msg.ts) || 0);
+          if (msg.role === "assistant") {
+            setSending(false);
+            if (sendingTimeoutRef.current) {
+              clearTimeout(sendingTimeoutRef.current);
+              sendingTimeoutRef.current = null;
+            }
           }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
-      }
-    };
+      };
 
-    es.onerror = () => {
-      es.close();
-      esRef.current = null;
-      if (sseRetriesRef.current < 5) {
-        const delay = Math.min(1000 * Math.pow(2, sseRetriesRef.current), 30000);
-        sseRetriesRef.current++;
-        retryTimerRef.current = setTimeout(() => connectRef.current(), delay);
-      }
-    };
+      es.onerror = () => {
+        es.close();
+        esRef.current = null;
+        if (sseRetriesRef.current < 5) {
+          const delay = Math.min(1000 * Math.pow(2, sseRetriesRef.current), 30000);
+          sseRetriesRef.current++;
+          retryTimerRef.current = setTimeout(() => connectRef.current(), delay);
+        }
+      };
+    });
   }, [thread]);
 
   useEffect(() => {

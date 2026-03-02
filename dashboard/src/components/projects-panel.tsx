@@ -8,6 +8,7 @@ import {
   useProjectFiles,
   useProjects,
   sseUrl,
+  tokenReady,
 } from "@/lib/api";
 import { Eye, Mic, MicOff } from "lucide-react";
 import { FilePreviewModal, isPreviewable } from "./file-preview-modal";
@@ -91,32 +92,34 @@ export function ProjectsPanel() {
 
     function connectSSE() {
       if (esRef.current) esRef.current.close();
-      const es = new EventSource(sseUrl("/api/chat/events"));
-      esRef.current = es;
+      tokenReady.then(() => {
+        const es = new EventSource(sseUrl("/api/chat/events"));
+        esRef.current = es;
 
-      es.onopen = () => { sseRetriesRef.current = 0; };
+        es.onopen = () => { sseRetriesRef.current = 0; };
 
-      es.onmessage = (e) => {
-        try {
-          const msg: ChatMessage = JSON.parse(e.data);
-          if ((msg.thread ?? "") !== threadKey) return;
-          setMessages((prev) => [...prev, msg]);
-          if (msg.role === "assistant") setSending(false);
-        } catch {
-          // ignore malformed event
-        }
-      };
+        es.onmessage = (e) => {
+          try {
+            const msg: ChatMessage = JSON.parse(e.data);
+            if ((msg.thread ?? "") !== threadKey) return;
+            setMessages((prev) => [...prev, msg]);
+            if (msg.role === "assistant") setSending(false);
+          } catch {
+            // ignore malformed event
+          }
+        };
 
-      es.onerror = () => {
-        es.close();
-        esRef.current = null;
-        setSending(false);
-        if (sseRetriesRef.current < 5) {
-          const delay = Math.min(1000 * Math.pow(2, sseRetriesRef.current), 30000);
-          sseRetriesRef.current++;
-          sseRetryTimerRef.current = setTimeout(connectSSE, delay);
-        }
-      };
+        es.onerror = () => {
+          es.close();
+          esRef.current = null;
+          setSending(false);
+          if (sseRetriesRef.current < 5) {
+            const delay = Math.min(1000 * Math.pow(2, sseRetriesRef.current), 30000);
+            sseRetriesRef.current++;
+            sseRetryTimerRef.current = setTimeout(connectSSE, delay);
+          }
+        };
+      });
     }
 
     connectSSE();

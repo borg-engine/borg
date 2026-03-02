@@ -312,35 +312,51 @@ export function useLogs() {
   const [connected, setConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
   const invalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retriesRef = useRef(0);
   const queryClient = useQueryClient();
 
   const connect = useCallback(() => {
     if (esRef.current) esRef.current.close();
-    const es = new EventSource(sseUrl("/api/logs"));
-    esRef.current = es;
+    // Wait for auth token before opening SSE (EventSource can't set headers)
+    tokenReady.then(() => {
+      const es = new EventSource(sseUrl("/api/logs"));
+      esRef.current = es;
 
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
-    es.onmessage = (e) => {
-      try {
-        const d = normalizeLogEvent(JSON.parse(e.data));
-        if (!d) return;
-        setLogs((prev) => {
-          const next = [...prev, d];
-          return next.length > MAX_LOG_BUFFER ? next.slice(-MAX_LOG_BUFFER) : next;
-        });
-        // Debounced cache invalidation — at most once per second
-        if (!invalidateTimer.current) {
-          invalidateTimer.current = setTimeout(() => {
-            queryClient.invalidateQueries({ queryKey: ["tasks"] });
-            queryClient.invalidateQueries({ queryKey: ["status"] });
-            invalidateTimer.current = null;
-          }, 1000);
+      es.onopen = () => {
+        setConnected(true);
+        retriesRef.current = 0;
+      };
+      es.onerror = () => {
+        setConnected(false);
+        es.close();
+        esRef.current = null;
+        if (retriesRef.current < 10) {
+          const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30000);
+          retriesRef.current++;
+          retryTimer.current = setTimeout(connect, delay);
         }
-      } catch {
-        // ignore parse errors
-      }
-    };
+      };
+      es.onmessage = (e) => {
+        try {
+          const d = normalizeLogEvent(JSON.parse(e.data));
+          if (!d) return;
+          setLogs((prev) => {
+            const next = [...prev, d];
+            return next.length > MAX_LOG_BUFFER ? next.slice(-MAX_LOG_BUFFER) : next;
+          });
+          if (!invalidateTimer.current) {
+            invalidateTimer.current = setTimeout(() => {
+              queryClient.invalidateQueries({ queryKey: ["tasks"] });
+              queryClient.invalidateQueries({ queryKey: ["status"] });
+              invalidateTimer.current = null;
+            }, 1000);
+          }
+        } catch {
+          // ignore parse errors
+        }
+      };
+    });
   }, [queryClient]);
 
   useEffect(() => {
@@ -348,6 +364,7 @@ export function useLogs() {
     return () => {
       esRef.current?.close();
       if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
     };
   }, [connect]);
 
@@ -508,43 +525,45 @@ export function useTaskStream(taskId: number | null, active: boolean) {
       return;
     }
 
-    // Clear stale events on every reconnect (taskId change or retry)
     setEvents([]);
+    let cancelled = false;
 
-    const es = new EventSource(sseUrl(`/api/tasks/${taskId}/stream`));
-    esRef.current = es;
-    setStreaming(true);
+    tokenReady.then(() => {
+      if (cancelled) return;
+      const es = new EventSource(sseUrl(`/api/tasks/${taskId}/stream`));
+      esRef.current = es;
+      setStreaming(true);
 
-    es.onmessage = (e) => {
-      try {
-        const obj: StreamEvent = JSON.parse(e.data);
-        if (obj.type === "stream_end") {
-          setStreaming(false);
-          es.close();
-          esRef.current = null;
-          // Agent finished — retry in case it restarts
-          retryTimer.current = setTimeout(() => setRetryKey((k) => k + 1), 5000);
-          return;
+      es.onmessage = (e) => {
+        try {
+          const obj: StreamEvent = JSON.parse(e.data);
+          if (obj.type === "stream_end") {
+            setStreaming(false);
+            es.close();
+            esRef.current = null;
+            retryTimer.current = setTimeout(() => setRetryKey((k) => k + 1), 5000);
+            return;
+          }
+          setEvents((prev) => {
+            const next = [...prev, obj];
+            return next.length > MAX_STREAM_EVENTS ? next.slice(-MAX_STREAM_EVENTS) : next;
+          });
+        } catch {
+          // ignore
         }
-        setEvents((prev) => {
-          const next = [...prev, obj];
-          return next.length > MAX_STREAM_EVENTS ? next.slice(-MAX_STREAM_EVENTS) : next;
-        });
-      } catch {
-        // ignore
-      }
-    };
+      };
 
-    es.onerror = () => {
-      setStreaming(false);
-      es.close();
-      esRef.current = null;
-      // Reconnect after 3s
-      retryTimer.current = setTimeout(() => setRetryKey((k) => k + 1), 3000);
-    };
+      es.onerror = () => {
+        setStreaming(false);
+        es.close();
+        esRef.current = null;
+        retryTimer.current = setTimeout(() => setRetryKey((k) => k + 1), 3000);
+      };
+    });
 
     return () => {
-      es.close();
+      cancelled = true;
+      esRef.current?.close();
       esRef.current = null;
       if (retryTimer.current) clearTimeout(retryTimer.current);
     };
