@@ -17,11 +17,12 @@ use crate::{
     db::Db,
     git::Git,
     modes::get_mode,
-    sandbox::Sandbox,
+    sandbox::{Sandbox, SandboxMode},
     stream::TaskStreamManager,
     types::{
-        IntegrationType, PhaseConfig, PhaseContext, PhaseHistoryEntry, PhaseOutput, PhaseType,
-        PipelineMode, PipelineStateSnapshot, Proposal, RepoConfig, SeedOutputType, Task,
+        ContainerTestResult, IntegrationType, PhaseConfig, PhaseContext, PhaseHistoryEntry,
+        PhaseOutput, PhaseType, PipelineMode, PipelineStateSnapshot, Proposal, RepoConfig,
+        SeedOutputType, Task,
     },
 };
 
@@ -30,6 +31,7 @@ pub struct Pipeline {
     pub backends: HashMap<String, Arc<dyn AgentBackend>>,
     pub config: Arc<Config>,
     pub sandbox: Sandbox,
+    pub sandbox_mode: SandboxMode,
     pub event_tx: broadcast::Sender<PipelineEvent>,
     pub stream_manager: Arc<TaskStreamManager>,
     pub force_restart: Arc<std::sync::atomic::AtomicBool>,
@@ -85,6 +87,7 @@ impl Pipeline {
         db: Arc<Db>,
         backends: HashMap<String, Arc<dyn AgentBackend>>,
         config: Arc<Config>,
+        sandbox_mode: SandboxMode,
         force_restart: Arc<std::sync::atomic::AtomicBool>,
     ) -> (Self, broadcast::Receiver<PipelineEvent>) {
         let (tx, rx) = broadcast::channel(256);
@@ -103,6 +106,7 @@ impl Pipeline {
             backends,
             config,
             sandbox: Sandbox,
+            sandbox_mode,
             event_tx: tx,
             stream_manager: TaskStreamManager::new(),
             force_restart,
@@ -796,9 +800,23 @@ impl Pipeline {
 
         if phase.compile_check && !test_cmd.is_empty() {
             if let Some(check_cmd) = Self::derive_compile_check(&test_cmd) {
-                match self.run_test_command(&wt_path, &check_cmd).await {
-                    Ok(ref out) if out.exit_code != 0 => {
-                        let compile_err = format!("{}\n{}", out.stdout, out.stderr);
+                let out = if result.ran_in_docker {
+                    container_result_as_test_output(
+                        &result.container_test_results,
+                        "compileCheck",
+                    )
+                } else {
+                    match self.run_test_command(&wt_path, &check_cmd).await {
+                        Ok(o) => Some(o),
+                        Err(e) => {
+                            warn!("compile check error for task #{}: {e}", task.id);
+                            None
+                        },
+                    }
+                };
+                if let Some(ref o) = out {
+                    if o.exit_code != 0 {
+                        let compile_err = format!("{}\n{}", o.stdout, o.stderr);
                         info!("task #{} compile check failed, running fix agent", task.id);
                         if !self
                             .run_compile_fix(task, &wt_path, &check_cmd, &compile_err)
@@ -811,26 +829,29 @@ impl Pipeline {
                             self.fail_or_retry(task, &phase.name, &msg)?;
                             return Ok(());
                         }
-                    },
-                    Err(e) => warn!("compile check error for task #{}: {e}", task.id),
-                    _ => {},
+                    }
                 }
             }
         }
 
         if phase.runs_tests && mode.uses_test_cmd && !test_cmd.is_empty() {
-            let test_result = self.run_test_command(&wt_path, &test_cmd).await;
-            match test_result {
-                Ok(ref out) if out.exit_code == 0 => {},
-                Ok(out) => {
-                    let error_msg = format!("{}\n{}", out.stdout, out.stderr);
+            let out = if result.ran_in_docker {
+                container_result_as_test_output(&result.container_test_results, "test")
+            } else {
+                match self.run_test_command(&wt_path, &test_cmd).await {
+                    Ok(o) => Some(o),
+                    Err(e) => {
+                        warn!("test command error for task #{}: {}", task.id, e);
+                        return Ok(());
+                    },
+                }
+            };
+            if let Some(o) = out {
+                if o.exit_code != 0 {
+                    let error_msg = format!("{}\n{}", o.stdout, o.stderr);
                     self.fail_or_retry(task, "retry", &error_msg)?;
                     return Ok(());
-                },
-                Err(e) => {
-                    warn!("test command error for task #{}: {}", task.id, e);
-                    return Ok(());
-                },
+                }
             }
         }
 
@@ -871,45 +892,52 @@ impl Pipeline {
             return Ok(());
         }
 
+        let use_docker = self.sandbox_mode == SandboxMode::Docker;
+
         // Compile check first (if derivable from test command)
         if let Some(check_cmd) = Self::derive_compile_check(&test_cmd) {
-            match self.run_test_command(&wt_path, &check_cmd).await {
-                Ok(ref out) if out.exit_code != 0 => {
-                    let error_msg = format!("{}\n{}", out.stdout, out.stderr);
-                    info!("task #{} validate: compile check failed", task.id);
-                    let retry_status = if phase.retry_phase.is_empty() {
-                        &phase.name
-                    } else {
-                        &phase.retry_phase
-                    };
-                    self.fail_or_retry(task, retry_status, error_msg.trim())?;
-                    return Ok(());
-                },
-                Err(e) => warn!("task #{} validate: compile check error: {e}", task.id),
-                _ => {},
-            }
-        }
-
-        // Run the full test suite
-        match self.run_test_command(&wt_path, &test_cmd).await {
-            Ok(ref out) if out.exit_code == 0 => {
-                info!("task #{} validate: all tests pass", task.id);
-                self.advance_phase(task, phase, mode)?;
-            },
-            Ok(out) => {
+            let out = if use_docker {
+                self.run_test_in_container(task, &check_cmd).await?
+            } else {
+                self.run_test_command(&wt_path, &check_cmd).await?
+            };
+            if out.exit_code != 0 {
                 let error_msg = format!("{}\n{}", out.stdout, out.stderr);
-                info!("task #{} validate: tests failed", task.id);
+                info!("task #{} validate: compile check failed", task.id);
                 let retry_status = if phase.retry_phase.is_empty() {
                     &phase.name
                 } else {
                     &phase.retry_phase
                 };
                 self.fail_or_retry(task, retry_status, error_msg.trim())?;
-            },
-            Err(e) => {
-                warn!("task #{} validate: test command error: {e}", task.id);
                 return Ok(());
-            },
+            }
+        }
+
+        // Run the full test suite
+        let out = if use_docker {
+            self.run_test_in_container(task, &test_cmd).await?
+        } else {
+            match self.run_test_command(&wt_path, &test_cmd).await {
+                Ok(o) => o,
+                Err(e) => {
+                    warn!("task #{} validate: test command error: {e}", task.id);
+                    return Ok(());
+                },
+            }
+        };
+        if out.exit_code == 0 {
+            info!("task #{} validate: all tests pass", task.id);
+            self.advance_phase(task, phase, mode)?;
+        } else {
+            let error_msg = format!("{}\n{}", out.stdout, out.stderr);
+            info!("task #{} validate: tests failed", task.id);
+            let retry_status = if phase.retry_phase.is_empty() {
+                &phase.name
+            } else {
+                &phase.retry_phase
+            };
+            self.fail_or_retry(task, retry_status, error_msg.trim())?;
         }
 
         Ok(())

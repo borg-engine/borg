@@ -117,18 +117,28 @@ impl Git {
             .unwrap_or(false)
     }
 
-    fn require_clean(&self) -> Result<()> {
-        if self.is_dirty() {
+    fn require_clean(&self, caller: &str) -> Result<()> {
+        let result = self.exec(&self.repo_path, &["status", "--porcelain"])?;
+        let status = result.stdout.trim();
+        if !status.is_empty() {
+            let preview = if status.len() > 200 { &status[..200] } else { status };
+            tracing::warn!(
+                "{caller}: blocked on dirty tree in {}: {preview}",
+                self.repo_path
+            );
             return Err(anyhow!(
                 "refusing to proceed: working tree in {} has uncommitted changes",
                 self.repo_path
             ));
         }
+        tracing::debug!("{caller}: tree clean in {}", self.repo_path);
         Ok(())
     }
 
+    /// Checkout a branch. Only use on worktrees, never on the primary repo.
     pub fn checkout(&self, branch: &str) -> Result<()> {
-        self.require_clean()?;
+        self.require_clean("checkout")?;
+        tracing::info!("git checkout {branch} in {}", self.repo_path);
         let result = self.exec(&self.repo_path, &["checkout", branch])?;
         if !result.success() {
             return Err(anyhow!(
@@ -139,8 +149,10 @@ impl Git {
         Ok(())
     }
 
+    /// Pull from origin/main. Only use on worktrees, never on the primary repo.
     pub fn pull(&self) -> Result<()> {
-        self.require_clean()?;
+        self.require_clean("pull")?;
+        tracing::info!("git pull --ff-only in {}", self.repo_path);
         let result = self.exec(&self.repo_path, &["pull", "--ff-only", "origin", "main"])?;
         if !result.success() {
             return Err(anyhow!(
@@ -153,10 +165,12 @@ impl Git {
     }
 
     pub fn push_force(&self, branch: &str) -> Result<ExecResult> {
+        tracing::info!("git push --force origin {branch} in {}", self.repo_path);
         self.exec(&self.repo_path, &["push", "--force", "origin", branch])
     }
 
     pub fn delete_remote_branch(&self, branch: &str) -> Result<()> {
+        tracing::info!("git push --delete origin {branch} in {}", self.repo_path);
         let result = self.exec(&self.repo_path, &["push", "origin", "--delete", branch])?;
         if !result.success() {
             return Err(anyhow!(
@@ -168,6 +182,7 @@ impl Git {
     }
 
     pub fn delete_branch(&self, branch: &str) -> Result<()> {
+        tracing::info!("git branch -D {branch} in {}", self.repo_path);
         let result = self.exec(&self.repo_path, &["branch", "-D", branch])?;
         if !result.success() {
             return Err(anyhow!(
