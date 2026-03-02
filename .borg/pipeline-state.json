@@ -1,0 +1,10 @@
+{
+  "task_id": 82,
+  "task_title": "Replace `chat_rate.lock().unwrap()` with poison-safe lock in routes.rs",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-82",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-02T23:09:54.452216020Z"
+}
