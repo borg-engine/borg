@@ -1426,7 +1426,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
     }
 
     /// Run a test command inside a fresh Docker container (for validate phase in Docker mode).
-    /// Clones the task branch, runs `cmd`, and returns output.
+    /// Clones the task branch and runs `cmd` directly via bash — no claude agent involved.
     async fn run_test_in_container(&self, task: &Task, cmd: &str) -> Result<TestOutput> {
         let timeout = std::time::Duration::from_secs(self.config.agent_timeout_s.max(300) as u64);
         let repo_name = std::path::Path::new(&task.repo_path)
@@ -1437,15 +1437,22 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         let host_mirror = format!("/home/shulgin/borg-data/mirrors/{repo_name}.git");
         let container_mirror = format!("/mirrors/{repo_name}.git");
 
-        let payload = serde_json::json!({
-            "prompt": "",
-            "repoUrl": task.repo_path,
-            "mirrorPath": container_mirror,
-            "branch": branch,
-            "base": format!("origin/{branch}"),
-            "testCmd": cmd,
-        });
-        let payload_bytes = serde_json::to_vec(&payload).unwrap_or_default();
+        // Build clone command (use mirror reference if available)
+        let clone_cmd = if std::path::Path::new(&host_mirror).exists() {
+            format!(
+                "git clone --depth 50 --reference {container_mirror} {repo_url} /workspace/repo",
+                repo_url = task.repo_path
+            )
+        } else {
+            format!(
+                "git clone --depth 50 {repo_url} /workspace/repo",
+                repo_url = task.repo_path
+            )
+        };
+        let bash_script = format!(
+            "set -e; {clone_cmd} && cd /workspace/repo && git checkout {branch} && {cmd}"
+        );
+        let bash_cmd = vec!["bash".to_string(), "-c".to_string(), bash_script];
 
         let mut binds: Vec<(String, String, bool)> = Vec::new();
         if std::path::Path::new(&host_mirror).exists() {
@@ -1464,57 +1471,27 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             .map(|(n, c)| (n.as_str(), c.as_str()))
             .collect();
 
-        let mut child = Sandbox::docker_command(
-            &self.config.container_image,
-            &binds_ref,
-            &volumes_ref,
-            "",
-            &[],
-            &[],
+        let output = tokio::time::timeout(
+            timeout,
+            Sandbox::docker_command(
+                &self.config.container_image,
+                &binds_ref,
+                &volumes_ref,
+                "",
+                &bash_cmd,
+                &[],
+            )
+            .kill_on_drop(true)
+            .output(),
         )
-        .kill_on_drop(true)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .context("run_test_in_container: failed to spawn docker")?;
-
-        if let Some(mut stdin) = child.stdin.take() {
-            use tokio::io::AsyncWriteExt;
-            let _ = stdin.write_all(&payload_bytes).await;
-        }
-
-        let output = tokio::time::timeout(timeout, child.wait_with_output())
-            .await
-            .map_err(|_| anyhow::anyhow!("run_test_in_container timed out after {}s", timeout.as_secs()))?
-            .context("run_test_in_container wait")?;
-
-        let all_out = String::from_utf8_lossy(&output.stdout).to_string();
-        let test_result_marker = "---BORG_TEST_RESULT---";
-        let (test_stdout, test_exit_code) = all_out
-            .lines()
-            .find_map(|line| {
-                let json_str = line.strip_prefix(test_result_marker)?;
-                let v: serde_json::Value = serde_json::from_str(json_str).ok()?;
-                if v["phase"].as_str() == Some("test") {
-                    Some((
-                        v["output"].as_str().unwrap_or("").to_string(),
-                        v["exitCode"].as_i64().unwrap_or(1) as i32,
-                    ))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| {
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                let exit_code = output.status.code().unwrap_or(1);
-                (format!("{all_out}\n{stderr}"), exit_code)
-            });
+        .await
+        .map_err(|_| anyhow::anyhow!("run_test_in_container timed out after {}s", timeout.as_secs()))?
+        .context("run_test_in_container")?;
 
         Ok(TestOutput {
-            stdout: test_stdout,
-            stderr: String::new(),
-            exit_code: test_exit_code,
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            exit_code: output.status.code().unwrap_or(1),
         })
     }
 

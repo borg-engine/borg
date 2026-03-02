@@ -185,6 +185,15 @@ export interface ProjectFile {
   created_at: string;
 }
 
+export interface KnowledgeFile {
+  id: number;
+  file_name: string;
+  description: string;
+  size_bytes: number;
+  inline: boolean;
+  created_at: string;
+}
+
 // sweborg phases (default fallback)
 const SWE_DISPLAY_PHASES = ["backlog", "implement", "validate", "lint_fix", "rebase", "done", "merged"] as const;
 const SWE_PHASE_LABELS: Record<string, string> = {

@@ -13,8 +13,9 @@ import { ChatPanel } from "@/components/chat-panel";
 import { ProjectsPanel } from "@/components/projects-panel";
 import { ModeCreatorPanel } from "@/components/mode-creator-panel";
 import { SettingsPanel } from "@/components/settings-panel";
+import { KnowledgePanel } from "@/components/knowledge-panel";
 import { BorgLogo } from "@/components/borg-logo";
-import { ListTodo, Terminal, GitMerge, MessageSquare, Lightbulb, Settings, FolderOpen, Wrench } from "lucide-react";
+import { ListTodo, Terminal, GitMerge, MessageSquare, Lightbulb, Settings, FolderOpen, Wrench, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -41,7 +42,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-type View = "tasks" | "projects" | "creator" | "proposals" | "logs" | "queue" | "chat" | "settings";
+type View = "tasks" | "projects" | "creator" | "proposals" | "logs" | "queue" | "chat" | "knowledge" | "settings";
 type MobileTab = "tasks" | "logs" | "queue" | "chat";
 
 function useIsMobile() {
@@ -65,6 +66,7 @@ const ALL_NAV_ITEMS = [
   { key: "logs" as const, label: "Logs", Icon: Terminal, minimalVisible: false },
   { key: "queue" as const, label: "Queue", Icon: GitMerge, minimalVisible: false },
   { key: "chat" as const, label: "Chat", Icon: MessageSquare, minimalVisible: true },
+  { key: "knowledge" as const, label: "Knowledge", Icon: BookOpen, minimalVisible: false },
   { key: "settings" as const, label: "Settings", Icon: Settings, minimalVisible: true },
 ] as const;
 
@@ -290,6 +292,7 @@ function AppInner() {
           {view === "logs" && <LogViewer logs={logs} />}
           {view === "queue" && <QueuePanel repoFilter={repoFilter} />}
           {view === "chat" && <ChatPanel />}
+          {view === "knowledge" && <KnowledgePanel />}
           {view === "settings" && <SettingsPanel />}
         </div>
       </div>

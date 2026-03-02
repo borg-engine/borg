@@ -12,6 +12,7 @@ import type {
   Project,
   ProjectFile,
   PipelineModeFull,
+  KnowledgeFile,
 } from "./types";
 import {
   MAX_LOG_BUFFER,
@@ -507,4 +508,47 @@ export function useTaskStream(taskId: number | null, active: boolean) {
   }, [taskId, active, retryKey]);
 
   return { events, streaming };
+}
+
+// ── Knowledge base ─────────────────────────────────────────────────────────
+
+export function useKnowledgeFiles() {
+  return useQuery<KnowledgeFile[]>({
+    queryKey: ["knowledge"],
+    queryFn: () => fetchJson<{ files: KnowledgeFile[] }>("/api/knowledge").then((r) => r.files),
+    staleTime: 30_000,
+  });
+}
+
+export async function uploadKnowledgeFile(
+  file: File,
+  description: string,
+  inline: boolean,
+): Promise<{ id: number; file_name: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("description", description);
+  form.append("inline", inline ? "true" : "false");
+  const res = await fetch("/api/knowledge/upload", { method: "POST", body: form });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function updateKnowledgeFile(
+  id: number,
+  patch: { description?: string; inline?: boolean },
+): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/knowledge/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function deleteKnowledgeFile(id: number): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/knowledge/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
 }

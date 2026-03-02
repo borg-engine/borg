@@ -15,6 +15,22 @@ log_event() {
     echo "---BORG_EVENT---${1}" >&2
 }
 
+run_check() {
+    local phase="$1"
+    local cmd="$2"
+    if [ -z "$cmd" ]; then return; fi
+    local out rc=0
+    out=$(bash -c "$cmd" 2>&1) || rc=$?
+    local passed="false"
+    [ "$rc" -eq 0 ] && passed="true"
+    local truncated escaped
+    truncated=$(printf '%s' "$out" | head -c 8192)
+    escaped=$(printf '%s' "$truncated" | bun -e "
+let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.stringify(s)));
+")
+    echo "---BORG_TEST_RESULT---{\"phase\":\"$phase\",\"passed\":$passed,\"exitCode\":$rc,\"output\":$escaped}"
+}
+
 cat > "$INPUT_FILE"
 
 INPUT_FILE="$INPUT_FILE" bun -e "
@@ -34,6 +50,9 @@ process.stdout.write('COMMIT_MSG=\'' + esc(d.commitMessage||'feat: borg agent ch
 process.stdout.write('GIT_AUTHOR_NAME=\'' + esc(d.gitAuthorName||'Borg') + \"'\\n\");
 process.stdout.write('GIT_AUTHOR_EMAIL=\'' + esc(d.gitAuthorEmail||'borg@localhost') + \"'\\n\");
 process.stdout.write('PUSH_AFTER_COMMIT=\'' + esc(d.pushAfterCommit ? '1' : '') + \"'\\n\");
+process.stdout.write('COMPILE_CHECK_CMD=\'' + esc(d.compileCheckCmd||'') + \"'\\n\");
+process.stdout.write('LINT_CMD=\'' + esc(d.lintCmd||'') + \"'\\n\");
+process.stdout.write('TEST_CMD=\'' + esc(d.testCmd||'') + \"'\\n\");
 " > "$VARS_FILE" || { echo "Failed to parse input JSON" >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$VARS_FILE"
@@ -104,6 +123,14 @@ if [ "$exitcode" -eq 0 ]; then
 else
     STDERR_TAIL=$(tail -c 2000 "$STDERR_FILE" | tr '\n' ' ' | sed 's/"/\\"/g')
     log_event "{\"type\":\"container_event\",\"event\":\"agent_error\",\"exit_code\":${exitcode},\"stderr_tail\":\"${STDERR_TAIL}\"}"
+fi
+
+# Run test/lint/compile checks before committing (only when a repo was cloned)
+if [ -n "$REPO_URL" ] && [ -d "$REPO_DIR" ]; then
+    cd "$REPO_DIR"
+    run_check "compileCheck" "$COMPILE_CHECK_CMD"
+    run_check "lint" "$LINT_CMD"
+    run_check "test" "$TEST_CMD"
 fi
 
 if [ -n "$REPO_URL" ] && [ -d "$REPO_DIR/.git" ]; then
