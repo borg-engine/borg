@@ -1928,6 +1928,16 @@ pub(crate) async fn delete_cache_volume(
 
 // ── Knowledge base ────────────────────────────────────────────────────
 
+const KNOWLEDGE_UPLOAD_LIMIT: usize = 100 * 1024 * 1024; // 100 MiB
+
+fn content_length_exceeds(headers: &axum::http::HeaderMap, limit: usize) -> bool {
+    headers
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<usize>().ok())
+        .map_or(false, |len| len > limit)
+}
+
 pub(crate) async fn list_knowledge(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
@@ -1937,8 +1947,13 @@ pub(crate) async fn list_knowledge(
 
 pub(crate) async fn upload_knowledge(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Json<Value>, StatusCode> {
+    if content_length_exceeds(&headers, KNOWLEDGE_UPLOAD_LIMIT) {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
     let knowledge_dir = format!("{}/knowledge", state.config.data_dir);
     std::fs::create_dir_all(&knowledge_dir).map_err(internal)?;
 
@@ -2073,6 +2088,94 @@ pub(crate) async fn get_task_container(
             Ok(Json(json!({ "task_id": task_id, "container_id": id, "status": status })))
         },
         None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{content_length_exceeds, KNOWLEDGE_UPLOAD_LIMIT};
+    use axum::{
+        body::Body,
+        extract::DefaultBodyLimit,
+        http::{header, HeaderMap, HeaderValue, Method, Request, StatusCode},
+        routing::post,
+        Router,
+    };
+    use tower::util::ServiceExt;
+
+    fn hdr(val: &'static str) -> HeaderMap {
+        let mut m = HeaderMap::new();
+        m.insert(header::CONTENT_LENGTH, HeaderValue::from_static(val));
+        m
+    }
+
+    #[test]
+    fn over_limit_detected() {
+        assert!(content_length_exceeds(&hdr("104857601"), KNOWLEDGE_UPLOAD_LIMIT));
+    }
+
+    #[test]
+    fn at_limit_allowed() {
+        assert!(!content_length_exceeds(&hdr("104857600"), KNOWLEDGE_UPLOAD_LIMIT));
+    }
+
+    #[test]
+    fn under_limit_allowed() {
+        assert!(!content_length_exceeds(&hdr("1048576"), KNOWLEDGE_UPLOAD_LIMIT));
+    }
+
+    #[test]
+    fn absent_header_allowed() {
+        assert!(!content_length_exceeds(&HeaderMap::new(), KNOWLEDGE_UPLOAD_LIMIT));
+    }
+
+    #[test]
+    fn invalid_header_value_allowed() {
+        assert!(!content_length_exceeds(&hdr("not-a-number"), KNOWLEDGE_UPLOAD_LIMIT));
+    }
+
+    #[tokio::test]
+    async fn body_over_default_body_limit_returns_413() {
+        use axum::body::Bytes;
+        let limit = 1024usize;
+        let app = Router::new()
+            .route("/upload", post(|_: Bytes| async { StatusCode::OK }))
+            .layer(DefaultBodyLimit::max(limit));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/upload")
+                    .body(Body::from(vec![0u8; limit + 1]))
+                    .unwrap(),
+            )
+            .await
+            .expect("request failed");
+
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn body_at_default_body_limit_is_allowed() {
+        use axum::body::Bytes;
+        let limit = 1024usize;
+        let app = Router::new()
+            .route("/upload", post(|_: Bytes| async { StatusCode::OK }))
+            .layer(DefaultBodyLimit::max(limit));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/upload")
+                    .body(Body::from(vec![0u8; limit]))
+                    .unwrap(),
+            )
+            .await
+            .expect("request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }
 

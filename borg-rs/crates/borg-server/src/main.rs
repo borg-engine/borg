@@ -765,7 +765,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/knowledge", get(routes::list_knowledge))
         .route(
             "/api/knowledge/upload",
-            post(routes::upload_knowledge).layer(DefaultBodyLimit::max(55 * 1024 * 1024)),
+            post(routes::upload_knowledge).layer(DefaultBodyLimit::max(100 * 1024 * 1024)),
         )
         .route("/api/knowledge/:id", put(routes::update_knowledge))
         .route("/api/knowledge/:id", delete(routes::delete_knowledge))
