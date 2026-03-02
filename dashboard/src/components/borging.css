@@ -13,19 +13,19 @@
 
 .borging-letter {
   display: inline-block;
-  animation: borging-wave 1.2s ease-in-out infinite;
+  animation: borging-wave 3s ease-in-out infinite;
 }
 
 @keyframes borging-wave {
-  0%, 100% {
+  0%, 33%, 100% {
     transform: translateY(0);
     opacity: 0.6;
   }
-  30% {
-    transform: translateY(-4px);
+  10% {
+    transform: translateY(-2px);
     opacity: 1;
   }
-  60% {
+  20% {
     transform: translateY(0);
     opacity: 0.6;
   }
