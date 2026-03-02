@@ -295,6 +295,15 @@ impl Default for PhaseConfig {
     }
 }
 
+pub fn derive_compile_check(test_cmd: &str) -> Option<String> {
+    let trimmed = test_cmd.trim();
+    if trimmed.contains("cargo test") {
+        Some(format!("{trimmed} --no-run"))
+    } else {
+        None
+    }
+}
+
 // ── Pipeline Events ──────────────────────────────────────────────────────
 
 /// Broadcast event emitted after each significant pipeline state change.
