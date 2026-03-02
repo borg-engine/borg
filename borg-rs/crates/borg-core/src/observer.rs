@@ -336,7 +336,11 @@ fn strip_fences(text: &str) -> &str {
         None => return t,
     };
     let inner = &t[nl + 1..];
-    if inner.ends_with("```") {
+    // Use find("\n```") so we stop at the first closing fence line, correctly
+    // handling multiple consecutive blocks and closing fences with trailing whitespace.
+    if let Some(close) = inner.find("\n```") {
+        inner[..close].trim()
+    } else if inner.ends_with("```") {
         inner[..inner.len() - 3].trim_end()
     } else {
         inner
@@ -483,6 +487,42 @@ mod tests {
     fn strip_fences_with_backticks() {
         let text = "```json\n{\"triggered\":false}\n```";
         assert_eq!(strip_fences(text), r#"{"triggered":false}"#);
+    }
+
+    #[test]
+    fn strip_fences_language_tag() {
+        // opening line carries the language identifier — it must be stripped entirely
+        let text = "```json\n{\"ok\":true}\n```";
+        assert_eq!(strip_fences(text), r#"{"ok":true}"#);
+    }
+
+    #[test]
+    fn strip_fences_unclosed() {
+        // fence opened but never closed — return the content as best effort
+        let text = "```json\n{\"triggered\":false}";
+        assert_eq!(strip_fences(text), r#"{"triggered":false}"#);
+    }
+
+    #[test]
+    fn strip_fences_multiple_blocks() {
+        // only the first fence block should be extracted; the second must not bleed in
+        let text = "```json\n{\"a\":1}\n```\n```json\n{\"b\":2}\n```";
+        assert_eq!(strip_fences(text), r#"{"a":1}"#);
+    }
+
+    #[test]
+    fn strip_fences_trailing_whitespace_opening() {
+        // trailing spaces after the language tag on the opening line
+        let text = "```json  \n{\"triggered\":false}\n```";
+        assert_eq!(strip_fences(text), r#"{"triggered":false}"#);
+    }
+
+    #[test]
+    fn strip_fences_trailing_whitespace_closing() {
+        // closing fence with trailing whitespace followed by more content —
+        // garbage after the fence must not bleed into the parsed value
+        let text = "```json\n{\"a\":1}\n```  \n{\"garbage\":true}";
+        assert_eq!(strip_fences(text), r#"{"a":1}"#);
     }
 
     #[test]
