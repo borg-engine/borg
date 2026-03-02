@@ -306,7 +306,7 @@ function OutputSelector({ outputs }: { outputs: TaskOutput[] }) {
       const idx = phaseIndices[o.phase];
       const total = phaseCounts[o.phase];
       const label = total > 1
-        ? `${o.phase} attempt #${idx}`
+        ? `${o.phase} attempt #${o.attempt}`
         : o.phase;
       return { ...o, label, isLatest: idx === total };
     });

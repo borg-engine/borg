@@ -276,20 +276,53 @@ impl Pipeline {
     fn build_retry_summary(&self, task_id: i64, current_error: &str) -> String {
         let outputs = self.db.get_task_outputs(task_id).unwrap_or_default();
         let mut summary = String::from("FRESH RETRY — previous approaches failed. Summary of attempts:\n");
-        for (i, output) in outputs.iter().rev().take(3).enumerate() {
-            let truncated: String = output.output.chars().take(500).collect();
+
+        let phase_outputs: Vec<_> = outputs.iter().filter(|o| !o.phase.ends_with("_diff")).collect();
+        let diff_outputs: Vec<_> = outputs.iter().filter(|o| o.phase.ends_with("_diff")).collect();
+
+        for (i, output) in phase_outputs.iter().rev().take(3).enumerate() {
+            let first_error = Self::extract_first_error_line(&output.output);
+            let header = match &first_error {
+                Some(err) => format!("first error: {err}"),
+                None => "(no error line found)".to_string(),
+            };
+            let body: String = output.output.chars().take(3000).collect();
             summary.push_str(&format!(
-                "\nAttempt {} ({}): {}\n",
+                "\nAttempt {} ({}, attempt #{}):\n{}\nFull output:\n{}\n",
                 i + 1,
                 output.phase,
-                truncated
+                output.attempt,
+                header,
+                body,
             ));
         }
+
+        if let Some(diff_out) = diff_outputs.last() {
+            let diff_preview: String = diff_out.output.chars().take(4000).collect();
+            summary.push_str(&format!(
+                "\nWorktree diff at last failure:\n```diff\n{}\n```\n",
+                diff_preview
+            ));
+        }
+
         summary.push_str(&format!(
             "\nLatest error:\n{}\n\nTry a fundamentally different approach.",
             current_error.chars().take(2000).collect::<String>()
         ));
         summary
+    }
+
+    /// Find the first line in `output` that looks like a compile or test error.
+    fn extract_first_error_line(output: &str) -> Option<String> {
+        output
+            .lines()
+            .find(|line| {
+                let l = line.trim();
+                l.contains("error[") || l.starts_with("error:") || l.starts_with("Error:")
+                    || l.contains("FAILED") || l.contains("panicked at")
+                    || l.starts_with("FAIL ") || l.starts_with("fail ")
+            })
+            .map(|s| s.trim().to_string())
     }
 
     /// Remove the git worktree for a task (best-effort, silent on error).
@@ -734,12 +767,28 @@ impl Pipeline {
         let exit_code: i64 = if result.success { 0 } else { 1 };
         if let Err(e) = self.db.insert_task_output(
             task.id,
+            task.attempt,
             &phase.name,
             &result.output,
             &result.raw_stream,
             exit_code,
         ) {
             warn!("task #{}: insert_task_output: {e}", task.id);
+        }
+
+        // On failure, capture a git diff of the worktree state so the retry summary
+        // and dashboard have precise context about what changed before the failure.
+        if !result.success && self.sandbox_mode != SandboxMode::Docker {
+            let git = Git::new(&task.repo_path);
+            let diff = git.diff(&wt_path);
+            if !diff.is_empty() {
+                let diff_phase = format!("{}_diff", phase.name);
+                if let Err(e) = self.db.insert_task_output(
+                    task.id, task.attempt, &diff_phase, &diff, "", 1,
+                ) {
+                    warn!("task #{}: insert diff output: {e}", task.id);
+                }
+            }
         }
 
         self.emit(PipelineEvent::Output {
@@ -1253,6 +1302,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             self.db
                 .insert_task_output(
                     task.id,
+                    task.attempt,
                     &fix_phase.name,
                     &agent_result.output,
                     &agent_result.raw_stream,
@@ -1338,7 +1388,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 self.db.update_task_session(task.id, sid).ok();
             }
             self.db
-                .insert_task_output(task.id, &fix_phase.name, &result.output, &result.raw_stream, if result.success { 0 } else { 1 })
+                .insert_task_output(task.id, task.attempt, &fix_phase.name, &result.output, &result.raw_stream, if result.success { 0 } else { 1 })
                 .ok();
 
             let git = Git::new(&task.repo_path);

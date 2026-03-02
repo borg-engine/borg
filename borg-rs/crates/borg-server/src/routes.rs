@@ -108,6 +108,7 @@ pub(crate) struct UpdateKnowledgeBody {
 pub(crate) struct TaskOutputJson {
     pub id: i64,
     pub task_id: i64,
+    pub attempt: i64,
     pub phase: String,
     pub output: String,
     pub exit_code: i64,
@@ -119,6 +120,7 @@ impl From<TaskOutput> for TaskOutputJson {
         Self {
             id: o.id,
             task_id: o.task_id,
+            attempt: o.attempt,
             phase: o.phase,
             output: o.output,
             exit_code: o.exit_code,

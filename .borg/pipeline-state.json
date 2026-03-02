@@ -1,0 +1,10 @@
+{
+  "task_id": 24,
+  "task_title": "Store full agent error logs and surface last-failure diff in task detail",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-24",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-02T19:46:11.361352026Z"
+}

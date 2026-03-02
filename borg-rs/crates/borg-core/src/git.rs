@@ -176,4 +176,12 @@ impl Git {
         }
         Ok(result.stdout)
     }
+
+    /// Return `git diff HEAD` for the worktree at `worktree_path`.
+    /// Returns an empty string if the directory is not a git repo or has no changes.
+    pub fn diff(&self, worktree_path: &str) -> String {
+        self.exec(worktree_path, &["diff", "HEAD"])
+            .map(|r| r.stdout)
+            .unwrap_or_default()
+    }
 }

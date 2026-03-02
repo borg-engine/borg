@@ -21,6 +21,7 @@ export interface TaskDetail extends Task {
 
 export interface TaskOutput {
   id: number;
+  attempt: number;
   phase: string;
   output: string;
   raw_stream: string;

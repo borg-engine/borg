@@ -117,6 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_integration_queue_status ON integration_queue(sta
 CREATE TABLE IF NOT EXISTS task_outputs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL REFERENCES pipeline_tasks(id),
+  attempt INTEGER NOT NULL DEFAULT 0,
   phase TEXT NOT NULL,
   output TEXT NOT NULL,
   raw_stream TEXT DEFAULT '',    -- full NDJSON agent stream

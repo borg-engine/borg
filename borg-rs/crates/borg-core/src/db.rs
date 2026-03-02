@@ -19,6 +19,7 @@ pub struct Db {
 pub struct TaskOutput {
     pub id: i64,
     pub task_id: i64,
+    pub attempt: i64,
     pub phase: String,
     pub output: String,
     pub raw_stream: String,
@@ -201,14 +202,15 @@ fn row_to_queue_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<QueueEntry> {
 }
 
 fn row_to_task_output(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskOutput> {
-    let created_at_str: String = row.get(6)?;
+    let created_at_str: String = row.get(7)?;
     Ok(TaskOutput {
         id: row.get(0)?,
         task_id: row.get(1)?,
-        phase: row.get(2)?,
-        output: row.get(3)?,
-        raw_stream: row.get(4)?,
-        exit_code: row.get(5)?,
+        attempt: row.get(2)?,
+        phase: row.get(3)?,
+        output: row.get(4)?,
+        raw_stream: row.get(5)?,
+        exit_code: row.get(6)?,
         created_at: parse_ts(&created_at_str),
     })
 }
@@ -319,6 +321,7 @@ impl Db {
             "ALTER TABLE pipeline_tasks ADD COLUMN backend TEXT",
             "ALTER TABLE proposals ADD COLUMN repo_id INTEGER REFERENCES repos(id)",
             "ALTER TABLE repos ADD COLUMN repo_slug TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE task_outputs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0",
         ];
         for sql in alters {
             let _ = conn.execute(sql, []);
@@ -962,6 +965,7 @@ impl Db {
     pub fn insert_task_output(
         &self,
         task_id: i64,
+        attempt: i64,
         phase: &str,
         output: &str,
         raw_stream: &str,
@@ -970,9 +974,9 @@ impl Db {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let created_at = now_str();
         conn.execute(
-            "INSERT INTO task_outputs (task_id, phase, output, raw_stream, exit_code, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![task_id, phase, output, raw_stream, exit_code, created_at],
+            "INSERT INTO task_outputs (task_id, attempt, phase, output, raw_stream, exit_code, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![task_id, attempt, phase, output, raw_stream, exit_code, created_at],
         )
         .context("insert_task_output")?;
         Ok(conn.last_insert_rowid())
@@ -981,7 +985,7 @@ impl Db {
     pub fn get_task_outputs(&self, task_id: i64) -> Result<Vec<TaskOutput>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare(
-            "SELECT id, task_id, phase, output, raw_stream, exit_code, created_at \
+            "SELECT id, task_id, attempt, phase, output, raw_stream, exit_code, created_at \
              FROM task_outputs WHERE task_id = ?1 ORDER BY id ASC",
         )?;
         let outputs = stmt
