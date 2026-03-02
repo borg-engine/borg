@@ -4,22 +4,20 @@ const WORD = "BORG";
 const LETTERS = WORD.split("");
 
 // Unicode ranges for glitch characters — [start, end] inclusive
+// Only standalone visible glyphs with near-universal font support
 const GLYPH_RANGES: [number, number][] = [
   [0x0021, 0x007e], // ASCII printable
-  [0x00c0, 0x024f], // Latin extended
-  [0x0370, 0x03ff], // Greek
+  [0x00c0, 0x024f], // Latin Extended
+  [0x0391, 0x03c9], // Greek letters
   [0x0400, 0x04ff], // Cyrillic
-  [0x0530, 0x058f], // Armenian
-  [0x0590, 0x05ff], // Hebrew
-  [0x0600, 0x06ff], // Arabic
-  [0x0900, 0x097f], // Devanagari
-  [0x0e00, 0x0e7f], // Thai
-  [0x10a0, 0x10ff], // Georgian
-  [0x1100, 0x11ff], // Hangul Jamo
-  [0x1200, 0x137f], // Ethiopic
+  [0x05d0, 0x05ea], // Hebrew letters (no combining marks)
+  [0x0621, 0x064a], // Arabic letters (no harakat/control chars)
+  [0x0904, 0x0939], // Devanagari vowels + consonants
+  [0x0e01, 0x0e2e], // Thai consonants
+  [0x10d0, 0x10fa], // Georgian Mkhedruli
   [0x3040, 0x309f], // Hiragana
   [0x30a0, 0x30ff], // Katakana
-  [0x4e00, 0x9fff], // CJK Unified (Chinese/Japanese/Korean)
+  [0x4e00, 0x9fff], // CJK Unified
   [0xac00, 0xd7af], // Hangul syllables
 ];
 
