@@ -205,6 +205,8 @@ impl Pipeline {
         }
         let disallowed_tools = self.db.get_config("pipeline_disallowed_tools")
             .ok().flatten().unwrap_or_default();
+        let knowledge_files = self.db.list_knowledge_files().unwrap_or_default();
+        let knowledge_dir = format!("{}/knowledge", self.config.data_dir);
         PhaseContext {
             task: task.clone(),
             repo_config: self.repo_config(task),
@@ -219,6 +221,8 @@ impl Pipeline {
             setup_script,
             api_keys,
             disallowed_tools,
+            knowledge_files,
+            knowledge_dir,
         }
     }
 
@@ -2242,10 +2246,8 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             if !repo.is_self {
                 continue;
             }
-            let git = Git::new(&repo.path);
-            if git.checkout("main").is_err() || git.pull().is_err() {
-                continue;
-            }
+            // Run tests against the current working tree without pulling.
+            // Pulling here risks overwriting uncommitted local edits.
             match self.run_test_command(&repo.path, &repo.test_cmd).await {
                 Ok(out) if out.exit_code != 0 => {
                     warn!("Health: tests failed for {}", repo.path);
@@ -2335,11 +2337,10 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             if local == remote {
                 return;
             }
-            info!("Remote update detected on {}, pulling...", repo.path);
-            if let Err(e) = git.pull() {
-                warn!("Remote pull failed: {e}");
-                return;
-            }
+            // Never pull on the live working tree — it can overwrite uncommitted
+            // local edits. The server-side self-update loop in main.rs handles
+            // rebuild+restart via fetch+compare without touching the working tree.
+            info!("Remote update detected on {} (local={}, remote={})", repo.path, &local[..8], &remote[..8]);
             self.check_self_update(&repo.path).await;
             return;
         }
