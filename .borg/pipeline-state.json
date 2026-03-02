@@ -1,0 +1,10 @@
+{
+  "task_id": 57,
+  "task_title": "Remove blocking `claude auth status` subprocess call during config load",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-57",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-02T22:12:52.329232435Z"
+}
