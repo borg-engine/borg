@@ -1,16 +1,4 @@
 services:
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-
   borg:
     build:
       context: ..
@@ -19,13 +7,18 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - borg_store:/app/store
-      - /root/.claude:/root/.claude:ro
     environment:
       - RUST_LOG=info
+      - WEB_BIND=0.0.0.0
     env_file:
       - .env
 
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+
 volumes:
-  caddy_data:
-  caddy_config:
   borg_store:

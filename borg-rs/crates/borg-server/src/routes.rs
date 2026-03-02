@@ -982,15 +982,13 @@ pub(crate) async fn get_status(
 ) -> Result<Json<Value>, StatusCode> {
     let uptime_s = state.start_time.elapsed().as_secs();
 
-    let repos = state.db.list_repos().map_err(internal)?;
-    let primary_repo = std::env::var("PIPELINE_REPO").unwrap_or_default();
-    let watched_repos: Vec<Value> = repos
+    let watched_repos: Vec<Value> = state.config.watched_repos
         .iter()
         .map(|r| {
             json!({
                 "path": r.path,
                 "test_cmd": r.test_cmd,
-                "is_self": r.path == primary_repo,
+                "is_self": r.is_self,
                 "auto_merge": r.auto_merge,
                 "mode": r.mode,
             })
