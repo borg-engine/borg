@@ -384,8 +384,6 @@ impl Config {
             ("max_chat_agents", self.max_chat_agents.to_string()),
             ("chat_rate_limit", self.chat_rate_limit.to_string()),
             ("pipeline_max_agents", self.pipeline_max_agents.to_string()),
-            ("web_bind", self.web_bind.clone()),
-            ("web_port", self.web_port.to_string()),
             ("dashboard_dist_dir", self.dashboard_dist_dir.clone()),
             ("container_setup", self.container_setup.clone()),
             ("container_memory_mb", self.container_memory_mb.to_string()),
@@ -463,13 +461,6 @@ impl Config {
                 }
             };
         }
-        macro_rules! load_u16 {
-            ($key:expr, $field:expr) => {
-                if let Some(v) = get($key).and_then(|s| s.parse().ok()) {
-                    $field = v;
-                }
-            };
-        }
         c.assistant_name = get_str("assistant_name", &c.assistant_name);
         c.trigger_pattern = get_str("trigger_pattern", &c.trigger_pattern);
         c.data_dir = get_str("data_dir", &c.data_dir);
@@ -482,7 +473,6 @@ impl Config {
         c.pipeline_admin_chat = get_str("pipeline_admin_chat", &c.pipeline_admin_chat);
         c.container_setup = get_str("container_setup", &c.container_setup);
         c.sandbox_backend = get_str("sandbox_backend", &c.sandbox_backend);
-        c.web_bind = get_str("web_bind", &c.web_bind);
         c.dashboard_dist_dir = get_str("dashboard_dist_dir", &c.dashboard_dist_dir);
         c.git_author_name = get_str("git_author_name", &c.git_author_name);
         c.git_author_email = get_str("git_author_email", &c.git_author_email);
@@ -515,8 +505,6 @@ impl Config {
         if let Some(v) = get("container_cpus").and_then(|s| s.parse::<f64>().ok()) {
             c.container_cpus = v;
         }
-        load_u16!("web_port", c.web_port);
-
         // Rebuild watched_repos from the repos table (canonical source for dashboard-managed repos)
         if let Ok(rows) = db.list_repos() {
             if !rows.is_empty() {
@@ -633,7 +621,7 @@ impl Config {
             git_user_coauthor: get_str("GIT_USER_COAUTHOR", &dotenv, ""),
             watched_repos,
             build_cmd: "cargo build --release".into(),
-            self_update_enabled: get_bool("SELF_UPDATE_ENABLED", &dotenv, true),
+            self_update_enabled: get_bool("SELF_UPDATE_ENABLED", &dotenv, false),
             codex_api_key,
             codex_credentials_path,
             discord_token: get_str("DISCORD_TOKEN", &dotenv, ""),

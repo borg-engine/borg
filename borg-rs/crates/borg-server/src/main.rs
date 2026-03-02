@@ -188,7 +188,8 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(
             ClaudeBackend::new("claude", sandbox_mode.clone(), &config.container_image)
                 .with_timeout(config.agent_timeout_s as u64)
-                .with_resource_limits(config.container_memory_mb, config.container_cpus),
+                .with_resource_limits(config.container_memory_mb, config.container_cpus)
+                .with_git_author(&config.git_author_name, &config.git_author_email),
         ),
     );
     if !config.codex_api_key.is_empty()

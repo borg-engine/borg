@@ -876,8 +876,7 @@ pub(crate) async fn create_task(
 ) -> Result<(StatusCode, Json<Value>), StatusCode> {
     let repo = body
         .repo
-        .or_else(|| std::env::var("PIPELINE_REPO").ok())
-        .unwrap_or_default();
+        .unwrap_or_else(|| state.config.pipeline_repo.clone());
     let mode = body.mode.unwrap_or_else(|| "sweborg".into());
     let task = Task {
         id: 0,
@@ -1193,9 +1192,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
         .ok()
         .flatten()
         .unwrap_or_else(|| "claude-sonnet-4-6".into());
-    let oauth = std::env::var("ANTHROPIC_API_KEY")
-        .or_else(|_| std::env::var("CLAUDE_CODE_OAUTH_TOKEN"))
-        .unwrap_or_default();
+    let oauth = state.config.oauth_token.clone();
 
     let triage_flag = Arc::clone(&state.triage_running);
     tokio::spawn(async move {

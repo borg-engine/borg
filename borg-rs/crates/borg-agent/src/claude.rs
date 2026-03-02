@@ -68,6 +68,8 @@ pub struct ClaudeBackend {
     pub container_memory_mb: u64,
     /// CPU quota for Docker containers (0.0 = no limit).
     pub container_cpus: f64,
+    pub git_author_name: String,
+    pub git_author_email: String,
 }
 
 impl ClaudeBackend {
@@ -85,6 +87,8 @@ impl ClaudeBackend {
             credentials_path: format!("{home}/.claude/.credentials.json"),
             container_memory_mb: 0,
             container_cpus: 0.0,
+            git_author_name: "Borg".into(),
+            git_author_email: "borg@localhost".into(),
         }
     }
 
@@ -99,6 +103,12 @@ impl ClaudeBackend {
         self
     }
 
+    pub fn with_git_author(mut self, name: &str, email: &str) -> Self {
+        if !name.is_empty() { self.git_author_name = name.into(); }
+        if !email.is_empty() { self.git_author_email = email.into(); }
+        self
+    }
+
     /// Refresh OAuth token (triggers CLI refresh if near-expiry, then re-reads from disk).
     fn fresh_oauth_token(&self, fallback: &str) -> String {
         borg_core::config::refresh_oauth_token(&self.credentials_path, fallback)
@@ -106,6 +116,7 @@ impl ClaudeBackend {
 
     /// Build JSON payload for the container entrypoint (Docker mode).
     fn build_docker_input(
+        &self,
         task: &Task,
         phase: &PhaseConfig,
         ctx: &PhaseContext,
@@ -129,18 +140,8 @@ impl ClaudeBackend {
         let branch = format!("task-{}", task.id);
         let gh_token = std::env::var("GH_TOKEN").unwrap_or_default();
 
-        let home = std::env::var("HOME").unwrap_or_default();
-        let gitconfig = std::fs::read_to_string(format!("{home}/.gitconfig")).unwrap_or_default();
-        let author_name = gitconfig.lines()
-            .find(|l| l.trim_start().starts_with("name ="))
-            .and_then(|l| l.splitn(2, '=').nth(1))
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "Borg".to_string());
-        let author_email = gitconfig.lines()
-            .find(|l| l.trim_start().starts_with("email ="))
-            .and_then(|l| l.splitn(2, '=').nth(1))
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "borg@localhost".to_string());
+        let author_name = &self.git_author_name;
+        let author_email = &self.git_author_email;
 
         let mut payload = serde_json::json!({
             "prompt": instruction,
@@ -579,7 +580,7 @@ impl AgentBackend for ClaudeBackend {
                     String::new()
                 };
                 let runs_test_cmd = if phase.runs_tests { repo_test_cmd.as_str() } else { "" };
-                let payload = Self::build_docker_input(
+                let payload = self.build_docker_input(
                     task,
                     phase,
                     &ctx,
