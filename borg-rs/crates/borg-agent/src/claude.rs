@@ -16,6 +16,7 @@ use tracing::{info, warn};
 const BORG_SIGNAL_MARKER: &str = "---BORG_SIGNAL---";
 const BORG_EVENT_MARKER: &str = "---BORG_EVENT---";
 const BORG_TEST_RESULT_MARKER: &str = "---BORG_TEST_RESULT---";
+const MAX_TURNS: u32 = 200;
 
 pub const PHASE_RESULT_START: &str = "---PHASE_RESULT_START---";
 pub const PHASE_RESULT_END: &str = "---PHASE_RESULT_END---";
@@ -147,7 +148,7 @@ impl ClaudeBackend {
             "model": ctx.model,
             "systemPrompt": system_prompt,
             "allowedTools": phase.allowed_tools,
-            "maxTurns": 200,
+            "maxTurns": MAX_TURNS,
             "repoUrl": task.repo_path,
             "mirrorPath": format!("/mirrors/{repo_name}.git"),
             "branch": branch,
@@ -227,7 +228,7 @@ impl AgentBackend for ClaudeBackend {
             "--verbose".to_string(),
             "--dangerously-skip-permissions".to_string(),
             "--max-turns".to_string(),
-            "200".to_string(),
+            MAX_TURNS.to_string(),
         ];
 
         let disallowed = ctx.disallowed_tools.trim();
