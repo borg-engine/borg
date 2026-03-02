@@ -1,0 +1,10 @@
+{
+  "task_id": 72,
+  "task_title": "Test `TaskStreamManager::push_line` history cap in stream.rs",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-72",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-02T22:43:29.104741611Z"
+}
