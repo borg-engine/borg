@@ -403,8 +403,11 @@ function NumberField({ label, desc, value, onChange, min, max }: {
         min={min}
         max={max}
         onChange={(e) => {
-          const v = parseInt(e.target.value);
-          if (!isNaN(v)) onChange(v);
+          let v = parseInt(e.target.value);
+          if (isNaN(v)) return;
+          if (min !== undefined) v = Math.max(min, v);
+          if (max !== undefined) v = Math.min(max, v);
+          onChange(v);
         }}
         className="w-24 rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-right text-[12px] tabular-nums text-zinc-200 outline-none focus:border-blue-500/40"
       />
