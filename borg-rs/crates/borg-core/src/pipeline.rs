@@ -257,7 +257,9 @@ impl Pipeline {
         } else {
             // After 3 attempts, force a fresh session with a summary of what was tried
             let error_ctx = if current.attempt >= 3 {
-                self.db.update_task_session(task.id, "").ok();
+                if let Err(e) = self.db.update_task_session(task.id, "") {
+                    warn!("task #{}: clear session: {e}", task.id);
+                }
                 info!(
                     "task #{} attempt {} — clearing session for fresh start",
                     task.id, current.attempt
@@ -3184,5 +3186,157 @@ fn looks_like_field_key(line: &str) -> bool {
             && key.chars().next().map_or(false, |c| c.is_alphabetic())
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{atomic::AtomicBool, Arc};
+
+    fn open_db() -> Arc<Db> {
+        let mut db = Db::open(":memory:").expect("open db");
+        db.migrate().expect("migrate");
+        Arc::new(db)
+    }
+
+    fn make_config() -> Arc<Config> {
+        Arc::new(Config {
+            telegram_token: String::new(),
+            oauth_token: String::new(),
+            assistant_name: "Borg".into(),
+            trigger_pattern: "@Borg".into(),
+            data_dir: "store".into(),
+            container_image: "borg-agent".into(),
+            model: "claude-sonnet-4-6".into(),
+            credentials_path: String::new(),
+            session_max_age_hours: 24,
+            max_consecutive_errors: 3,
+            pipeline_repo: String::new(),
+            pipeline_test_cmd: String::new(),
+            pipeline_lint_cmd: String::new(),
+            backend: "claude".into(),
+            pipeline_admin_chat: String::new(),
+            release_interval_mins: 180,
+            continuous_mode: false,
+            chat_collection_window_ms: 3000,
+            chat_cooldown_ms: 5000,
+            agent_timeout_s: 1000,
+            max_chat_agents: 4,
+            chat_rate_limit: 5,
+            pipeline_max_agents: 2,
+            web_bind: "127.0.0.1".into(),
+            web_port: 3131,
+            dashboard_dist_dir: "dashboard/dist".into(),
+            container_setup: String::new(),
+            container_memory_mb: 2048,
+            container_cpus: 2.0,
+            sandbox_backend: "none".into(),
+            pipeline_max_backlog: 5,
+            pipeline_seed_cooldown_s: 3600,
+            proposal_promote_threshold: 8,
+            pipeline_tick_s: 10,
+            remote_check_interval_s: 300,
+            mirror_refresh_interval_s: 60,
+            pipeline_agent_cooldown_s: 120,
+            git_author_name: String::new(),
+            git_author_email: String::new(),
+            git_committer_name: String::new(),
+            git_committer_email: String::new(),
+            git_via_borg: false,
+            git_claude_coauthor: false,
+            git_user_coauthor: String::new(),
+            watched_repos: vec![],
+            build_cmd: "cargo build --release".into(),
+            self_update_enabled: false,
+            codex_api_key: String::new(),
+            codex_credentials_path: String::new(),
+            discord_token: String::new(),
+            wa_auth_dir: String::new(),
+            wa_disabled: true,
+            observer_config: String::new(),
+        })
+    }
+
+    fn make_pipeline(db: Arc<Db>) -> Pipeline {
+        let (pipeline, _rx) = Pipeline::new(
+            db,
+            HashMap::new(),
+            make_config(),
+            SandboxMode::Direct,
+            Arc::new(AtomicBool::new(false)),
+            false,
+        );
+        pipeline
+    }
+
+    fn insert_task_with(db: &Db, attempt: i64, max_attempts: i64, session_id: &str) -> Task {
+        let task = Task {
+            id: 0,
+            title: "Test".into(),
+            description: "desc".into(),
+            repo_path: "/nonexistent".into(),
+            branch: "task-test".into(),
+            status: "impl".into(),
+            attempt,
+            max_attempts,
+            last_error: String::new(),
+            created_by: "test".into(),
+            notify_chat: String::new(),
+            created_at: chrono::Utc::now(),
+            session_id: session_id.to_string(),
+            mode: "sweborg".into(),
+            backend: String::new(),
+        };
+        let id = db.insert_task(&task).expect("insert_task");
+        Task { id, ..task }
+    }
+
+    /// After the third failed attempt, the stale session ID must be cleared so
+    /// the next invocation starts a fresh Claude Code session.
+    #[test]
+    fn test_fail_or_retry_clears_session_at_attempt_threshold() {
+        let db = open_db();
+        // attempt=2 → increment → 3, which is >= threshold
+        let task = insert_task_with(&db, 2, 10, "stale-session-id");
+        let pipeline = make_pipeline(Arc::clone(&db));
+        pipeline
+            .fail_or_retry(&task, "impl", "agent error")
+            .expect("fail_or_retry");
+        let updated = db.get_task(task.id).unwrap().unwrap();
+        assert_eq!(updated.session_id, "", "session cleared at attempt 3");
+        assert_eq!(updated.status, "impl");
+    }
+
+    /// Below the threshold, the session ID is preserved so the next attempt
+    /// can resume the existing Claude Code session.
+    #[test]
+    fn test_fail_or_retry_preserves_session_below_threshold() {
+        let db = open_db();
+        // attempt=1 → increment → 2, which is < threshold
+        let task = insert_task_with(&db, 1, 10, "active-session-id");
+        let pipeline = make_pipeline(Arc::clone(&db));
+        pipeline
+            .fail_or_retry(&task, "impl", "agent error")
+            .expect("fail_or_retry");
+        let updated = db.get_task(task.id).unwrap().unwrap();
+        assert_eq!(
+            updated.session_id, "active-session-id",
+            "session preserved below threshold"
+        );
+    }
+
+    /// When max_attempts is exhausted, fail_or_retry must still return Ok(())
+    /// and mark the task as failed.
+    #[test]
+    fn test_fail_or_retry_marks_failed_when_max_attempts_reached() {
+        let db = open_db();
+        // attempt=9 → increment → 10 == max_attempts
+        let task = insert_task_with(&db, 9, 10, "");
+        let pipeline = make_pipeline(Arc::clone(&db));
+        let result = pipeline.fail_or_retry(&task, "impl", "terminal error");
+        assert!(result.is_ok(), "fail_or_retry must return Ok");
+        let updated = db.get_task(task.id).unwrap().unwrap();
+        assert_eq!(updated.status, "failed");
     }
 }
