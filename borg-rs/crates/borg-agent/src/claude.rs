@@ -42,12 +42,74 @@ pub fn extract_phase_result(text: &str) -> Option<&str> {
     last_content
 }
 
-fn derive_compile_check(test_cmd: &str) -> Option<String> {
+fn derive_compile_check(test_cmd: &str, changed_files: &[&str]) -> Option<String> {
     let trimmed = test_cmd.trim();
-    if trimmed.contains("cargo test") {
-        Some(format!("{trimmed} --no-run"))
-    } else {
-        None
+    if !trimmed.contains("cargo test") {
+        return None;
+    }
+    if !changed_files.is_empty() {
+        let has_rust = changed_files.iter().any(|f| f.ends_with(".rs"));
+        if !has_rust {
+            return None;
+        }
+    }
+    Some(format!("{trimmed} --no-run"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rust_files_trigger_compile_check() {
+        let result = derive_compile_check("cargo test", &["src/main.rs", "src/lib.rs"]);
+        assert_eq!(result, Some("cargo test --no-run".to_string()));
+    }
+
+    #[test]
+    fn js_files_no_compile_check() {
+        let result = derive_compile_check("cargo test", &["src/index.js", "src/utils.js"]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn ts_files_no_compile_check() {
+        let result = derive_compile_check("cargo test", &["src/App.tsx", "src/components/Foo.ts"]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn mixed_files_trigger_compile_check() {
+        let result = derive_compile_check("cargo test", &["src/main.rs", "src/App.tsx"]);
+        assert_eq!(result, Some("cargo test --no-run".to_string()));
+    }
+
+    #[test]
+    fn empty_file_list_triggers_compile_check() {
+        let result = derive_compile_check("cargo test", &[]);
+        assert_eq!(result, Some("cargo test --no-run".to_string()));
+    }
+
+    #[test]
+    fn files_with_no_extension_no_compile_check() {
+        let result = derive_compile_check("cargo test", &["Makefile", "Dockerfile", "README"]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn non_cargo_cmd_returns_none() {
+        let result = derive_compile_check("npm test", &["src/main.rs"]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn cargo_test_with_args_preserved() {
+        let result =
+            derive_compile_check("  cargo test --package my-crate  ", &["src/lib.rs"]);
+        assert_eq!(
+            result,
+            Some("cargo test --package my-crate --no-run".to_string())
+        );
     }
 }
 
@@ -574,7 +636,7 @@ impl AgentBackend for ClaudeBackend {
             if let Some(mut stdin) = child.stdin.take() {
                 let repo_test_cmd = ctx.repo_config.test_cmd.clone();
                 let compile_check_cmd = if phase.compile_check {
-                    derive_compile_check(&repo_test_cmd).unwrap_or_default()
+                    derive_compile_check(&repo_test_cmd, &[]).unwrap_or_default()
                 } else {
                     String::new()
                 };
