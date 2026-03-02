@@ -1425,6 +1425,99 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         })
     }
 
+    /// Run a test command inside a fresh Docker container (for validate phase in Docker mode).
+    /// Clones the task branch, runs `cmd`, and returns output.
+    async fn run_test_in_container(&self, task: &Task, cmd: &str) -> Result<TestOutput> {
+        let timeout = std::time::Duration::from_secs(self.config.agent_timeout_s.max(300) as u64);
+        let repo_name = std::path::Path::new(&task.repo_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let branch = format!("task-{}", task.id);
+        let host_mirror = format!("/home/shulgin/borg-data/mirrors/{repo_name}.git");
+        let container_mirror = format!("/mirrors/{repo_name}.git");
+
+        let payload = serde_json::json!({
+            "prompt": "",
+            "repoUrl": task.repo_path,
+            "mirrorPath": container_mirror,
+            "branch": branch,
+            "base": format!("origin/{branch}"),
+            "testCmd": cmd,
+        });
+        let payload_bytes = serde_json::to_vec(&payload).unwrap_or_default();
+
+        let mut binds: Vec<(String, String, bool)> = Vec::new();
+        if std::path::Path::new(&host_mirror).exists() {
+            binds.push((host_mirror, container_mirror, true));
+        }
+        let binds_ref: Vec<(&str, &str, bool)> = binds
+            .iter()
+            .map(|(h, c, ro)| (h.as_str(), c.as_str(), *ro))
+            .collect();
+        let volumes_owned: Vec<(String, String)> = vec![
+            (format!("borg-cache-{repo_name}-target"), "/workspace/repo/target".to_string()),
+            (format!("borg-cache-{repo_name}-cargo-registry"), "/home/bun/.cargo/registry".to_string()),
+        ];
+        let volumes_ref: Vec<(&str, &str)> = volumes_owned
+            .iter()
+            .map(|(n, c)| (n.as_str(), c.as_str()))
+            .collect();
+
+        let mut child = Sandbox::docker_command(
+            &self.config.container_image,
+            &binds_ref,
+            &volumes_ref,
+            "",
+            &[],
+            &[],
+        )
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .context("run_test_in_container: failed to spawn docker")?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            let _ = stdin.write_all(&payload_bytes).await;
+        }
+
+        let output = tokio::time::timeout(timeout, child.wait_with_output())
+            .await
+            .map_err(|_| anyhow::anyhow!("run_test_in_container timed out after {}s", timeout.as_secs()))?
+            .context("run_test_in_container wait")?;
+
+        let all_out = String::from_utf8_lossy(&output.stdout).to_string();
+        let test_result_marker = "---BORG_TEST_RESULT---";
+        let (test_stdout, test_exit_code) = all_out
+            .lines()
+            .find_map(|line| {
+                let json_str = line.strip_prefix(test_result_marker)?;
+                let v: serde_json::Value = serde_json::from_str(json_str).ok()?;
+                if v["phase"].as_str() == Some("test") {
+                    Some((
+                        v["output"].as_str().unwrap_or("").to_string(),
+                        v["exitCode"].as_i64().unwrap_or(1) as i32,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                let exit_code = output.status.code().unwrap_or(1);
+                (format!("{all_out}\n{stderr}"), exit_code)
+            });
+
+        Ok(TestOutput {
+            stdout: test_stdout,
+            stderr: String::new(),
+            exit_code: test_exit_code,
+        })
+    }
+
 
 
     // ── Integration merge ─────────────────────────────────────────────────
@@ -2739,6 +2832,17 @@ struct TestOutput {
     stdout: String,
     stderr: String,
     exit_code: i32,
+}
+
+fn container_result_as_test_output(
+    results: &[ContainerTestResult],
+    phase: &str,
+) -> Option<TestOutput> {
+    results.iter().find(|r| r.phase == phase).map(|r| TestOutput {
+        stdout: r.output.clone(),
+        stderr: String::new(),
+        exit_code: r.exit_code,
+    })
 }
 
 fn extract_blocks(text: &str, start_marker: &str, end_marker: &str) -> Vec<String> {

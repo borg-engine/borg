@@ -156,13 +156,15 @@ impl Sandbox {
 
     /// Return a `Command` that runs inside a Docker container.
     ///
-    /// `binds`: `(host_path, container_path, read_only)`.
+    /// `binds`: `(host_path, container_path, read_only)` — bind mounts.
+    /// `volumes`: `(volume_name, container_path)` — named Docker volumes.
     /// `env_vars`: passed as `-e KEY=VALUE` pairs.
     /// `working_dir`: container working directory; skipped if empty.
     /// `command`: appended after the image name (empty = use entrypoint default).
     pub fn docker_command(
         image: &str,
         binds: &[(&str, &str, bool)],
+        volumes: &[(&str, &str)],
         working_dir: &str,
         command: &[String],
         env_vars: &[(&str, &str)],
@@ -193,6 +195,11 @@ impl Sandbox {
             }
         }
 
+        for (name, container) in volumes {
+            args.push("-v".to_string());
+            args.push(format!("{name}:{container}"));
+        }
+
         for (key, val) in env_vars {
             args.push("-e".to_string());
             args.push(format!("{key}={val}"));
@@ -210,4 +217,88 @@ impl Sandbox {
         cmd.args(args);
         cmd
     }
+
+    /// List all Docker volumes whose names start with the given prefix.
+    /// Returns `(name, size_bytes)` pairs. Size is best-effort from `docker system df -v`.
+    pub async fn list_cache_volumes(prefix: &str) -> Vec<(String, Option<u64>)> {
+        let Ok(out) = tokio::process::Command::new("docker")
+            .args(["volume", "ls", "--filter", &format!("name={prefix}"), "--format", "{{.Name}}"])
+            .output()
+            .await
+        else {
+            return vec![];
+        };
+        let names: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+
+        let size_map = Self::volume_sizes().await;
+
+        names
+            .into_iter()
+            .map(|n| {
+                let sz = size_map.get(&n).copied();
+                (n, sz)
+            })
+            .collect()
+    }
+
+    async fn volume_sizes() -> std::collections::HashMap<String, u64> {
+        let Ok(out) = tokio::process::Command::new("docker")
+            .args(["system", "df", "-v", "--format", "{{json .}}"])
+            .output()
+            .await
+        else {
+            return Default::default();
+        };
+
+        // `docker system df -v --format '{{json .}}'` emits one JSON object per entity.
+        // Volume entries have {"Name":"...","Size":"1.2GB",...}.
+        let mut map = std::collections::HashMap::new();
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let Some(name) = v.get("Name").and_then(|n| n.as_str()) else {
+                continue;
+            };
+            let Some(size_str) = v.get("Size").and_then(|s| s.as_str()) else {
+                continue;
+            };
+            if let Some(bytes) = parse_docker_size(size_str) {
+                map.insert(name.to_string(), bytes);
+            }
+        }
+        map
+    }
+
+    /// Remove a named Docker volume. Returns true if successful.
+    pub async fn remove_volume(name: &str) -> bool {
+        tokio::process::Command::new("docker")
+            .args(["volume", "rm", name])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+}
+
+fn parse_docker_size(s: &str) -> Option<u64> {
+    let s = s.trim();
+    let (num, unit) = if let Some(n) = s.strip_suffix("GB") {
+        (n.trim().parse::<f64>().ok()?, 1_000_000_000u64)
+    } else if let Some(n) = s.strip_suffix("MB") {
+        (n.trim().parse::<f64>().ok()?, 1_000_000u64)
+    } else if let Some(n) = s.strip_suffix("kB") {
+        (n.trim().parse::<f64>().ok()?, 1_000u64)
+    } else if let Some(n) = s.strip_suffix("B") {
+        (n.trim().parse::<f64>().ok()?, 1u64)
+    } else {
+        return None;
+    };
+    Some((num * unit as f64) as u64)
 }

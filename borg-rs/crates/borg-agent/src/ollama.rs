@@ -119,6 +119,8 @@ impl AgentBackend for OllamaBackend {
                     raw_stream: String::new(),
                     success: false,
                     signal_json: None,
+                    ran_in_docker: false,
+                    container_test_results: Vec::new(),
                 });
             },
             Err(e) => {
@@ -129,6 +131,8 @@ impl AgentBackend for OllamaBackend {
                     raw_stream: String::new(),
                     success: false,
                     signal_json: None,
+                    ran_in_docker: false,
+                    container_test_results: Vec::new(),
                 });
             },
         };
@@ -149,6 +153,8 @@ impl AgentBackend for OllamaBackend {
                 raw_stream: String::new(),
                 success: false,
                 signal_json: None,
+                ran_in_docker: false,
+                container_test_results: Vec::new(),
             });
         }
 
@@ -162,6 +168,8 @@ impl AgentBackend for OllamaBackend {
                     raw_stream: String::new(),
                     success: false,
                     signal_json: None,
+                    ran_in_docker: false,
+                    container_test_results: Vec::new(),
                 });
             },
         };
@@ -181,6 +189,8 @@ impl AgentBackend for OllamaBackend {
             new_session_id: None,
             success: true,
             signal_json: None,
+            ran_in_docker: false,
+            container_test_results: Vec::new(),
         })
     }
 

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use borg_core::{
     agent::AgentBackend,
     sandbox::{Sandbox, SandboxMode},
-    types::{PhaseConfig, PhaseContext, PhaseOutput, Task},
+    types::{ContainerTestResult, PhaseConfig, PhaseContext, PhaseOutput, Task},
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -14,6 +14,8 @@ use tokio::{
 use tracing::{info, warn};
 
 const BORG_SIGNAL_MARKER: &str = "---BORG_SIGNAL---";
+const BORG_EVENT_MARKER: &str = "---BORG_EVENT---";
+const BORG_TEST_RESULT_MARKER: &str = "---BORG_TEST_RESULT---";
 
 pub const PHASE_RESULT_START: &str = "---PHASE_RESULT_START---";
 pub const PHASE_RESULT_END: &str = "---PHASE_RESULT_END---";
@@ -38,6 +40,15 @@ pub fn extract_phase_result(text: &str) -> Option<&str> {
         }
     }
     last_content
+}
+
+fn derive_compile_check(test_cmd: &str) -> Option<String> {
+    let trimmed = test_cmd.trim();
+    if trimmed.contains("cargo test") {
+        Some(format!("{trimmed} --no-run"))
+    } else {
+        None
+    }
 }
 
 /// Runs Claude Code as a subprocess, with configurable sandbox isolation.
@@ -89,6 +100,9 @@ impl ClaudeBackend {
         instruction: &str,
         system_prompt: &str,
         session_id: &str,
+        compile_check_cmd: &str,
+        lint_cmd: &str,
+        test_cmd: &str,
     ) -> Vec<u8> {
         let commit_message = if !ctx.user_coauthor.is_empty() {
             format!("{}\n\nCo-Authored-By: {}", phase.commit_message, ctx.user_coauthor)
@@ -134,8 +148,29 @@ impl ClaudeBackend {
         if !session_id.is_empty() {
             payload["resumeSessionId"] = serde_json::Value::String(session_id.to_string());
         }
+        if !compile_check_cmd.is_empty() {
+            payload["compileCheckCmd"] = serde_json::Value::String(compile_check_cmd.to_string());
+        }
+        if !lint_cmd.is_empty() {
+            payload["lintCmd"] = serde_json::Value::String(lint_cmd.to_string());
+        }
+        if !test_cmd.is_empty() {
+            payload["testCmd"] = serde_json::Value::String(test_cmd.to_string());
+        }
 
         serde_json::to_vec(&payload).unwrap_or_default()
+    }
+
+    /// Parse a `---BORG_TEST_RESULT---{json}` line emitted by the container entrypoint.
+    fn parse_test_result(line: &str) -> Option<ContainerTestResult> {
+        let json_str = line.strip_prefix(BORG_TEST_RESULT_MARKER)?;
+        let v: serde_json::Value = serde_json::from_str(json_str).ok()?;
+        Some(ContainerTestResult {
+            phase: v["phase"].as_str().unwrap_or("").to_string(),
+            passed: v["passed"].as_bool().unwrap_or(false),
+            exit_code: v["exitCode"].as_i64().unwrap_or(1) as i32,
+            output: v["output"].as_str().unwrap_or("").to_string(),
+        })
     }
 
     fn host_mirror_path(task: &Task) -> String {
@@ -289,6 +324,36 @@ impl AgentBackend for ClaudeBackend {
         let mut full_cmd: Vec<String> = vec![self.claude_bin.clone()];
         full_cmd.extend(claude_args);
 
+        if is_docker {
+            let repo_name = std::path::Path::new(&task.repo_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let evt = serde_json::json!({
+                "type": "container_event",
+                "event": "container_starting",
+                "image": self.docker_image,
+                "repo": repo_name,
+                "branch": format!("task-{}", task.id),
+            })
+            .to_string();
+            if let Some(tx) = &ctx.stream_tx {
+                let _ = tx.send(evt);
+            }
+        }
+
+        let cidfile_path = if is_docker {
+            let ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let p = format!("/tmp/borg-cid-{}-{}.txt", task.id, ms);
+            let _ = std::fs::remove_file(&p);
+            Some(p)
+        } else {
+            None
+        };
+
         let mut child = match effective_mode {
             SandboxMode::Bwrap => {
                 let writable = [ctx.worktree_path.as_str(), ctx.session_dir.as_str()];
@@ -315,6 +380,21 @@ impl AgentBackend for ClaudeBackend {
                 if !ctx.setup_script.is_empty() {
                     binds.push((ctx.setup_script.clone(), "/workspace/setup.sh".to_string(), true));
                 }
+                if !ctx.knowledge_dir.is_empty() && std::path::Path::new(&ctx.knowledge_dir).exists() {
+                    binds.push((ctx.knowledge_dir.clone(), "/knowledge".to_string(), true));
+                }
+
+                let repo_name = std::path::Path::new(&task.repo_path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                let volumes_owned: Vec<(String, String)> = vec![
+                    (format!("borg-cache-{repo_name}-target"), "/workspace/repo/target".to_string()),
+                    (format!("borg-cache-{repo_name}-node-modules"), "/workspace/repo/node_modules".to_string()),
+                    (format!("borg-cache-{repo_name}-bun-cache"), "/home/bun/.bun/install/cache".to_string()),
+                    (format!("borg-cache-{repo_name}-cargo-registry"), "/home/bun/.cargo/registry".to_string()),
+                ];
 
                 let gh_token = std::env::var("GH_TOKEN").unwrap_or_default();
                 let mut env_kv: Vec<(String, String)> = vec![
@@ -329,18 +409,41 @@ impl AgentBackend for ClaudeBackend {
                     .iter()
                     .map(|(h, c, ro)| (h.as_str(), c.as_str(), *ro))
                     .collect();
+                let volumes_ref: Vec<(&str, &str)> = volumes_owned
+                    .iter()
+                    .map(|(n, c)| (n.as_str(), c.as_str()))
+                    .collect();
                 let env_ref: Vec<(&str, &str)> = env_kv
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.as_str()))
                     .collect();
 
-                Sandbox::docker_command(
+                let mut docker_cmd = Sandbox::docker_command(
                     &self.docker_image,
                     &binds_ref,
+                    &volumes_ref,
                     "",
                     &[],
                     &env_ref,
-                )
+                );
+                if let Some(ref cid_path) = cidfile_path {
+                    // Inject --cidfile before the image name by re-building args.
+                    // docker_command already set args; we insert --cidfile early.
+                    let existing_args: Vec<_> = docker_cmd
+                        .as_std()
+                        .get_args()
+                        .map(|a| a.to_os_string())
+                        .collect();
+                    let mut new_cmd = Command::new("docker");
+                    // Insert --cidfile after "run" (first arg)
+                    let (head, tail) = existing_args.split_at(1.min(existing_args.len()));
+                    new_cmd.args(head);
+                    new_cmd.arg("--cidfile");
+                    new_cmd.arg(cid_path);
+                    new_cmd.args(tail);
+                    docker_cmd = new_cmd;
+                }
+                docker_cmd
                     .kill_on_drop(true)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
@@ -372,6 +475,13 @@ impl AgentBackend for ClaudeBackend {
         // For Docker mode, send JSON input on stdin then close it.
         if is_docker {
             if let Some(mut stdin) = child.stdin.take() {
+                let repo_test_cmd = ctx.repo_config.test_cmd.clone();
+                let compile_check_cmd = if phase.compile_check {
+                    derive_compile_check(&repo_test_cmd).unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                let runs_test_cmd = if phase.runs_tests { repo_test_cmd.as_str() } else { "" };
                 let payload = Self::build_docker_input(
                     task,
                     phase,
@@ -379,10 +489,42 @@ impl AgentBackend for ClaudeBackend {
                     &instruction,
                     &system_prompt,
                     &session_id,
+                    &compile_check_cmd,
+                    "",
+                    runs_test_cmd,
                 );
                 let _ = stdin.write_all(&payload).await;
                 // stdin dropped here → EOF to container
             }
+        }
+
+        // Read container ID from cidfile (Docker writes it shortly after container start).
+        if let Some(ref cid_path) = cidfile_path {
+            let cid_path_clone = cid_path.clone();
+            let stream_tx_cid = ctx.stream_tx.clone();
+            let tid = task.id;
+            tokio::spawn(async move {
+                for _ in 0..30u8 {
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    if let Ok(s) = tokio::fs::read_to_string(&cid_path_clone).await {
+                        let cid = s.trim().to_string();
+                        if !cid.is_empty() {
+                            info!(task_id = tid, container_id = %cid, "docker container started");
+                            let evt = serde_json::json!({
+                                "type": "container_event",
+                                "event": "container_id",
+                                "id": cid,
+                                "task_id": tid,
+                            })
+                            .to_string();
+                            if let Some(tx) = stream_tx_cid {
+                                let _ = tx.send(evt);
+                            }
+                            break;
+                        }
+                    }
+                }
+            });
         }
 
         let stdout = child.stdout.take().context("failed to take stdout")?;
@@ -392,10 +534,13 @@ impl AgentBackend for ClaudeBackend {
         let phase_name = phase.name.clone();
         let timeout_s = self.timeout_s;
         let stream_tx = ctx.stream_tx.clone();
+        let is_docker_io = is_docker;
 
         let io_future = async move {
             let mut raw_stream = String::new();
             let mut signal_json: Option<String> = None;
+            let mut container_test_results: Vec<ContainerTestResult> = Vec::new();
+            let mut stderr_tail: Vec<String> = Vec::new();
             let mut stdout_reader = BufReader::new(stdout).lines();
             let mut stderr_reader = BufReader::new(stderr).lines();
 
@@ -406,6 +551,8 @@ impl AgentBackend for ClaudeBackend {
                             Some(l) => {
                                 if let Some(sig) = l.strip_prefix(BORG_SIGNAL_MARKER) {
                                     signal_json = Some(sig.to_string());
+                                } else if let Some(r) = Self::parse_test_result(&l) {
+                                    container_test_results.push(r);
                                 } else {
                                     if let Some(tx) = &stream_tx {
                                         let _ = tx.send(l.clone());
@@ -420,7 +567,21 @@ impl AgentBackend for ClaudeBackend {
                     line = stderr_reader.next_line() => {
                         if let Ok(Some(l)) = line {
                             if !l.is_empty() {
-                                warn!(task_id, phase = %phase_name, "claude stderr: {}", l);
+                                if is_docker_io {
+                                    if let Some(evt) = l.strip_prefix(BORG_EVENT_MARKER) {
+                                        if let Some(tx) = &stream_tx {
+                                            let _ = tx.send(evt.to_string());
+                                        }
+                                    } else {
+                                        warn!(task_id, phase = %phase_name, "container stderr: {}", l);
+                                        if stderr_tail.len() >= 30 {
+                                            stderr_tail.remove(0);
+                                        }
+                                        stderr_tail.push(l);
+                                    }
+                                } else {
+                                    warn!(task_id, phase = %phase_name, "claude stderr: {}", l);
+                                }
                             }
                         }
                     }
@@ -429,15 +590,44 @@ impl AgentBackend for ClaudeBackend {
 
             while let Ok(Some(l)) = stderr_reader.next_line().await {
                 if !l.is_empty() {
-                    warn!(task_id, phase = %phase_name, "claude stderr: {}", l);
+                    if is_docker_io {
+                        if let Some(evt) = l.strip_prefix(BORG_EVENT_MARKER) {
+                            if let Some(tx) = &stream_tx {
+                                let _ = tx.send(evt.to_string());
+                            }
+                        } else {
+                            warn!(task_id, phase = %phase_name, "container stderr: {}", l);
+                            if stderr_tail.len() >= 30 {
+                                stderr_tail.remove(0);
+                            }
+                            stderr_tail.push(l);
+                        }
+                    } else {
+                        warn!(task_id, phase = %phase_name, "claude stderr: {}", l);
+                    }
                 }
             }
 
             let exit_status = child.wait().await.context("failed to wait for claude")?;
-            anyhow::Ok((raw_stream, signal_json, exit_status.success()))
+            let success = exit_status.success();
+
+            if !success && is_docker_io && !stderr_tail.is_empty() {
+                let evt = serde_json::json!({
+                    "type": "container_event",
+                    "event": "container_error",
+                    "exit_code": exit_status.code().unwrap_or(-1),
+                    "stderr_tail": stderr_tail.join("\n"),
+                })
+                .to_string();
+                if let Some(tx) = &stream_tx {
+                    let _ = tx.send(evt);
+                }
+            }
+
+            anyhow::Ok((raw_stream, signal_json, container_test_results, success))
         };
 
-        let (raw_stream, signal_json, success) = if timeout_s > 0 {
+        let (raw_stream, signal_json, container_test_results, success) = if timeout_s > 0 {
             match tokio::time::timeout(std::time::Duration::from_secs(timeout_s), io_future).await {
                 Ok(Ok(v)) => v,
                 Ok(Err(e)) => return Err(e),
@@ -467,6 +657,8 @@ impl AgentBackend for ClaudeBackend {
             raw_stream,
             success,
             signal_json,
+            ran_in_docker: is_docker,
+            container_test_results,
         })
     }
 

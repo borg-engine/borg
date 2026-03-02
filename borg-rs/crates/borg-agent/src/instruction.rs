@@ -1,17 +1,21 @@
-use borg_core::types::{PhaseConfig, PhaseContext, Task};
+use borg_core::{
+    db::KnowledgeFile,
+    types::{PhaseConfig, PhaseContext, Task},
+};
 
 /// Build the instruction string passed to any agent backend.
 ///
 /// Composes task context, the phase instruction, an optional file listing,
 /// error context from the previous attempt, and any pending user messages.
 /// All backends use this so the prompt format stays consistent.
-pub fn build_instruction(
-    task: &Task,
-    phase: &PhaseConfig,
-    ctx: &PhaseContext,
-    file_listing: Option<&str>,
-) -> String {
+pub fn build_instruction(task: &Task, phase: &PhaseConfig, ctx: &PhaseContext, file_listing: Option<&str>) -> String {
     let mut s = String::new();
+
+    let kb = build_knowledge_section(&ctx.knowledge_files, &ctx.knowledge_dir);
+    if !kb.is_empty() {
+        s.push_str(&kb);
+        s.push_str("\n\n---\n\n");
+    }
 
     if let Some(repo_prompt) = read_repo_prompt(ctx) {
         s.push_str("## Project Context\n\n");
@@ -46,6 +50,45 @@ pub fn build_instruction(
         }
     }
 
+    s
+}
+
+/// Build the `## Knowledge Base` section prepended to agent instructions.
+pub fn build_knowledge_section(files: &[KnowledgeFile], knowledge_dir: &str) -> String {
+    if files.is_empty() {
+        return String::new();
+    }
+    let mut s = String::from(
+        "## Knowledge Base\nYou have access to the following knowledge files at /knowledge/:\n",
+    );
+    for file in files {
+        if file.inline {
+            let path = format!("{}/{}", knowledge_dir, file.file_name);
+            let content = std::fs::read_to_string(&path).unwrap_or_default();
+            let content = content.trim();
+            if content.is_empty() {
+                s.push_str(&format!("- **{}**", file.file_name));
+                if !file.description.is_empty() {
+                    s.push_str(&format!(": {}", file.description));
+                }
+                s.push('\n');
+            } else {
+                s.push_str(&format!("- **{}**", file.file_name));
+                if !file.description.is_empty() {
+                    s.push_str(&format!(" ({})", file.description));
+                }
+                s.push_str(":\n```\n");
+                s.push_str(content);
+                s.push_str("\n```\n");
+            }
+        } else {
+            s.push_str(&format!("- `/knowledge/{}`", file.file_name));
+            if !file.description.is_empty() {
+                s.push_str(&format!(": {}", file.description));
+            }
+            s.push('\n');
+        }
+    }
     s
 }
 

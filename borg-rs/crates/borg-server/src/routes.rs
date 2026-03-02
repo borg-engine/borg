@@ -96,6 +96,12 @@ pub(crate) struct ProjectFilesQuery {
     pub limit: Option<i64>,
 }
 
+#[derive(Deserialize)]
+pub(crate) struct UpdateKnowledgeBody {
+    pub description: Option<String>,
+    pub inline: Option<bool>,
+}
+
 // ── Serializable wrappers ─────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -478,6 +484,16 @@ pub(crate) async fn run_chat_agent(
 
     if is_legal {
         system_prompt.push_str(borg_domains::legal::legal_chat_system_suffix());
+    }
+
+    let knowledge_files = db.list_knowledge_files().unwrap_or_default();
+    if !knowledge_files.is_empty() {
+        let knowledge_dir = format!("{}/knowledge", config.data_dir);
+        let kb = borg_agent::instruction::build_knowledge_section(&knowledge_files, &knowledge_dir);
+        if !kb.is_empty() {
+            system_prompt.push('\n');
+            system_prompt.push_str(&kb);
+        }
     }
 
     let mut args = vec![
@@ -1191,6 +1207,8 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 setup_script: String::new(),
                 api_keys: std::collections::HashMap::new(),
                 disallowed_tools: String::new(),
+                knowledge_files: Vec::new(),
+                knowledge_dir: String::new(),
             };
 
             tokio::fs::create_dir_all(&ctx.session_dir).await.ok();
@@ -1811,4 +1829,206 @@ pub(crate) async fn delete_api_key(
 ) -> Result<Json<Value>, StatusCode> {
     state.db.delete_api_key(id).map_err(internal)?;
     Ok(Json(json!({ "ok": true })))
+}
+
+// ── Cache volumes ─────────────────────────────────────────────────────
+
+pub(crate) async fn list_cache_volumes(
+    State(_state): State<Arc<AppState>>,
+) -> Result<Json<Value>, StatusCode> {
+    let volumes = borg_core::sandbox::Sandbox::list_cache_volumes("borg-cache-").await;
+    let arr: Vec<_> = volumes
+        .into_iter()
+        .map(|(name, size)| json!({ "name": name, "size": size }))
+        .collect();
+    Ok(Json(json!({ "volumes": arr })))
+}
+
+pub(crate) async fn delete_cache_volume(
+    State(_state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, StatusCode> {
+    if !name.starts_with("borg-cache-") {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let removed = borg_core::sandbox::Sandbox::remove_volume(&name).await;
+    if removed {
+        Ok(Json(json!({ "ok": true })))
+    } else {
+        Err(StatusCode::INTERNAL_SERVER_ERROR)
+    }
+}
+
+// ── Knowledge base ────────────────────────────────────────────────────
+
+pub(crate) async fn list_knowledge(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, StatusCode> {
+    let files = state.db.list_knowledge_files().map_err(internal)?;
+    Ok(Json(json!({ "files": files })))
+}
+
+pub(crate) async fn upload_knowledge(
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> Result<Json<Value>, StatusCode> {
+    let knowledge_dir = format!("{}/knowledge", state.config.data_dir);
+    std::fs::create_dir_all(&knowledge_dir).map_err(internal)?;
+
+    let mut file_name = String::new();
+    let mut description = String::new();
+    let mut inline = false;
+    let mut file_bytes: Vec<u8> = Vec::new();
+
+    while let Some(field) = multipart.next_field().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+        match field.name() {
+            Some("file") => {
+                if let Some(name) = field.file_name() {
+                    file_name = name.to_string();
+                }
+                file_bytes = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?.to_vec();
+            },
+            Some("description") => {
+                description = field.text().await.unwrap_or_default();
+            },
+            Some("inline") => {
+                let v = field.text().await.unwrap_or_default();
+                inline = v == "true" || v == "1";
+            },
+            _ => {},
+        }
+    }
+
+    if file_name.is_empty() || file_bytes.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let dest = format!("{knowledge_dir}/{file_name}");
+    std::fs::write(&dest, &file_bytes).map_err(internal)?;
+
+    let id = state
+        .db
+        .insert_knowledge_file(&file_name, &description, file_bytes.len() as i64, inline)
+        .map_err(internal)?;
+
+    Ok(Json(json!({ "id": id, "file_name": file_name })))
+}
+
+pub(crate) async fn update_knowledge(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateKnowledgeBody>,
+) -> Result<Json<Value>, StatusCode> {
+    state
+        .db
+        .update_knowledge_file(id, body.description.as_deref(), body.inline)
+        .map_err(internal)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub(crate) async fn delete_knowledge(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    if let Ok(Some(file)) = state.db.get_knowledge_file(id) {
+        let path = format!("{}/knowledge/{}", state.config.data_dir, file.file_name);
+        let _ = std::fs::remove_file(&path);
+    }
+    state.db.delete_knowledge_file(id).map_err(internal)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub(crate) async fn get_knowledge_content(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, StatusCode> {
+    use axum::response::IntoResponse;
+    let file = state
+        .db
+        .get_knowledge_file(id)
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let path = format!("{}/knowledge/{}", state.config.data_dir, file.file_name);
+    let bytes = std::fs::read(&path).map_err(|_| StatusCode::NOT_FOUND)?;
+    Ok((
+        axum::http::StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "application/octet-stream")],
+        bytes,
+    )
+        .into_response())
+}
+
+// ── Container inspection ──────────────────────────────────────────────────
+
+/// Extract container ID from task stream history by looking for container_id event.
+async fn container_id_from_stream(state: &AppState, task_id: i64) -> Option<String> {
+    let (history, _) = state.stream_manager.subscribe(task_id).await;
+    for line in history.iter().rev() {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+            if v.get("type").and_then(|t| t.as_str()) == Some("container_event")
+                && v.get("event").and_then(|e| e.as_str()) == Some("container_id")
+            {
+                if let Some(id) = v.get("id").and_then(|i| i.as_str()) {
+                    return Some(id.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+pub(crate) async fn get_task_container(
+    State(state): State<Arc<AppState>>,
+    Path(task_id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    let container_id = container_id_from_stream(&state, task_id).await;
+    match container_id {
+        Some(id) => {
+            // Try to get live status via `docker inspect`
+            let status = tokio::process::Command::new("docker")
+                .args(["inspect", "--format", "{{.State.Status}}", &id])
+                .output()
+                .await
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            Ok(Json(json!({ "task_id": task_id, "container_id": id, "status": status })))
+        },
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ContainerExecBody {
+    pub cmd: Vec<String>,
+}
+
+pub(crate) async fn post_task_container_exec(
+    State(state): State<Arc<AppState>>,
+    Path(task_id): Path<i64>,
+    Json(body): Json<ContainerExecBody>,
+) -> Result<Json<Value>, StatusCode> {
+    if body.cmd.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let container_id = container_id_from_stream(&state, task_id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let out = tokio::process::Command::new("docker")
+        .arg("exec")
+        .arg(&container_id)
+        .args(&body.cmd)
+        .output()
+        .await
+        .map_err(internal)?;
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    Ok(Json(json!({
+        "container_id": container_id,
+        "exit_code": out.status.code().unwrap_or(-1),
+        "stdout": stdout,
+        "stderr": stderr,
+    })))
 }

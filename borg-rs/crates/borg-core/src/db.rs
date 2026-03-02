@@ -120,6 +120,16 @@ pub struct ProjectFileRow {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct KnowledgeFile {
+    pub id: i64,
+    pub file_name: String,
+    pub description: String,
+    pub size_bytes: i64,
+    pub inline: bool,
+    pub created_at: String,
+}
+
 // ── Timestamp helpers ─────────────────────────────────────────────────────
 
 fn parse_ts(s: &str) -> DateTime<Utc> {
@@ -704,6 +714,98 @@ impl Db {
             )
             .context("total_project_file_bytes")?;
         Ok(total)
+    }
+
+    // ── Knowledge files ───────────────────────────────────────────────────
+
+    pub fn list_knowledge_files(&self) -> Result<Vec<KnowledgeFile>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, file_name, description, size_bytes, inline, created_at \
+             FROM knowledge_files ORDER BY created_at",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let inline_int: i64 = row.get(4)?;
+            Ok(KnowledgeFile {
+                id: row.get(0)?,
+                file_name: row.get(1)?,
+                description: row.get(2)?,
+                size_bytes: row.get(3)?,
+                inline: inline_int != 0,
+                created_at: row.get(5)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn get_knowledge_file(&self, id: i64) -> Result<Option<KnowledgeFile>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.query_row(
+            "SELECT id, file_name, description, size_bytes, inline, created_at \
+             FROM knowledge_files WHERE id=?1",
+            params![id],
+            |row| {
+                let inline_int: i64 = row.get(4)?;
+                Ok(KnowledgeFile {
+                    id: row.get(0)?,
+                    file_name: row.get(1)?,
+                    description: row.get(2)?,
+                    size_bytes: row.get(3)?,
+                    inline: inline_int != 0,
+                    created_at: row.get(5)?,
+                })
+            },
+        )
+        .optional()
+        .context("get_knowledge_file")
+    }
+
+    pub fn insert_knowledge_file(
+        &self,
+        file_name: &str,
+        description: &str,
+        size_bytes: i64,
+        inline: bool,
+    ) -> Result<i64> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "INSERT INTO knowledge_files (file_name, description, size_bytes, inline) \
+             VALUES (?1, ?2, ?3, ?4)",
+            params![file_name, description, size_bytes, inline as i64],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn delete_knowledge_file(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute("DELETE FROM knowledge_files WHERE id=?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn update_knowledge_file(
+        &self,
+        id: i64,
+        description: Option<&str>,
+        inline: Option<bool>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(d) = description {
+            conn.execute(
+                "UPDATE knowledge_files SET description=?1 WHERE id=?2",
+                params![d, id],
+            )?;
+        }
+        if let Some(i) = inline {
+            conn.execute(
+                "UPDATE knowledge_files SET inline=?1 WHERE id=?2",
+                params![i as i64, id],
+            )?;
+        }
+        Ok(())
     }
 
     pub fn get_top_scored_proposals(&self, threshold: i64, limit: i64) -> Result<Vec<Proposal>> {

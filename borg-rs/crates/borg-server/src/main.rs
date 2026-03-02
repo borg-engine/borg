@@ -194,6 +194,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&db),
         backends.clone(),
         Arc::clone(&config),
+        sandbox_mode.clone(),
         Arc::clone(&force_restart),
     );
     let pipeline_event_tx = pipeline.event_tx.clone();
@@ -646,6 +647,8 @@ async fn main() -> anyhow::Result<()> {
             get(routes::get_task_outputs_handler),
         )
         .route("/api/tasks/:id/stream", get(routes::sse_task_stream))
+        .route("/api/tasks/:id/container", get(routes::get_task_container))
+        .route("/api/tasks/:id/container/exec", post(routes::post_task_container_exec))
         // Task messages
         .route("/api/tasks/:id/messages", get(routes::get_task_messages))
         .route("/api/tasks/:id/messages", post(routes::post_task_message))
@@ -711,6 +714,18 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/keys", get(routes::list_api_keys))
         .route("/api/keys", post(routes::store_api_key))
         .route("/api/keys/:id", delete(routes::delete_api_key))
+        // Cache volumes
+        .route("/api/cache", get(routes::list_cache_volumes))
+        .route("/api/cache/:name", delete(routes::delete_cache_volume))
+        // Knowledge base
+        .route("/api/knowledge", get(routes::list_knowledge))
+        .route(
+            "/api/knowledge/upload",
+            post(routes::upload_knowledge).layer(DefaultBodyLimit::max(55 * 1024 * 1024)),
+        )
+        .route("/api/knowledge/:id", put(routes::update_knowledge))
+        .route("/api/knowledge/:id", delete(routes::delete_knowledge))
+        .route("/api/knowledge/:id/content", get(routes::get_knowledge_content))
         // Static dashboard
         .fallback_service(serve_dir)
         .layer(CorsLayer::permissive())

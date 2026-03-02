@@ -172,6 +172,8 @@ impl AgentBackend for CodexBackend {
             raw_stream: String::new(),
             success: exit_status.success(),
             signal_json: None,
+            ran_in_docker: false,
+            container_test_results: Vec::new(),
         })
     }
 

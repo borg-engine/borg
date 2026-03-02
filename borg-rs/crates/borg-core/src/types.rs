@@ -415,6 +415,19 @@ pub struct PhaseContext {
     pub api_keys: std::collections::HashMap<String, String>,
     /// Comma-separated tools to disallow (from settings). Empty = all allowed.
     pub disallowed_tools: String,
+    /// Knowledge base files to inject into the agent prompt.
+    pub knowledge_files: Vec<crate::db::KnowledgeFile>,
+    /// Absolute path to the knowledge directory on the host (store/knowledge/).
+    pub knowledge_dir: String,
+}
+
+/// A single in-container test/lint/compile result emitted by the entrypoint.
+#[derive(Debug, Clone, Default)]
+pub struct ContainerTestResult {
+    pub phase: String,
+    pub passed: bool,
+    pub exit_code: i32,
+    pub output: String,
 }
 
 /// Output produced by a phase executor.
@@ -426,6 +439,10 @@ pub struct PhaseOutput {
     pub success: bool,
     /// AgentSignal JSON extracted from the container's `---BORG_SIGNAL---` stdout line.
     pub signal_json: Option<String>,
+    /// True when the agent ran inside Docker (container handled git clone/commit/push).
+    pub ran_in_docker: bool,
+    /// In-container test results emitted by the entrypoint (compile check / lint / test).
+    pub container_test_results: Vec<ContainerTestResult>,
 }
 
 impl PhaseOutput {
@@ -436,6 +453,8 @@ impl PhaseOutput {
             raw_stream: String::new(),
             success: false,
             signal_json: None,
+            ran_in_docker: false,
+            container_test_results: Vec::new(),
         }
     }
 }
