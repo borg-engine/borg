@@ -5,6 +5,12 @@ use tracing::{info, warn};
 
 const HAIKU: &str = "claude-haiku-4-5-20251001"; // TODO: make configurable via OBSERVER_MODEL env
 const MAX_LOG_BYTES: usize = 50_000;
+const MAX_CMD_OUTPUT_BYTES: usize = 256 * 1024;
+
+#[cfg(not(test))]
+const CMD_TIMEOUT_SECS: u64 = 30;
+#[cfg(test)]
+const CMD_TIMEOUT_SECS: u64 = 2;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Severity {
@@ -267,13 +273,24 @@ async fn execute_action(
                 .await?;
         },
         Action::Command { cmd } => {
-            tokio::process::Command::new("/bin/sh")
+            let mut child = tokio::process::Command::new("/bin/sh")
                 .args(["-c", cmd])
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
-                .spawn()?
-                .wait()
-                .await?;
+                .spawn()?;
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(CMD_TIMEOUT_SECS),
+                child.wait(),
+            )
+            .await
+            {
+                Ok(result) => { result?; },
+                Err(_) => {
+                    let _ = child.start_kill();
+                    let _ = child.wait().await;
+                    return Err(anyhow::anyhow!("action command timed out"));
+                },
+            }
         },
         Action::Webhook { url } => {
             let body = serde_json::json!({
@@ -317,13 +334,35 @@ async fn collect_logs(entry: &Entry) -> Result<String> {
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::null());
 
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        cmd.output(),
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("spawn failed for {}: {}", entry.name, e))?;
+    let stdout = child.stdout.take();
+
+    let read_result = tokio::time::timeout(
+        std::time::Duration::from_secs(CMD_TIMEOUT_SECS),
+        async move {
+            use tokio::io::AsyncReadExt;
+            let mut buf = Vec::new();
+            if let Some(out) = stdout {
+                let _ = out.take(MAX_CMD_OUTPUT_BYTES as u64).read_to_end(&mut buf).await;
+            }
+            buf
+        },
     )
-    .await
-    .map_err(|_| anyhow::anyhow!("collect_logs timed out for {}", entry.name))??;
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    .await;
+
+    match read_result {
+        Ok(bytes) => {
+            let _ = child.wait().await;
+            Ok(String::from_utf8_lossy(&bytes).into_owned())
+        },
+        Err(_) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            Err(anyhow::anyhow!("collect_logs timed out for {}", entry.name))
+        },
+    }
 }
 
 fn strip_fences(text: &str) -> &str {
@@ -533,5 +572,55 @@ mod tests {
         let entries = load_entries(tmp.path().to_str().unwrap());
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "t");
+    }
+
+    fn make_cmd_entry(cmd: &str) -> Entry {
+        Entry {
+            name: "test".to_string(),
+            source: Source::Command { cmd: cmd.to_string() },
+            window_lines: 200,
+            interval_s: 60,
+            prompt: String::new(),
+            cooldown_s: 300,
+            severity_threshold: Severity::Medium,
+            actions: vec![],
+            last_run: 0,
+            last_triggered: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn collect_logs_caps_large_output() {
+        let bytes = MAX_CMD_OUTPUT_BYTES * 2;
+        let entry = make_cmd_entry(&format!(
+            "dd if=/dev/zero bs={bytes} count=1 2>/dev/null | tr '\\0' 'x'"
+        ));
+        let result = collect_logs(&entry).await.unwrap();
+        assert!(
+            result.len() <= MAX_CMD_OUTPUT_BYTES,
+            "output not capped: {} bytes",
+            result.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn collect_logs_times_out_on_slow_cmd() {
+        let entry = make_cmd_entry("sleep 100");
+        let err = collect_logs(&entry).await.unwrap_err();
+        assert!(err.to_string().contains("timed out"), "expected timeout error, got: {err}");
+    }
+
+    #[tokio::test]
+    async fn action_command_times_out_on_slow_cmd() {
+        let action = Action::Command { cmd: "sleep 100".to_string() };
+        let result_stub = AnalysisResult {
+            triggered: true,
+            severity: Severity::High,
+            summary: String::new(),
+            recommendation: String::new(),
+        };
+        let client = reqwest::Client::new();
+        let err = execute_action(&client, "test", &action, &result_stub, "").await.unwrap_err();
+        assert!(err.to_string().contains("timed out"), "expected timeout error, got: {err}");
     }
 }
