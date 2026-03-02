@@ -2630,11 +2630,19 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         }
         let _guard = LockGuard(lock_path);
 
-        // Stash any local changes before pulling (defensive).
-        let _ = tokio::process::Command::new("git")
-            .args(["-C", repo_path, "stash", "--include-untracked", "-m", "self-update-stash"])
+        // Only pull if the working tree is clean — never stash user's uncommitted work.
+        let status_out = tokio::process::Command::new("git")
+            .args(["-C", repo_path, "status", "--porcelain"])
             .output()
             .await;
+        let is_dirty = status_out
+            .as_ref()
+            .map(|o| !o.stdout.is_empty())
+            .unwrap_or(true);
+        if is_dirty {
+            info!("Self-update: working tree has local changes, skipping pull");
+            return;
+        }
 
         let pull_out = tokio::process::Command::new("git")
             .args(["-C", repo_path, "pull", "--ff-only", "origin", "main"])
