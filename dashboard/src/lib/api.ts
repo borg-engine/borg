@@ -45,9 +45,24 @@ export function authHeaders(): Record<string, string> {
   return authToken ? { Authorization: `Bearer ${authToken}` } : {};
 }
 
-export function sseUrl(path: string): string {
+// Exchange the Bearer token for a short-lived one-time ticket, then return the
+// SSE URL with ?ticket= appended. EventSource cannot set headers, so we use a
+// ticket to avoid exposing the long-lived token in request logs and history.
+export async function sseTicketUrl(path: string): Promise<string> {
+  await tokenReady;
   const url = `${apiBase()}${path}`;
-  return authToken ? `${url}${url.includes("?") ? "&" : "?"}token=${authToken}` : url;
+  if (!authToken) return url;
+  try {
+    const res = await fetch(`${apiBase()}/api/auth/sse-ticket`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    if (!res.ok) return url;
+    const { ticket } = await res.json();
+    return `${url}${url.includes("?") ? "&" : "?"}ticket=${ticket}`;
+  } catch {
+    return url;
+  }
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -318,9 +333,8 @@ export function useLogs() {
 
   const connect = useCallback(() => {
     if (esRef.current) esRef.current.close();
-    // Wait for auth token before opening SSE (EventSource can't set headers)
-    tokenReady.then(() => {
-      const es = new EventSource(sseUrl("/api/logs"));
+    sseTicketUrl("/api/logs").then((url) => {
+      const es = new EventSource(url);
       esRef.current = es;
 
       es.onopen = () => {
@@ -528,9 +542,9 @@ export function useTaskStream(taskId: number | null, active: boolean) {
     setEvents([]);
     let cancelled = false;
 
-    tokenReady.then(() => {
+    sseTicketUrl(`/api/tasks/${taskId}/stream`).then((url) => {
       if (cancelled) return;
-      const es = new EventSource(sseUrl(`/api/tasks/${taskId}/stream`));
+      const es = new EventSource(url);
       esRef.current = es;
       setStreaming(true);
 

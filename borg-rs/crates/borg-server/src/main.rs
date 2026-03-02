@@ -42,6 +42,7 @@ pub struct AppState {
     pub db: Arc<Db>,
     pub config: Arc<Config>,
     pub api_token: String,
+    pub sse_tickets: auth::TicketStore,
     pub start_time: Instant,
     pub log_tx: broadcast::Sender<String>,
     pub log_ring: Arc<std::sync::Mutex<VecDeque<String>>>,
@@ -649,10 +650,24 @@ async fn main() -> anyhow::Result<()> {
 
     let stream_manager = Arc::clone(&pipeline.stream_manager);
 
+    let sse_tickets = auth::new_ticket_store();
+
+    // Periodically purge expired SSE tickets
+    {
+        let tickets = auth::TicketStore::clone(&sse_tickets);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                auth::purge_expired_tickets(&tickets).await;
+            }
+        });
+    }
+
     let state = Arc::new(AppState {
         db,
         config: Arc::clone(&config),
         api_token,
+        sse_tickets,
         start_time: Instant::now(),
         log_tx,
         log_ring,
@@ -674,6 +689,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/health", get(routes::health))
         // Token endpoint (localhost-only, no bearer required)
         .route("/api/auth/token", get(auth::get_token))
+        // SSE ticket endpoint: exchange Bearer token for a one-time SSE ticket
+        .route("/api/auth/sse-ticket", post(auth::issue_sse_ticket))
         // Tasks
         .route("/api/tasks", get(routes::list_tasks))
         .route("/api/tasks/create", post(routes::create_task))
