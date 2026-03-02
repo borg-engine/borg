@@ -3,7 +3,7 @@ use reqwest::Client;
 use serde_json::Value;
 use tracing::{info, warn};
 
-const HAIKU: &str = "claude-haiku-4-5-20251001"; // TODO: make configurable via OBSERVER_MODEL env
+const HAIKU: &str = "claude-haiku-4-5-20251001";
 const MAX_LOG_BYTES: usize = 50_000;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -194,8 +194,9 @@ async fn analyze(
         entry.prompt, log_slice
     );
 
+    let model = std::env::var("OBSERVER_MODEL").unwrap_or_else(|_| HAIKU.to_string());
     let body = serde_json::json!({
-        "model": HAIKU,
+        "model": model,
         "max_tokens": 256,
         "messages": [{"role": "user", "content": user_content}]
     });
@@ -523,6 +524,17 @@ mod tests {
     fn load_entries_missing_file() {
         let entries = load_entries("/nonexistent/observer.json");
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn observer_model_env_var_override() {
+        std::env::set_var("OBSERVER_MODEL", "claude-sonnet-4-6");
+        let model = std::env::var("OBSERVER_MODEL").unwrap_or_else(|_| HAIKU.to_string());
+        assert_eq!(model, "claude-sonnet-4-6");
+        std::env::remove_var("OBSERVER_MODEL");
+
+        let default = std::env::var("OBSERVER_MODEL").unwrap_or_else(|_| HAIKU.to_string());
+        assert_eq!(default, HAIKU);
     }
 
     #[test]
