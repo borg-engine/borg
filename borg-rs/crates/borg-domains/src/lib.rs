@@ -1,6 +1,8 @@
 pub mod chef;
+pub mod construction;
 pub mod crew;
 pub mod data;
+pub mod health;
 pub mod legal;
 pub mod sales;
 pub mod swe;
@@ -13,11 +15,13 @@ pub fn all_modes() -> Vec<PipelineMode> {
     vec![
         swe::swe_mode(),
         legal::legal_mode(),
+        health::health_mode(),
         web::web_mode(),
         crew::crew_mode(),
         sales::sales_mode(),
         data::data_mode(),
         chef::chef_mode(),
+        construction::construction_mode(),
     ]
 }
 
@@ -26,7 +30,9 @@ pub fn get_mode(name: &str) -> Option<PipelineMode> {
     match name {
         "swe" => get_mode("sweborg"),
         "legal" => get_mode("lawborg"),
+        "health" => get_mode("healthborg"),
         "chef" => get_mode("chefborg"),
+        "construction" => get_mode("buildborg"),
         _ => all_modes().into_iter().find(|m| m.name == name),
     }
 }

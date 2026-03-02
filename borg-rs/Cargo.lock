@@ -207,6 +207,7 @@ dependencies = [
  "borg-core",
  "borg-domains",
  "chrono",
+ "rand",
  "serde",
  "serde_json",
  "tokio",
