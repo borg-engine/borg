@@ -1,0 +1,10 @@
+{
+  "task_id": 64,
+  "task_title": "Test `resolve_tilde` and `codex_has_credentials` in config.rs",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-64",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-02T22:30:05.800757103Z"
+}
