@@ -476,18 +476,16 @@ pub(crate) async fn run_chat_agent(
         let joined: Vec<String> = messages.iter().map(|m| format!("- {m}")).collect();
         format!("{} says:\n{}", sender_name, joined.join("\n"))
     };
-    let prompt = if let Some(project_id) = parse_project_chat_key(chat_key) {
-        match db.get_project(project_id) {
-            Ok(Some(project)) => {
-                let files = db.list_project_files(project_id).unwrap_or_default();
-                let ctx = build_project_context(&project, &files, &session_dir);
-                if ctx.is_empty() {
-                    prompt
-                } else {
-                    format!("{ctx}\n\nUser request:\n{prompt}")
-                }
-            },
-            _ => prompt,
+    let project_id = parse_project_chat_key(chat_key);
+    let project = project_id.and_then(|pid| db.get_project(pid).ok().flatten());
+
+    let prompt = if let (Some(pid), Some(ref p)) = (project_id, &project) {
+        let files = db.list_project_files(pid).unwrap_or_default();
+        let ctx = build_project_context(p, &files, &session_dir);
+        if ctx.is_empty() {
+            prompt
+        } else {
+            format!("{ctx}\n\nUser request:\n{prompt}")
         }
     } else {
         prompt
@@ -495,10 +493,7 @@ pub(crate) async fn run_chat_agent(
 
     let mut system_prompt = config.chat_system_prompt();
 
-    // Detect project mode for MCP wiring
-    let project_mode = parse_project_chat_key(chat_key)
-        .and_then(|pid| db.get_project(pid).ok().flatten())
-        .map(|p| p.mode);
+    let project_mode = project.map(|p| p.mode);
     let is_legal = matches!(project_mode.as_deref(), Some("lawborg" | "legal"));
 
     if is_legal {
