@@ -249,56 +249,117 @@ impl AgentBackend for ClaudeBackend {
             claude_args.push(system_prompt.clone());
         }
 
-        // For legal mode tasks, always include the unified legal MCP server.
-        // Free tools (CourtListener, EDGAR, etc.) work without keys.
-        // BYOK tools (LexisNexis, Westlaw, etc.) activate when keys are present.
-        let mcp_config_path = if ctx.task.mode == "lawborg" {
-            let mcp_dir = format!("{}/mcp", ctx.session_dir);
-            std::fs::create_dir_all(&mcp_dir).ok();
-            let legal_mcp_path = if let Ok(p) = std::env::var("LAWBORG_MCP_SERVER") {
-                std::path::PathBuf::from(p)
-            } else {
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../../sidecar/lawborg-mcp/server.js")
-            };
-            let legal_mcp_server = match legal_mcp_path.canonicalize() {
-                Ok(p) => p,
-                Err(e) => {
-                    tracing::warn!("lawborg MCP server not found at {}: {e}", legal_mcp_path.display());
-                    return Err(anyhow::anyhow!("lawborg MCP server not found: {e}"));
-                }
-            };
-            let mut env_vars = serde_json::Map::new();
-            for (provider, key) in &ctx.api_keys {
-                let env_name = match provider.as_str() {
-                    "lexisnexis" => "LEXISNEXIS_API_KEY",
-                    "westlaw" => "WESTLAW_API_KEY",
-                    "clio" => "CLIO_API_KEY",
-                    "imanage" => "IMANAGE_API_KEY",
-                    "netdocuments" => "NETDOCUMENTS_API_KEY",
-                    "congress" => "CONGRESS_API_KEY",
-                    "openstates" => "OPENSTATES_API_KEY",
-                    "canlii" => "CANLII_API_KEY",
-                    "regulations_gov" => "REGULATIONS_GOV_API_KEY",
-                    _ => continue,
+        // Build MCP config based on mode — each mode gets its relevant MCP servers.
+        let mcp_config_path = {
+            let sidecar_base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../sidecar");
+            let mut mcp_servers = serde_json::Map::new();
+            let mode = ctx.task.mode.as_str();
+
+            // lawborg + healthborg share the legal research MCP (CourtListener, EDGAR, etc.)
+            if matches!(mode, "lawborg" | "healthborg") {
+                let legal_mcp_path = if let Ok(p) = std::env::var("LAWBORG_MCP_SERVER") {
+                    std::path::PathBuf::from(p)
+                } else {
+                    sidecar_base.join("lawborg-mcp/server.js")
                 };
-                env_vars.insert(env_name.into(), serde_json::Value::String(key.clone()));
-            }
-            let config_json = serde_json::json!({
-                "mcpServers": {
-                    "legal": {
-                        "command": "bun",
-                        "args": ["run", legal_mcp_server],
-                        "env": env_vars,
+                match legal_mcp_path.canonicalize() {
+                    Ok(p) => {
+                        let mut env_vars = serde_json::Map::new();
+                        for (provider, key) in &ctx.api_keys {
+                            let env_name = match provider.as_str() {
+                                "lexisnexis" => "LEXISNEXIS_API_KEY",
+                                "westlaw" => "WESTLAW_API_KEY",
+                                "clio" => "CLIO_API_KEY",
+                                "imanage" => "IMANAGE_API_KEY",
+                                "netdocuments" => "NETDOCUMENTS_API_KEY",
+                                "congress" => "CONGRESS_API_KEY",
+                                "openstates" => "OPENSTATES_API_KEY",
+                                "canlii" => "CANLII_API_KEY",
+                                "regulations_gov" => "REGULATIONS_GOV_API_KEY",
+                                _ => continue,
+                            };
+                            env_vars.insert(env_name.into(), serde_json::Value::String(key.clone()));
+                        }
+                        mcp_servers.insert("legal".into(), serde_json::json!({
+                            "command": "bun",
+                            "args": ["run", p.to_string_lossy()],
+                            "env": env_vars,
+                        }));
+                    }
+                    Err(e) => {
+                        tracing::warn!("lawborg MCP server not found at {}: {e}", legal_mcp_path.display());
                     }
                 }
-            });
-            let config_path = format!("{}/mcp-config.json", mcp_dir);
-            std::fs::write(&config_path, config_json.to_string())
-                .with_context(|| format!("failed to write MCP config to {config_path}"))?;
-            Some(config_path)
-        } else {
-            None
+            }
+
+            // buildborg gets the Shovels permits/contractors MCP
+            if mode == "buildborg" {
+                let shovels_path = sidecar_base.join("shovels-mcp/server.js");
+                match shovels_path.canonicalize() {
+                    Ok(p) => {
+                        let mut env_vars = serde_json::Map::new();
+                        if let Some(key) = ctx.api_keys.get("shovels") {
+                            env_vars.insert("SHOVELS_API_KEY".into(), serde_json::Value::String(key.clone()));
+                        }
+                        mcp_servers.insert("shovels".into(), serde_json::json!({
+                            "command": "bun",
+                            "args": ["run", p.to_string_lossy()],
+                            "env": env_vars,
+                        }));
+                    }
+                    Err(e) => {
+                        tracing::warn!("shovels MCP server not found at {}: {e}", shovels_path.display());
+                    }
+                }
+            }
+
+            // Plaid banking MCP — available when plaid keys are configured
+            if let (Some(client_id), Some(secret)) = (ctx.api_keys.get("plaid_client_id"), ctx.api_keys.get("plaid_secret")) {
+                let plaid_path = sidecar_base.join("plaid-mcp/server.js");
+                if let Ok(p) = plaid_path.canonicalize() {
+                    let mut env_vars = serde_json::Map::new();
+                    env_vars.insert("PLAID_CLIENT_ID".into(), serde_json::Value::String(client_id.clone()));
+                    env_vars.insert("PLAID_SECRET".into(), serde_json::Value::String(secret.clone()));
+                    if let Some(env) = ctx.api_keys.get("plaid_env") {
+                        env_vars.insert("PLAID_ENV".into(), serde_json::Value::String(env.clone()));
+                    }
+                    mcp_servers.insert("plaid".into(), serde_json::json!({
+                        "command": "bun",
+                        "args": ["run", p.to_string_lossy()],
+                        "env": env_vars,
+                    }));
+                }
+            }
+
+            // kreuzberg OCR — available to document-heavy modes when installed
+            if matches!(mode, "lawborg" | "healthborg" | "buildborg") {
+                let has_kreuzberg = std::process::Command::new("kreuzberg")
+                    .arg("--version")
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+                if has_kreuzberg {
+                    mcp_servers.insert("ocr".into(), serde_json::json!({
+                        "command": "kreuzberg",
+                        "args": ["mcp"],
+                    }));
+                }
+            }
+
+            if mcp_servers.is_empty() {
+                None
+            } else {
+                let mcp_dir = format!("{}/mcp", ctx.session_dir);
+                std::fs::create_dir_all(&mcp_dir).ok();
+                let config_json = serde_json::json!({ "mcpServers": mcp_servers });
+                let config_path = format!("{}/mcp-config.json", mcp_dir);
+                std::fs::write(&config_path, config_json.to_string())
+                    .with_context(|| format!("failed to write MCP config to {config_path}"))?;
+                Some(config_path)
+            }
         };
 
         if let Some(ref path) = mcp_config_path {
@@ -456,6 +517,7 @@ impl AgentBackend for ClaudeBackend {
                     &env_ref,
                     self.container_memory_mb,
                     self.container_cpus,
+                    ctx.agent_network.as_deref(),
                 );
                 if let Some(ref cid_path) = cidfile_path {
                     // Inject --cidfile before the image name by re-building args.

@@ -237,6 +237,11 @@ impl Pipeline {
             disallowed_tools,
             knowledge_files,
             knowledge_dir,
+            agent_network: if self.agent_network_available {
+                Some(Sandbox::AGENT_NETWORK.to_string())
+            } else {
+                None
+            },
         }
     }
 
@@ -1571,6 +1576,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             .map(|(n, c)| (n.as_str(), c.as_str()))
             .collect();
 
+        let network = if self.agent_network_available {
+            Some(Sandbox::AGENT_NETWORK)
+        } else {
+            None
+        };
         let output = tokio::time::timeout(
             timeout,
             Sandbox::docker_command(
@@ -1582,6 +1592,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 &[],
                 self.config.container_memory_mb,
                 self.config.container_cpus,
+                network,
             )
             .kill_on_drop(true)
             .output(),

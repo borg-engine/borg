@@ -420,6 +420,8 @@ pub struct PhaseContext {
     pub knowledge_files: Vec<crate::db::KnowledgeFile>,
     /// Absolute path to the knowledge directory on the host (store/knowledge/).
     pub knowledge_dir: String,
+    /// Docker bridge network name for agent containers. None = use --network host.
+    pub agent_network: Option<String>,
 }
 
 /// A single in-container test/lint/compile result emitted by the entrypoint.

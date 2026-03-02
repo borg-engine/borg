@@ -1210,6 +1210,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 disallowed_tools: String::new(),
                 knowledge_files: Vec::new(),
                 knowledge_dir: String::new(),
+                agent_network: None,
             };
 
             tokio::fs::create_dir_all(&ctx.session_dir).await.ok();

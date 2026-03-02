@@ -163,6 +163,8 @@ impl Sandbox {
     /// `command`: appended after the image name (empty = use entrypoint default).
     /// `memory_mb`: memory limit in MiB (0 = no limit).
     /// `cpus`: CPU quota (0.0 = no limit).
+    /// `network`: bridge network name. `Some(name)` uses that network + Google DNS;
+    ///            `None` falls back to `--network host`.
     pub fn docker_command(
         image: &str,
         binds: &[(&str, &str, bool)],
@@ -172,6 +174,7 @@ impl Sandbox {
         env_vars: &[(&str, &str)],
         memory_mb: u64,
         cpus: f64,
+        network: Option<&str>,
     ) -> Command {
         let mut args = vec![
             "run".to_string(),
@@ -192,13 +195,19 @@ impl Sandbox {
             args.push(format!("{cpus:.2}"));
         }
 
-        // Linux-only security hardening and host networking
+        // Linux-only security hardening and networking
         if cfg!(target_os = "linux") {
             args.extend([
                 "--security-opt", "no-new-privileges:true",
                 "--cap-drop", "ALL",
-                "--network", "host",
             ].map(str::to_string));
+            if let Some(net) = network {
+                args.extend(["--network".to_string(), net.to_string()]);
+                args.extend(["--dns".to_string(), "8.8.8.8".to_string()]);
+                args.extend(["--dns".to_string(), "8.8.4.4".to_string()]);
+            } else {
+                args.extend(["--network".to_string(), "host".to_string()]);
+            }
         }
 
         for (host, container, ro) in binds {
