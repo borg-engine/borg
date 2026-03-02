@@ -42,7 +42,7 @@ function BorgLogo({ size = "desktop", expanded }: { size?: "desktop" | "mobile";
 
     function scheduleFlicker() {
       if (stopped) return;
-      const delay = 6000 + Math.random() * 18000;
+      const delay = 4000 + Math.random() * 12000;
       const timer = setTimeout(() => {
         timers.delete(timer);
         const r = Math.random();
@@ -67,7 +67,7 @@ function BorgLogo({ size = "desktop", expanded }: { size?: "desktop" | "mobile";
             }
             return next;
           });
-        }, 60 + Math.random() * 80);
+        }, 60 + Math.random() * 940);
         timers.add(restore);
         scheduleFlicker();
       }, delay);
