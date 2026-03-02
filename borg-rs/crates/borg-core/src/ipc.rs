@@ -180,8 +180,9 @@ fn secure_read(full_path: &str, basename: &str, quarantine_dir: &str) -> IpcRead
 
 /// Open `path` refusing to follow symlinks (O_NOFOLLOW).
 ///
-/// On non-Unix targets the flag is unavailable; we fall back to a plain open
-/// and log a warning that the TOCTOU window remains open.
+/// On non-Unix targets `O_NOFOLLOW` is unavailable; we return an error rather
+/// than silently falling back to a plain open that would follow symlinks and
+/// nullify the preceding lstat-based check.
 #[cfg(unix)]
 fn open_nofollow(path: &str) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
@@ -192,9 +193,11 @@ fn open_nofollow(path: &str) -> std::io::Result<std::fs::File> {
 }
 
 #[cfg(not(unix))]
-fn open_nofollow(path: &str) -> std::io::Result<std::fs::File> {
-    warn!("ipc: O_NOFOLLOW unavailable on non-Unix; TOCTOU window remains open for {path}");
-    std::fs::File::open(path)
+fn open_nofollow(_path: &str) -> std::io::Result<std::fs::File> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "O_NOFOLLOW is unavailable on this platform; symlink-safe open is not supported",
+    ))
 }
 
 /// Move `full_path` to `<quarantine_dir>/<basename>.<unix_ts>[.<counter>]`.

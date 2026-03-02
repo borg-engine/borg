@@ -5,8 +5,10 @@
 use std::{
     fs,
     io::{Seek, SeekFrom, Write},
-    os::unix::fs as unix_fs,
 };
+
+#[cfg(unix)]
+use std::os::unix::fs as unix_fs;
 
 use borg_core::ipc::{self, IpcReadResult, MAX_IPC_FILE_BYTES};
 use tempfile::TempDir;
@@ -463,4 +465,29 @@ fn ipc_read_result_implements_debug() {
     let _q: IpcReadResult = IpcReadResult::Quarantined("reason".to_string());
     // If IpcReadResult doesn't derive Debug this file won't compile
     println!("{:?}", IpcReadResult::NotFound);
+}
+
+// ── AC: non-Unix open_nofollow returns Err, not a silent fallback ─────────────
+//
+// On non-Unix platforms O_NOFOLLOW is unavailable.  The implementation must
+// return an Err rather than silently opening the file without the symlink guard,
+// which would nullify the preceding lstat check and leave a TOCTOU window open.
+// As a result, even a regular file cannot be read on such platforms.
+
+#[cfg(not(unix))]
+#[test]
+fn non_unix_regular_file_is_rejected_not_silently_read() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("spec.md");
+    fs::write(&path, b"hello").unwrap();
+
+    // On non-Unix open_nofollow returns Err(Unsupported), so read_file must
+    // not return Ok — it must quarantine (rejecting the open attempt).
+    let result = ipc::read_file(&base(&dir), "spec.md");
+    assert!(
+        matches!(result, IpcReadResult::Quarantined(_)),
+        "on non-Unix a regular file must be rejected (not silently read) because \
+         O_NOFOLLOW is unavailable; got {:?}",
+        result,
+    );
 }
