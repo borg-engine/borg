@@ -1415,13 +1415,10 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 continue;
             }
             info!("Integration: {} branches for {}", queued.len(), repo.path);
-            if let Err(e) = self
-                .run_integration(queued, &repo.path, repo.auto_merge)
-                .await
-            {
-                warn!("Integration error for {}: {e}", repo.path);
+            match self.run_integration(queued, &repo.path, repo.auto_merge).await {
+                Ok(()) => ran_any = true,
+                Err(e) => warn!("Integration error for {}: {e}", repo.path),
             }
-            ran_any = true;
         }
 
         if ran_any {
