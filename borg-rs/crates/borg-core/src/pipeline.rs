@@ -47,6 +47,8 @@ pub struct Pipeline {
     worktree_create_lock: Mutex<()>,
     /// Prevents overlapping seed runs (seeding is spawned in background).
     seeding_active: std::sync::atomic::AtomicBool,
+    /// Whether the borg-agent-net Docker bridge network was successfully created at startup.
+    pub agent_network_available: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,6 +95,7 @@ impl Pipeline {
         config: Arc<Config>,
         sandbox_mode: SandboxMode,
         force_restart: Arc<std::sync::atomic::AtomicBool>,
+        agent_network_available: bool,
     ) -> (Self, broadcast::Receiver<PipelineEvent>) {
         let (tx, rx) = broadcast::channel(256);
         // Capture git HEAD for each watched repo at startup (used for self-update detection)
@@ -122,6 +125,7 @@ impl Pipeline {
             last_agent_dispatch: Mutex::new(HashMap::new()),
             worktree_create_lock: Mutex::new(()),
             seeding_active: std::sync::atomic::AtomicBool::new(false),
+            agent_network_available,
         };
         (p, rx)
     }

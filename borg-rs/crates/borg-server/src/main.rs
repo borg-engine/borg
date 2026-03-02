@@ -1,3 +1,4 @@
+mod auth;
 mod logging;
 mod routes;
 
@@ -9,6 +10,7 @@ use std::{
 
 use axum::{
     extract::DefaultBodyLimit,
+    middleware,
     routing::{delete, get, post, put},
     Router,
 };
@@ -35,6 +37,7 @@ use tracing::info;
 pub struct AppState {
     pub db: Arc<Db>,
     pub config: Arc<Config>,
+    pub api_token: String,
     pub start_time: Instant,
     pub log_tx: broadcast::Sender<String>,
     pub log_ring: Arc<std::sync::Mutex<VecDeque<String>>>,
@@ -84,6 +87,18 @@ async fn main() -> anyhow::Result<()> {
     borg_core::modes::register_modes(borg_domains::all_modes());
 
     std::fs::create_dir_all(&env_config.data_dir)?;
+
+    // Generate per-startup API token and write to disk (0600)
+    let api_token = auth::generate_token();
+    let token_path = format!("{}/.api-token", env_config.data_dir);
+    std::fs::write(&token_path, &api_token)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&token_path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    info!("API token written to {token_path}");
+
     let db_path = format!("{}/borg.db", env_config.data_dir);
     let mut db = Db::open(&db_path)?;
     db.migrate()?;
@@ -144,10 +159,14 @@ async fn main() -> anyhow::Result<()> {
     // Detect sandbox backend (bwrap preferred, docker fallback, configurable via SANDBOX_BACKEND)
     let sandbox_mode = Sandbox::detect(&config.sandbox_backend).await;
 
-    // Remove any orphaned borg-agent containers left over from a previous crash.
-    if sandbox_mode == borg_core::sandbox::SandboxMode::Docker {
+    // Remove any orphaned borg-agent containers left over from a previous crash,
+    // and ensure the agent bridge network exists.
+    let agent_network_available = if sandbox_mode == borg_core::sandbox::SandboxMode::Docker {
         Sandbox::prune_orphan_containers().await;
-    }
+        Sandbox::ensure_agent_network().await
+    } else {
+        false
+    };
 
     // Build backends map
     let mut backends: std::collections::HashMap<String, Arc<dyn borg_core::agent::AgentBackend>> =
@@ -202,6 +221,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&config),
         sandbox_mode.clone(),
         Arc::clone(&force_restart),
+        agent_network_available,
     );
     let pipeline_event_tx = pipeline.event_tx.clone();
     let pipeline = Arc::new(pipeline);
@@ -622,6 +642,7 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(AppState {
         db,
         config: Arc::clone(&config),
+        api_token,
         start_time: Instant::now(),
         log_tx,
         log_ring,
@@ -639,8 +660,10 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     let app = Router::new()
-        // Health
+        // Health (unauthenticated)
         .route("/api/health", get(routes::health))
+        // Token endpoint (localhost-only, no bearer required)
+        .route("/api/auth/token", get(auth::get_token))
         // Tasks
         .route("/api/tasks", get(routes::list_tasks))
         .route("/api/tasks/create", post(routes::create_task))
@@ -734,6 +757,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/knowledge/:id/content", get(routes::get_knowledge_content))
         // Static dashboard
         .fallback_service(serve_dir)
+        .layer(middleware::from_fn_with_state(
+            Arc::clone(&state),
+            auth::auth_middleware,
+        ))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -743,7 +770,21 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Listening on {addr}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+    let server = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    );
+
+    tokio::select! {
+        res = server => { res?; }
+        _ = tokio::signal::ctrl_c() => {
+            info!("shutdown signal received");
+        }
+    }
+
+    if agent_network_available {
+        Sandbox::remove_agent_network().await;
+    }
 
     Ok(())
 }

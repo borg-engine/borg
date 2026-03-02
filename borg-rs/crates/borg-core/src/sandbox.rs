@@ -233,6 +233,62 @@ impl Sandbox {
         cmd
     }
 
+    /// Network name used for agent containers.
+    pub const AGENT_NETWORK: &'static str = "borg-agent-net";
+
+    /// Subnet for the agent bridge network.
+    pub const AGENT_SUBNET: &'static str = "172.30.0.0/16";
+
+    /// Create the borg-agent-net bridge network if it doesn't already exist.
+    /// Returns true if the network is available (created or already existed).
+    pub async fn ensure_agent_network() -> bool {
+        let exists = tokio::process::Command::new("docker")
+            .args(["network", "inspect", Self::AGENT_NETWORK])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if exists {
+            info!("sandbox: agent network {} already exists", Self::AGENT_NETWORK);
+            return true;
+        }
+
+        let ok = tokio::process::Command::new("docker")
+            .args([
+                "network", "create",
+                "--driver", "bridge",
+                "--subnet", Self::AGENT_SUBNET,
+                Self::AGENT_NETWORK,
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if ok {
+            info!("sandbox: created agent network {}", Self::AGENT_NETWORK);
+        } else {
+            warn!("sandbox: failed to create agent network {}", Self::AGENT_NETWORK);
+        }
+        ok
+    }
+
+    /// Remove the agent network (best-effort, called on shutdown).
+    pub async fn remove_agent_network() {
+        let _ = tokio::process::Command::new("docker")
+            .args(["network", "rm", Self::AGENT_NETWORK])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await;
+        info!("sandbox: removed agent network {}", Self::AGENT_NETWORK);
+    }
+
     /// Remove any containers with label `borg-agent=1` that are not running.
     /// Call once at startup to clean up orphans from a previous crash.
     pub async fn prune_orphan_containers() {
