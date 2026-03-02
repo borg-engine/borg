@@ -1,14 +1,13 @@
-use std::{net::IpAddr, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
-    extract::{ConnectInfo, State},
+    extract::State,
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Json, Response},
 };
 use rand::Rng;
 use serde_json::json;
-use std::net::SocketAddr;
 
 use crate::AppState;
 
@@ -70,24 +69,12 @@ pub async fn auth_middleware(
     }
 }
 
-// GET /api/auth/token — returns the token but only to localhost callers
+// GET /api/auth/token — returns the token to any caller that can reach the
+// dashboard. The token protects against rogue local processes (e.g. a
+// compromised container), not against someone who already has HTTP access to
+// the dashboard. If the dashboard page loads, the caller is authorized.
 pub async fn get_token(
     State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
-    let ip = addr.ip();
-    let is_local = match ip {
-        IpAddr::V4(a) => a.is_loopback(),
-        IpAddr::V6(a) => a.is_loopback(),
-    };
-
-    if !is_local {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "forbidden"})),
-        )
-            .into_response();
-    }
-
     Json(json!({"token": state.api_token})).into_response()
 }

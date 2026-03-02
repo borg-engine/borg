@@ -72,7 +72,7 @@ fn test_data_mode_has_single_implement() {
     let mode = borg_domains::data::data_mode();
     assert_eq!(mode.name, "databorg");
     let names: Vec<&str> = mode.phases.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(names, &["backlog", "implement"]);
+    assert_eq!(names, &["backlog", "implement", "review"]);
 }
 
 #[test]
