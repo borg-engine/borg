@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BORG — AI Agent for Law Firms</title>
+  <meta name="description" content="BORG is an autonomous AI agent that drafts documents, reviews contracts, conducts legal research, and manages cases — so your team can focus on clients." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Chakra+Petch:wght@700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg:          #09090b;
+      --surface:     #18181b;
+      --surface-2:   #27272a;
+      --border:      rgba(255,255,255,0.08);
+      --text:        #fafafa;
+      --text-muted:  #a1a1aa;
+      --text-dim:    #71717a;
+      --blue:        #2563eb;
+      --blue-light:  #3b82f6;
+      --blue-dim:    rgba(37,99,235,0.15);
+    }
+
+    html {
+      -webkit-font-smoothing: antialiased;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Nav ─────────────────────────────────────────────── */
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(9,9,11,0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+
+    .logo-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      background: var(--blue);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .logo-mark span {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Chakra Petch', sans-serif;
+      font-weight: 700;
+      font-size: 11px;
+      color: #fff;
+    }
+
+    .logo-wordmark {
+      font-family: 'Chakra Petch', sans-serif;
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--text);
+      letter-spacing: 0.05em;
+    }
+
+    .nav-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--blue);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 500;
+      padding: 8px 18px;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .nav-cta:hover {
+      background: var(--blue-light);
+    }
+
+    /* ── Hero ─────────────────────────────────────────────── */
+
+    .hero {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 96px 24px 80px;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--blue-dim);
+      border: 1px solid rgba(37,99,235,0.3);
+      color: var(--blue-light);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 100px;
+      margin-bottom: 32px;
+    }
+
+    .hero-title {
+      font-family: 'Chakra Petch', sans-serif;
+      font-weight: 700;
+      font-size: clamp(48px, 8vw, 88px);
+      letter-spacing: -0.01em;
+      line-height: 1;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .hero-subtitle {
+      font-size: clamp(20px, 3vw, 26px);
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 28px;
+    }
+
+    .hero-body {
+      max-width: 560px;
+      margin: 0 auto 48px;
+      font-size: 17px;
+      color: var(--text-dim);
+      line-height: 1.7;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--blue);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      padding: 14px 32px;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .btn-primary:hover {
+      background: var(--blue-light);
+    }
+
+    .btn-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 16px;
+      font-weight: 500;
+      padding: 14px 28px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      text-decoration: none;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .btn-ghost:hover {
+      border-color: rgba(255,255,255,0.2);
+      color: var(--text);
+    }
+
+    /* ── Divider ──────────────────────────────────────────── */
+
+    .divider {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+      border: none;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── Value Props ─────────────────────────────────────── */
+
+    .props-section {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 80px 24px;
+    }
+
+    .section-label {
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--blue-light);
+      margin-bottom: 16px;
+    }
+
+    .section-heading {
+      text-align: center;
+      font-size: clamp(26px, 4vw, 38px);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+      line-height: 1.2;
+    }
+
+    .section-sub {
+      text-align: center;
+      font-size: 16px;
+      color: var(--text-dim);
+      max-width: 500px;
+      margin: 0 auto 56px;
+    }
+
+    .props-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+    }
+
+    .prop-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 24px;
+    }
+
+    .prop-icon {
+      width: 44px;
+      height: 44px;
+      background: var(--blue-dim);
+      border: 1px solid rgba(37,99,235,0.25);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+    }
+
+    .prop-icon svg {
+      width: 22px;
+      height: 22px;
+      color: var(--blue-light);
+    }
+
+    .prop-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .prop-desc {
+      font-size: 14px;
+      color: var(--text-dim);
+      line-height: 1.65;
+    }
+
+    /* ── How It Works ────────────────────────────────────── */
+
+    .how-section {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .how-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 80px 24px;
+    }
+
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 40px;
+      margin-top: 56px;
+    }
+
+    .step {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .step-num {
+      font-family: 'Chakra Petch', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--blue-light);
+      letter-spacing: 0.08em;
+    }
+
+    .step-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .step-desc {
+      font-size: 14px;
+      color: var(--text-dim);
+      line-height: 1.65;
+    }
+
+    /* ── CTA Banner ──────────────────────────────────────── */
+
+    .cta-section {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 80px 24px;
+      text-align: center;
+    }
+
+    .cta-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 64px 40px;
+    }
+
+    .cta-title {
+      font-size: clamp(24px, 4vw, 36px);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .cta-sub {
+      font-size: 16px;
+      color: var(--text-dim);
+      margin-bottom: 36px;
+      max-width: 440px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* ── Footer ──────────────────────────────────────────── */
+
+    footer {
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .footer-left {
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    .footer-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .footer-link {
+      font-size: 13px;
+      color: var(--text-dim);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.15s;
+    }
+
+    .footer-link:hover {
+      color: var(--text-muted);
+    }
+
+    /* ── Mobile ──────────────────────────────────────────── */
+
+    @media (max-width: 600px) {
+      .hero {
+        padding: 64px 20px 56px;
+      }
+
+      .props-section,
+      .how-inner,
+      .cta-section {
+        padding-left: 20px;
+        padding-right: 20px;
+      }
+
+      .cta-card {
+        padding: 48px 24px;
+      }
+
+      .footer-inner {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav>
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">
+        <div class="logo-mark">
+          <span>B</span><span>O</span>
+          <span>R</span><span>G</span>
+        </div>
+        <span class="logo-wordmark">BORG</span>
+      </a>
+      <a href="https://app.borg.legal" class="nav-cta">
+        Get Started
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 8h10M9 4l4 4-4 4"/>
+        </svg>
+      </a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-badge">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+        <circle cx="5" cy="5" r="5"/>
+      </svg>
+      Built for Legal Teams
+    </div>
+    <h1 class="hero-title">BORG</h1>
+    <p class="hero-subtitle">AI Agent for Law Firms</p>
+    <p class="hero-body">
+      An autonomous agent that works alongside your legal team — drafting, reviewing, researching, and managing — so your attorneys can focus on what matters.
+    </p>
+    <div class="hero-actions">
+      <a href="https://app.borg.legal" class="btn-primary">
+        Get Started
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 8h10M9 4l4 4-4 4"/>
+        </svg>
+      </a>
+      <a href="mailto:hello@borg.legal" class="btn-ghost">
+        Talk to us
+      </a>
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <!-- Value Props -->
+  <section class="props-section">
+    <p class="section-label">What BORG does</p>
+    <h2 class="section-heading">Everything your team needs, automated</h2>
+    <p class="section-sub">Four core capabilities, delivered by a single AI agent that understands legal work.</p>
+
+    <div class="props-grid">
+
+      <div class="prop-card">
+        <div class="prop-icon">
+          <!-- Document icon -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+        </div>
+        <h3 class="prop-title">Document Drafting</h3>
+        <p class="prop-desc">Generate first drafts of pleadings, motions, briefs, and correspondence in seconds. Consistent, accurate, and formatted to your standards.</p>
+      </div>
+
+      <div class="prop-card">
+        <div class="prop-icon">
+          <!-- Shield/check icon -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <polyline points="9 12 11 14 15 10"/>
+          </svg>
+        </div>
+        <h3 class="prop-title">Contract Review</h3>
+        <p class="prop-desc">Flag risk clauses, missing terms, and non-standard language across any agreement. Review hundreds of pages in minutes, not hours.</p>
+      </div>
+
+      <div class="prop-card">
+        <div class="prop-icon">
+          <!-- Search icon -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </div>
+        <h3 class="prop-title">Legal Research</h3>
+        <p class="prop-desc">Surface relevant precedents, statutes, and regulatory guidance with full citations. Get a clear synthesis, not just a list of documents.</p>
+      </div>
+
+      <div class="prop-card">
+        <div class="prop-icon">
+          <!-- Layers/case icon -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+            <polyline points="2 17 12 22 22 17"/>
+            <polyline points="2 12 12 17 22 12"/>
+          </svg>
+        </div>
+        <h3 class="prop-title">Case Management</h3>
+        <p class="prop-desc">Track deadlines, summarize case status, and coordinate tasks across your team. Stay on top of every matter without the overhead.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="how-section">
+    <div class="how-inner">
+      <p class="section-label">How it works</p>
+      <h2 class="section-heading">Simple by design</h2>
+
+      <div class="steps-grid">
+
+        <div class="step">
+          <span class="step-num">01</span>
+          <h3 class="step-title">Connect your workspace</h3>
+          <p class="step-desc">Link BORG to your existing document store, email, and matter management system. Setup takes minutes.</p>
+        </div>
+
+        <div class="step">
+          <span class="step-num">02</span>
+          <h3 class="step-title">Assign tasks</h3>
+          <p class="step-desc">Describe what you need in plain language. BORG understands legal context and gets to work immediately.</p>
+        </div>
+
+        <div class="step">
+          <span class="step-num">03</span>
+          <h3 class="step-title">Review and approve</h3>
+          <p class="step-desc">Your attorneys stay in control. BORG delivers work product for review — you decide what goes out the door.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="cta-card">
+      <h2 class="cta-title">Ready to put BORG to work?</h2>
+      <p class="cta-sub">Join law firms already using BORG to deliver more, faster — without growing headcount.</p>
+      <a href="https://app.borg.legal" class="btn-primary">
+        Get Started
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 8h10M9 4l4 4-4 4"/>
+        </svg>
+      </a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-inner">
+      <span class="footer-left">© 2026 Borg Labs</span>
+      <div class="footer-right">
+        <a href="mailto:hello@borg.legal" class="footer-link">Contact</a>
+        <a href="https://github.com/borglab" class="footer-link" target="_blank" rel="noopener">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+          </svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
