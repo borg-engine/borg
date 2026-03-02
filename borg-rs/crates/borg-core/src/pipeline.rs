@@ -26,6 +26,15 @@ use crate::{
     },
 };
 
+pub fn derive_compile_check(test_cmd: &str) -> Option<String> {
+    let trimmed = test_cmd.trim();
+    if trimmed.contains("cargo test") {
+        Some(format!("{trimmed} --no-run"))
+    } else {
+        None
+    }
+}
+
 pub struct Pipeline {
     pub db: Arc<Db>,
     pub backends: HashMap<String, Arc<dyn AgentBackend>>,
@@ -572,15 +581,6 @@ impl Pipeline {
         format!("{message}\n\nCo-Authored-By: {user_coauthor}")
     }
 
-    fn derive_compile_check(test_cmd: &str) -> Option<String> {
-        let trimmed = test_cmd.trim();
-        if trimmed.contains("cargo test") {
-            Some(format!("{trimmed} --no-run"))
-        } else {
-            None
-        }
-    }
-
     // ── Phase handlers ────────────────────────────────────────────────────
 
     /// Setup phase: create git worktree and advance to first agent phase.
@@ -836,7 +836,7 @@ impl Pipeline {
         }
 
         if phase.compile_check && !test_cmd.is_empty() {
-            if let Some(check_cmd) = Self::derive_compile_check(&test_cmd) {
+            if let Some(check_cmd) = derive_compile_check(&test_cmd) {
                 let out = if result.ran_in_docker {
                     container_result_as_test_output(
                         &result.container_test_results,
@@ -932,7 +932,7 @@ impl Pipeline {
         let use_docker = self.sandbox_mode == SandboxMode::Docker;
 
         // Compile check first (if derivable from test command)
-        if let Some(check_cmd) = Self::derive_compile_check(&test_cmd) {
+        if let Some(check_cmd) = derive_compile_check(&test_cmd) {
             let out = if use_docker {
                 self.run_test_in_container(task, &check_cmd).await?
             } else {
