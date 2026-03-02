@@ -1,0 +1,10 @@
+{
+  "task_id": 83,
+  "task_title": "Add eviction to the `chat_rate` HashMap to prevent unbounded memory growth",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-83",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-02T23:10:14.757015141Z"
+}
