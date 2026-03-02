@@ -46,8 +46,80 @@ fn derive_compile_check(test_cmd: &str) -> Option<String> {
     let trimmed = test_cmd.trim();
     if trimmed.contains("cargo test") {
         Some(format!("{trimmed} --no-run"))
+    } else if trimmed.contains("cargo nextest") {
+        Some(format!("{trimmed} --no-run"))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::derive_compile_check;
+
+    #[test]
+    fn cargo_test_basic() {
+        assert_eq!(derive_compile_check("cargo test"), Some("cargo test --no-run".to_string()));
+    }
+
+    #[test]
+    fn cargo_test_with_package_flag() {
+        assert_eq!(
+            derive_compile_check("cargo test --package my-crate"),
+            Some("cargo test --package my-crate --no-run".to_string()),
+        );
+    }
+
+    #[test]
+    fn cargo_test_with_workspace_flag() {
+        assert_eq!(
+            derive_compile_check("cargo test --workspace"),
+            Some("cargo test --workspace --no-run".to_string()),
+        );
+    }
+
+    #[test]
+    fn cargo_test_trims_whitespace() {
+        assert_eq!(
+            derive_compile_check("  cargo test  "),
+            Some("cargo test --no-run".to_string()),
+        );
+    }
+
+    #[test]
+    fn cargo_nextest_run() {
+        assert_eq!(
+            derive_compile_check("cargo nextest run"),
+            Some("cargo nextest run --no-run".to_string()),
+        );
+    }
+
+    #[test]
+    fn cargo_nextest_with_flags() {
+        assert_eq!(
+            derive_compile_check("cargo nextest run --workspace"),
+            Some("cargo nextest run --workspace --no-run".to_string()),
+        );
+    }
+
+    #[test]
+    fn unknown_command_returns_none() {
+        assert_eq!(derive_compile_check("pytest tests/"), None);
+    }
+
+    #[test]
+    fn go_test_returns_none() {
+        assert_eq!(derive_compile_check("go test ./..."), None);
+    }
+
+    #[test]
+    fn bun_test_returns_none() {
+        assert_eq!(derive_compile_check("bun test"), None);
+    }
+
+    #[test]
+    fn empty_returns_none() {
+        assert_eq!(derive_compile_check(""), None);
     }
 }
 
