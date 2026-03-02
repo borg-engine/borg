@@ -1,0 +1,10 @@
+{
+  "name": "plaid-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "plaid": "^28.0.0"
+  }
+}
