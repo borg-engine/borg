@@ -1,0 +1,10 @@
+{
+  "task_id": 95,
+  "task_title": "Test is_exempt auth bypass: health, token endpoint, non-API paths, other API paths",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-95",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-02T23:42:17.447366016Z"
+}
