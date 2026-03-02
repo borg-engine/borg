@@ -204,6 +204,14 @@ const TOOLS = [
   },
 ];
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function validateDate(value, name) {
+  if (!value || !DATE_RE.test(value)) {
+    throw new Error(`${name} must be a valid date in YYYY-MM-DD format (got: ${JSON.stringify(value)})`);
+  }
+}
+
 // ── Tool handlers ────────────────────────────────────────────────────
 const handlers = {
   plaid_create_link_token: async (args) => {
@@ -257,6 +265,8 @@ const handlers = {
   },
 
   plaid_get_transactions: async (args) => {
+    validateDate(args.start_date, "start_date");
+    validateDate(args.end_date, "end_date");
     checkRate();
     const opts = {
       access_token: args.access_token,
