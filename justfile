@@ -39,8 +39,13 @@ restart:
         systemctl --user enable borg >/dev/null 2>&1 || true
         systemctl --user restart borg 2>/dev/null || systemctl --user start borg
     fi
-    for i in $(seq 1 20); do curl -sf http://127.0.0.1:3131/api/status >/dev/null && break; sleep 1; done
-    curl -sf http://127.0.0.1:3131/api/status >/dev/null || (echo "borg did not come up on :3131"; exit 1)
+    for i in $(seq 1 20); do
+      TOKEN=$(cat store/.api-token 2>/dev/null || true)
+      curl -sf -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3131/api/status >/dev/null 2>&1 && break
+      sleep 1
+    done
+    TOKEN=$(cat store/.api-token 2>/dev/null || true)
+    curl -sf -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3131/api/status >/dev/null 2>&1 || (echo "borg did not come up on :3131"; exit 1)
 
 # Stop the service
 stop:
