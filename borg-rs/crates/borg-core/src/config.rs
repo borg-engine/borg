@@ -217,14 +217,21 @@ pub fn refresh_oauth_token(credentials_path: &str, current: &str) -> String {
     let expiry = read_oauth_expiry(credentials_path).unwrap_or(0);
     if expiry > 0 && expiry < now_ms + 300_000 {
         tracing::info!("OAuth token expired or near-expiry, refreshing via CLI");
-        match std::process::Command::new("claude")
-            .args(["auth", "status"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-        {
-            Ok(s) if !s.success() => tracing::warn!("OAuth refresh failed (exit {})", s.code().unwrap_or(-1)),
-            Err(e) => tracing::warn!("OAuth refresh command failed: {e}"),
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = std::process::Command::new("claude")
+                .args(["auth", "status"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            let _ = tx.send(result);
+        });
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(Ok(s)) if !s.success() => {
+                tracing::warn!("OAuth refresh failed (exit {})", s.code().unwrap_or(-1))
+            }
+            Ok(Err(e)) => tracing::warn!("OAuth refresh command failed: {e}"),
+            Err(_) => tracing::warn!("OAuth refresh timed out after 5s"),
             _ => {}
         }
     }
