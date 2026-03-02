@@ -185,12 +185,12 @@ impl ClaudeBackend {
         })
     }
 
-    fn host_mirror_path(task: &Task) -> String {
+    fn host_mirror_path(task: &Task, data_dir: &str) -> String {
         let repo_name = std::path::Path::new(&task.repo_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        format!("/home/shulgin/borg-data/mirrors/{repo_name}.git")
+        format!("{data_dir}/mirrors/{repo_name}.git")
     }
 
     fn container_mirror_path(task: &Task) -> String {
@@ -381,7 +381,7 @@ impl AgentBackend for ClaudeBackend {
             SandboxMode::Docker => {
                 // Session dir (rw) + optional bare mirror (ro) + optional setup script (ro).
                 // The container clones the repo itself; no worktree bind needed.
-                let host_mirror = Self::host_mirror_path(task);
+                let host_mirror = Self::host_mirror_path(task, &ctx.data_dir);
                 let container_mirror = Self::container_mirror_path(task);
                 let mut binds: Vec<(String, String, bool)> = vec![
                     (ctx.session_dir.clone(), ctx.session_dir.clone(), false),

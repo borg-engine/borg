@@ -397,6 +397,7 @@ impl AgentSignal {
 pub struct PhaseContext {
     pub task: Task,
     pub repo_config: RepoConfig,
+    pub data_dir: String,
     pub session_dir: String,
     pub worktree_path: String,
     pub oauth_token: String,

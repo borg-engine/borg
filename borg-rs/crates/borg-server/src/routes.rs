@@ -1196,6 +1196,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                     backend: String::new(),
                     repo_slug: String::new(),
                 },
+                data_dir: state.config.data_dir.clone(),
                 session_dir: format!("{}/sessions/triage-{}", state.config.data_dir, proposal.id),
                 worktree_path: proposal.repo_path.clone(),
                 oauth_token: oauth.clone(),
@@ -1884,7 +1885,7 @@ pub(crate) async fn upload_knowledge(
         match field.name() {
             Some("file") => {
                 if let Some(name) = field.file_name() {
-                    file_name = name.to_string();
+                    file_name = sanitize_upload_name(name);
                 }
                 file_bytes = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?.to_vec();
             },

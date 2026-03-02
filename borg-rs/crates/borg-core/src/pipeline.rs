@@ -81,7 +81,10 @@ impl Pipeline {
                     .into_iter()
                     .find(|m| m.name == name)
             })
-            .or_else(|| get_mode("sweborg"))
+            .or_else(|| {
+                warn!("resolve_mode: unknown mode {name:?}, falling back to sweborg");
+                get_mode("sweborg")
+            })
     }
 
     pub fn new(
@@ -216,6 +219,7 @@ impl Pipeline {
         PhaseContext {
             task: task.clone(),
             repo_config: self.repo_config(task),
+            data_dir: self.config.data_dir.clone(),
             session_dir,
             worktree_path,
             oauth_token: self.config.oauth_token.clone(),
@@ -356,6 +360,22 @@ impl Pipeline {
             let task_id = task.id;
             let task_for_recovery = task.clone();
             tokio::spawn(async move {
+                // Drop guard ensures in_flight slot is released even if this future is cancelled.
+                struct InFlightGuard {
+                    pipeline: Arc<Pipeline>,
+                    task_id: i64,
+                }
+                impl Drop for InFlightGuard {
+                    fn drop(&mut self) {
+                        let pipeline = Arc::clone(&self.pipeline);
+                        let task_id = self.task_id;
+                        tokio::spawn(async move {
+                            pipeline.in_flight.lock().await.remove(&task_id);
+                        });
+                    }
+                }
+                let _guard = InFlightGuard { pipeline: Arc::clone(&pipeline), task_id };
+
                 let handle = tokio::spawn(async move {
                     Arc::clone(&inner_pipeline)
                         .process_task(task)
@@ -387,7 +407,6 @@ impl Pipeline {
                         }
                     }
                 }
-                pipeline.in_flight.lock().await.remove(&task_id);
             });
         }
 
@@ -1506,23 +1525,28 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
         let branch = format!("task-{}", task.id);
-        let host_mirror = format!("/home/shulgin/borg-data/mirrors/{repo_name}.git");
+        let host_mirror = format!("{}/mirrors/{repo_name}.git", self.config.data_dir);
         let container_mirror = format!("/mirrors/{repo_name}.git");
 
         // Shallow clone — test containers only need the branch tip.
+        // Wrap a value in single quotes with internal single quotes escaped.
+        fn sq(s: &str) -> String {
+            format!("'{}'", s.replace('\'', "'\\''"))
+        }
+        let repo_url_q = sq(&task.repo_path);
+        let branch_q = sq(&branch);
+        let cmd_q = sq(cmd);
         let clone_cmd = if std::path::Path::new(&host_mirror).exists() {
             format!(
-                "git clone --depth 1 --single-branch --reference {container_mirror} {repo_url} /workspace/repo",
-                repo_url = task.repo_path
+                "git clone --depth 1 --single-branch --reference {container_mirror} {repo_url_q} /workspace/repo"
             )
         } else {
             format!(
-                "git clone --depth 1 --single-branch {repo_url} /workspace/repo",
-                repo_url = task.repo_path
+                "git clone --depth 1 --single-branch {repo_url_q} /workspace/repo"
             )
         };
         let bash_script = format!(
-            "set -e; {clone_cmd} && cd /workspace/repo && git checkout {branch} && {cmd}"
+            "set -e; {clone_cmd} && cd /workspace/repo && git checkout {branch_q} && {cmd_q}"
         );
         let bash_cmd = vec!["bash".to_string(), "-c".to_string(), bash_script];
 
@@ -2563,15 +2587,25 @@ Make only the minimal changes the linter requires. Do not refactor or change log
     }
 
     async fn check_self_update(&self, repo_path: &str) {
-        // Prevent concurrent self-updates via a pid lock file.
+        // Prevent concurrent self-updates via a pid lock file (atomic create_new).
         let lock_path = format!("{}/self-update.lock", self.config.data_dir);
-        if std::path::Path::new(&lock_path).exists() {
-            warn!("Self-update: lock file exists, skipping");
-            return;
-        }
-        if let Err(e) = std::fs::write(&lock_path, std::process::id().to_string()) {
-            warn!("Self-update: could not create lock file: {e}");
-            return;
+        let lock_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path);
+        match lock_file {
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                warn!("Self-update: lock file exists, skipping");
+                return;
+            }
+            Err(e) => {
+                warn!("Self-update: could not create lock file: {e}");
+                return;
+            }
+            Ok(mut f) => {
+                use std::io::Write;
+                let _ = f.write_all(std::process::id().to_string().as_bytes());
+            }
         }
         struct LockGuard(String);
         impl Drop for LockGuard {
