@@ -108,6 +108,12 @@ impl AgentBackend for ClaudeBackend {
             "200".to_string(),
         ];
 
+        let disallowed = ctx.disallowed_tools.trim();
+        if !disallowed.is_empty() {
+            claude_args.push("--disallowedTools".to_string());
+            claude_args.push(disallowed.to_string());
+        }
+
         // Build combined system prompt from phase + config-derived suffix
         let mut system_prompt = phase.system_prompt.clone();
         if !ctx.system_prompt_suffix.is_empty() {

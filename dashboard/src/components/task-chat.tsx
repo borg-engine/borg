@@ -4,6 +4,7 @@ import { useTaskMessages, useSendTaskMessage } from "@/lib/api";
 import type { TaskMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useDictation } from "@/lib/dictation";
+import { BorgingIndicator } from "./borging";
 
 interface TaskChatProps {
   taskId: number;
@@ -85,6 +86,7 @@ export function TaskChat({ taskId }: TaskChatProps) {
             ) : (
               messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)
             )}
+            {sending && <BorgingIndicator />}
             <div ref={bottomRef} />
           </div>
 

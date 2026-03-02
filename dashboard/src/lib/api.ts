@@ -152,6 +152,8 @@ export interface Settings {
   proposal_promote_threshold: number;
   git_claude_coauthor: boolean;
   git_user_coauthor: string;
+  chat_disallowed_tools: string;
+  pipeline_disallowed_tools: string;
 }
 
 export function useSettings() {

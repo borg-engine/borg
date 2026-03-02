@@ -197,6 +197,22 @@ export function SettingsPanel() {
           />
         </Section>
 
+        {/* Permissions */}
+        <Section title="Permissions">
+          <TextField
+            label="Chat Disallowed Tools"
+            desc="Comma-separated tools to block for chat agents (empty = all allowed)"
+            value={effective.chat_disallowed_tools}
+            onChange={(v) => update("chat_disallowed_tools", v)}
+          />
+          <TextField
+            label="Pipeline Disallowed Tools"
+            desc="Comma-separated tools to block for pipeline agents (empty = all allowed)"
+            value={effective.pipeline_disallowed_tools}
+            onChange={(v) => update("pipeline_disallowed_tools", v)}
+          />
+        </Section>
+
         {/* Per-Repo Settings */}
         <ReposSection />
 

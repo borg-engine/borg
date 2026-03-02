@@ -411,6 +411,8 @@ pub struct PhaseContext {
     pub setup_script: String,
     /// Per-task API keys (provider → key_value), looked up from DB at dispatch time.
     pub api_keys: std::collections::HashMap<String, String>,
+    /// Comma-separated tools to disallow (from settings). Empty = all allowed.
+    pub disallowed_tools: String,
 }
 
 /// Output produced by a phase executor.

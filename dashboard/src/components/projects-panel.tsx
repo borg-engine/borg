@@ -11,6 +11,7 @@ import {
 import { Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDictation } from "@/lib/dictation";
+import { BorgingIndicator } from "./borging";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -299,6 +300,7 @@ export function ProjectsPanel() {
                     </div>
                   </div>
                 ))}
+                {sending && <BorgingIndicator />}
                 <div ref={bottomRef} />
               </div>
 
@@ -336,7 +338,7 @@ export function ProjectsPanel() {
                     disabled={sending || !messageInput.trim()}
                     className="rounded bg-blue-500/20 px-3 py-2 text-[12px] font-medium text-blue-300 disabled:cursor-not-allowed disabled:text-zinc-600"
                   >
-                    {sending ? "Thinking..." : "Send"}
+                    Send
                   </button>
                 </div>
               </div>

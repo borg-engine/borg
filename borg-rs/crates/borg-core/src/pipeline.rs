@@ -202,6 +202,8 @@ impl Pipeline {
                 api_keys.insert(provider.to_string(), key);
             }
         }
+        let disallowed_tools = self.db.get_config("pipeline_disallowed_tools")
+            .ok().flatten().unwrap_or_default();
         PhaseContext {
             task: task.clone(),
             repo_config: self.repo_config(task),
@@ -215,6 +217,7 @@ impl Pipeline {
             stream_tx: None,
             setup_script,
             api_keys,
+            disallowed_tools,
         }
     }
 

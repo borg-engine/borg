@@ -204,6 +204,8 @@ pub(crate) const SETTINGS_KEYS: &[&str] = &[
     "backend",
     "git_claude_coauthor",
     "git_user_coauthor",
+    "chat_disallowed_tools",
+    "pipeline_disallowed_tools",
 ];
 
 pub(crate) const SETTINGS_DEFAULTS: &[(&str, &str)] = &[
@@ -222,6 +224,8 @@ pub(crate) const SETTINGS_DEFAULTS: &[(&str, &str)] = &[
     ("backend", "claude"),
     ("git_claude_coauthor", "false"),
     ("git_user_coauthor", ""),
+    ("chat_disallowed_tools", ""),
+    ("pipeline_disallowed_tools", ""),
 ];
 
 // ── Shared helper functions ───────────────────────────────────────────────
@@ -484,6 +488,15 @@ pub(crate) async fn run_chat_agent(
         "--append-system-prompt".to_string(),
         system_prompt,
     ];
+
+    // Apply disallowed tools from settings
+    if let Ok(Some(disallowed)) = db.get_config("chat_disallowed_tools") {
+        let disallowed = disallowed.trim();
+        if !disallowed.is_empty() {
+            args.push("--disallowedTools".to_string());
+            args.push(disallowed.to_string());
+        }
+    }
 
     // Wire up lawborg MCP server for legal project chats
     if is_legal {
@@ -1145,6 +1158,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 stream_tx: None,
                 setup_script: String::new(),
                 api_keys: std::collections::HashMap::new(),
+                disallowed_tools: String::new(),
             };
 
             tokio::fs::create_dir_all(&ctx.session_dir).await.ok();

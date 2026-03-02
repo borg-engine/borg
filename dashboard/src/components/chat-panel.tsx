@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDictation } from "@/lib/dictation";
+import { BorgingIndicator } from "./borging";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -221,11 +222,6 @@ export function ChatPanel() {
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/[0.06] px-4">
         <div className="flex items-center gap-2">
           <span className="text-[12px] md:text-[11px] font-medium text-zinc-400">Chat</span>
-          {sending && (
-            <span className="text-[11px] md:text-[10px] text-zinc-600 animate-pulse">
-              thinking...
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-1.5">
           <div className="relative">
@@ -267,6 +263,7 @@ export function ChatPanel() {
         {messages.map((msg, i) => (
           <MessageBubble key={`${msg.ts}-${msg.role}-${i}`} msg={msg} />
         ))}
+        {sending && <BorgingIndicator />}
         <div ref={bottomRef} />
       </div>
 
