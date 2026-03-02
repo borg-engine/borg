@@ -1,0 +1,10 @@
+{
+  "task_id": 52,
+  "task_title": "Validate file names from DB before path join in project context builder",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-52",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-02T21:59:50.211424771Z"
+}
