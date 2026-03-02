@@ -3186,3 +3186,287 @@ fn looks_like_field_key(line: &str) -> bool {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
+
+    use crate::{
+        agent::AgentBackend,
+        config::Config,
+        db::Db,
+        modes::register_modes,
+        sandbox::SandboxMode,
+        types::{
+            IntegrationType, PhaseConfig, PhaseContext, PhaseOutput, PipelineMode, RepoConfig,
+            Task,
+        },
+    };
+
+    static INIT: std::sync::Once = std::sync::Once::new();
+
+    fn init_modes() {
+        INIT.call_once(|| {
+            register_modes(vec![stub_mode("sweborg"), stub_mode("webborg")]);
+        });
+    }
+
+    fn stub_mode(name: &str) -> PipelineMode {
+        PipelineMode {
+            name: name.into(),
+            label: name.into(),
+            category: String::new(),
+            phases: vec![],
+            seed_modes: vec![],
+            initial_status: "backlog".into(),
+            uses_git_worktrees: false,
+            uses_docker: false,
+            uses_test_cmd: false,
+            integration: IntegrationType::None,
+            default_max_attempts: 3,
+        }
+    }
+
+    fn stub_config(backend: &str, watched_repos: Vec<RepoConfig>) -> Arc<Config> {
+        Arc::new(Config {
+            telegram_token: String::new(),
+            oauth_token: String::new(),
+            assistant_name: "Borg".into(),
+            trigger_pattern: "@Borg".into(),
+            data_dir: "store".into(),
+            container_image: "borg-agent".into(),
+            model: String::new(),
+            credentials_path: String::new(),
+            session_max_age_hours: 24,
+            max_consecutive_errors: 3,
+            pipeline_repo: String::new(),
+            pipeline_test_cmd: String::new(),
+            pipeline_lint_cmd: String::new(),
+            backend: backend.into(),
+            pipeline_admin_chat: String::new(),
+            release_interval_mins: 60,
+            continuous_mode: false,
+            chat_collection_window_ms: 1000,
+            chat_cooldown_ms: 1000,
+            agent_timeout_s: 60,
+            max_chat_agents: 1,
+            chat_rate_limit: 5,
+            pipeline_max_agents: 1,
+            web_bind: "127.0.0.1".into(),
+            web_port: 3131,
+            dashboard_dist_dir: String::new(),
+            container_setup: String::new(),
+            container_memory_mb: 512,
+            container_cpus: 1.0,
+            sandbox_backend: "none".into(),
+            pipeline_max_backlog: 5,
+            pipeline_seed_cooldown_s: 3600,
+            proposal_promote_threshold: 8,
+            pipeline_tick_s: 10,
+            remote_check_interval_s: 300,
+            mirror_refresh_interval_s: 60,
+            pipeline_agent_cooldown_s: 120,
+            git_author_name: String::new(),
+            git_author_email: String::new(),
+            git_committer_name: String::new(),
+            git_committer_email: String::new(),
+            git_via_borg: false,
+            git_claude_coauthor: false,
+            git_user_coauthor: String::new(),
+            watched_repos,
+            build_cmd: String::new(),
+            self_update_enabled: false,
+            codex_api_key: String::new(),
+            codex_credentials_path: String::new(),
+            discord_token: String::new(),
+            wa_auth_dir: String::new(),
+            wa_disabled: false,
+            observer_config: String::new(),
+        })
+    }
+
+    fn open_db() -> Arc<Db> {
+        let mut db = Db::open(":memory:").unwrap();
+        db.migrate().unwrap();
+        Arc::new(db)
+    }
+
+    fn make_pipeline(
+        db: Arc<Db>,
+        backends: HashMap<String, Arc<dyn AgentBackend>>,
+        config: Arc<Config>,
+    ) -> super::Pipeline {
+        let (p, _rx) = super::Pipeline::new(
+            db,
+            backends,
+            config,
+            SandboxMode::Direct,
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            false,
+        );
+        p
+    }
+
+    fn stub_task(backend: &str, repo_path: &str) -> Task {
+        Task {
+            id: 1,
+            title: "test".into(),
+            description: String::new(),
+            repo_path: repo_path.into(),
+            branch: "task-1".into(),
+            status: "backlog".into(),
+            attempt: 1,
+            max_attempts: 3,
+            last_error: String::new(),
+            created_by: "test".into(),
+            notify_chat: String::new(),
+            created_at: chrono::Utc::now(),
+            session_id: String::new(),
+            mode: "sweborg".into(),
+            backend: backend.into(),
+        }
+    }
+
+    struct MockBackend;
+
+    #[async_trait]
+    impl AgentBackend for MockBackend {
+        async fn run_phase(
+            &self,
+            _: &Task,
+            _: &PhaseConfig,
+            _: PhaseContext,
+        ) -> anyhow::Result<PhaseOutput> {
+            unimplemented!()
+        }
+        async fn inject_message(&self, _: &str, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        async fn interrupt(&self, _: &str) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+    }
+
+    fn arc_backend() -> Arc<dyn AgentBackend> {
+        Arc::new(MockBackend)
+    }
+
+    // ── resolve_mode ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn resolve_mode_known_builtin() {
+        init_modes();
+        let p = make_pipeline(open_db(), HashMap::new(), stub_config("", vec![]));
+        assert_eq!(p.resolve_mode("sweborg").unwrap().name, "sweborg");
+    }
+
+    #[test]
+    fn resolve_mode_alias_swe_maps_to_sweborg() {
+        init_modes();
+        let p = make_pipeline(open_db(), HashMap::new(), stub_config("", vec![]));
+        assert_eq!(p.resolve_mode("swe").unwrap().name, "sweborg");
+    }
+
+    #[test]
+    fn resolve_mode_unknown_falls_back_to_sweborg() {
+        init_modes();
+        let p = make_pipeline(open_db(), HashMap::new(), stub_config("", vec![]));
+        // No built-in, no custom mode in DB → fallback to sweborg
+        assert_eq!(
+            p.resolve_mode("zzz-no-such-mode").unwrap().name,
+            "sweborg"
+        );
+    }
+
+    #[test]
+    fn resolve_mode_custom_mode_found_in_db() {
+        init_modes();
+        let mut db = Db::open(":memory:").unwrap();
+        db.migrate().unwrap();
+        let custom = stub_mode("mymode");
+        db.set_config(
+            "custom_modes",
+            &serde_json::to_string(&[&custom]).unwrap(),
+        )
+        .unwrap();
+        let db = Arc::new(db);
+        let (p, _) = super::Pipeline::new(
+            db,
+            HashMap::new(),
+            stub_config("", vec![]),
+            SandboxMode::Direct,
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            false,
+        );
+        assert_eq!(p.resolve_mode("mymode").unwrap().name, "mymode");
+    }
+
+    // ── resolve_backend ──────────────────────────────────────────────────────
+
+    #[test]
+    fn resolve_backend_task_explicit_override() {
+        let mut backends = HashMap::new();
+        backends.insert("alpha".into(), arc_backend());
+        backends.insert("beta".into(), arc_backend());
+        let p = make_pipeline(open_db(), backends, stub_config("beta", vec![]));
+        // task.backend = "alpha" → selected even though config.backend = "beta"
+        assert!(p.resolve_backend(&stub_task("alpha", "/repo")).is_some());
+    }
+
+    #[test]
+    fn resolve_backend_task_unknown_backend_falls_through_to_config() {
+        let mut backends = HashMap::new();
+        backends.insert("claude".into(), arc_backend());
+        let p = make_pipeline(open_db(), backends, stub_config("claude", vec![]));
+        // task.backend = "gone" is not in backends → falls through to config.backend
+        assert!(p.resolve_backend(&stub_task("gone", "/repo")).is_some());
+    }
+
+    #[test]
+    fn resolve_backend_repo_override() {
+        let mut backends = HashMap::new();
+        backends.insert("claude".into(), arc_backend());
+        backends.insert("ollama".into(), arc_backend());
+        let repos = vec![RepoConfig {
+            path: "/myrepo".into(),
+            test_cmd: String::new(),
+            prompt_file: String::new(),
+            mode: "sweborg".into(),
+            is_self: false,
+            auto_merge: true,
+            lint_cmd: String::new(),
+            backend: "ollama".into(),
+            repo_slug: String::new(),
+        }];
+        let p = make_pipeline(open_db(), backends, stub_config("claude", repos));
+        // no task-level override; repo /myrepo has backend = "ollama"
+        assert!(p.resolve_backend(&stub_task("", "/myrepo")).is_some());
+    }
+
+    #[test]
+    fn resolve_backend_config_default() {
+        let mut backends = HashMap::new();
+        backends.insert("claude".into(), arc_backend());
+        let p = make_pipeline(open_db(), backends, stub_config("claude", vec![]));
+        // no task or repo override → config.backend = "claude"
+        assert!(p.resolve_backend(&stub_task("", "/repo")).is_some());
+    }
+
+    #[test]
+    fn resolve_backend_any_fallback_when_config_backend_missing() {
+        let mut backends = HashMap::new();
+        backends.insert("only-one".into(), arc_backend());
+        // config.backend = "gone" is absent from backends → falls through to any
+        let p = make_pipeline(open_db(), backends, stub_config("gone", vec![]));
+        assert!(p.resolve_backend(&stub_task("", "/repo")).is_some());
+    }
+
+    #[test]
+    fn resolve_backend_empty_map_returns_none() {
+        let p = make_pipeline(open_db(), HashMap::new(), stub_config("claude", vec![]));
+        assert!(p.resolve_backend(&stub_task("", "/repo")).is_none());
+    }
+}
