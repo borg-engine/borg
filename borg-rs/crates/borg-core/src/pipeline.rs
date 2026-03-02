@@ -292,16 +292,26 @@ impl Pipeline {
         summary
     }
 
-    /// Remove the git worktree for a task (best-effort, silent on error).
+    /// Remove the git worktree for a task (best-effort).
     fn cleanup_worktree(&self, task: &Task) {
         if self.sandbox_mode == SandboxMode::Docker {
             return;
         }
         let wt_path = format!("{}/.worktrees/task-{}", task.repo_path, task.id);
         let git = Git::new(&task.repo_path);
-        let _ = git.remove_worktree(&wt_path);
-        std::fs::remove_dir_all(&wt_path).ok();
-        let _ = git.exec(&task.repo_path, &["worktree", "prune"]);
+        if let Err(e) = git.remove_worktree(&wt_path) {
+            warn!("worktree remove failed for {wt_path}: {e}");
+        }
+        if let Err(e) = std::fs::remove_dir_all(&wt_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                warn!("remove_dir_all failed for {wt_path}: {e}");
+            }
+        }
+        match git.exec(&task.repo_path, &["worktree", "prune"]) {
+            Err(e) => warn!("git worktree prune failed: {e}"),
+            Ok(r) if !r.success() => warn!("git worktree prune failed: {}", r.combined_output()),
+            _ => {}
+        }
         info!("cleaned up worktree {} for task #{}", wt_path, task.id);
     }
 
@@ -612,9 +622,19 @@ impl Pipeline {
         // Serialize worktree creation to avoid .git/config lock contention.
         let _wt_lock = self.worktree_create_lock.lock().await;
 
-        let _ = git.remove_worktree(&wt_path);
-        tokio::fs::remove_dir_all(&wt_path).await.ok();
-        let _ = git.exec(&task.repo_path, &["worktree", "prune"]);
+        if let Err(e) = git.remove_worktree(&wt_path) {
+            warn!("pre-create worktree remove failed for {wt_path}: {e}");
+        }
+        if let Err(e) = tokio::fs::remove_dir_all(&wt_path).await {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                warn!("pre-create remove_dir_all failed for {wt_path}: {e}");
+            }
+        }
+        match git.exec(&task.repo_path, &["worktree", "prune"]) {
+            Err(e) => warn!("git worktree prune failed: {e}"),
+            Ok(r) if !r.success() => warn!("git worktree prune failed: {}", r.combined_output()),
+            _ => {}
+        }
         let _ = git.exec(&task.repo_path, &["branch", "-D", &branch]);
 
         let wt_result = git.exec(
