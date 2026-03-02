@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useDictation } from "@/lib/dictation";
 import { BorgingIndicator } from "./borging";
 import { ChatMarkdown } from "./chat-markdown";
+import { authHeaders, sseUrl, tokenReady } from "@/lib/api";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -45,23 +46,27 @@ export function ChatPanel() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    fetch(`/api/chat/messages?thread=${encodeURIComponent(thread)}`, { signal: controller.signal })
-      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
-      .then((msgs: ChatMessage[]) => {
-        if (controller.signal.aborted) return;
-        setMessages(msgs);
-        if (msgs.length > 0) {
-          lastTsRef.current = Math.max(...msgs.map((m) => Number(m.ts) || 0));
-        }
-      })
-      .catch(() => {});
+    tokenReady.then(() => {
+      fetch(`/api/chat/messages?thread=${encodeURIComponent(thread)}`, { signal: controller.signal, headers: authHeaders() })
+        .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
+        .then((msgs: ChatMessage[]) => {
+          if (controller.signal.aborted) return;
+          setMessages(msgs);
+          if (msgs.length > 0) {
+            lastTsRef.current = Math.max(...msgs.map((m) => Number(m.ts) || 0));
+          }
+        })
+        .catch(() => {});
+    });
   }, [thread]);
 
   const fetchThreads = useCallback(() => {
-    fetch("/api/chat/threads")
-      .then((r) => r.json())
-      .then((t: ChatThread[]) => setThreads(t))
-      .catch(() => {});
+    tokenReady.then(() => {
+      fetch("/api/chat/threads", { headers: authHeaders() })
+        .then((r) => r.json())
+        .then((t: ChatThread[]) => setThreads(t))
+        .catch(() => {});
+    });
   }, []);
 
   // Load messages when thread changes
@@ -76,7 +81,7 @@ export function ChatPanel() {
   const sseRetriesRef = useRef(0);
   const connect = useCallback(() => {
     if (esRef.current) esRef.current.close();
-    const es = new EventSource("/api/chat/events");
+    const es = new EventSource(sseUrl("/api/chat/events"));
     esRef.current = es;
 
     es.onopen = () => { sseRetriesRef.current = 0; };
@@ -136,7 +141,7 @@ export function ChatPanel() {
       pollAbort?.abort();
       const ctrl = new AbortController();
       pollAbort = ctrl;
-      fetch(`/api/chat/messages?thread=${encodeURIComponent(thread)}`, { signal: ctrl.signal })
+      fetch(`/api/chat/messages?thread=${encodeURIComponent(thread)}`, { signal: ctrl.signal, headers: authHeaders() })
         .then((r) => r.json())
         .then((msgs: ChatMessage[]) => {
           if (ctrl.signal.aborted || msgs.length === 0) return;
@@ -189,9 +194,10 @@ export function ChatPanel() {
     lastTsRef.current = Number(userMsg.ts);
 
     try {
+      await tokenReady;
       await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ text, sender: "web-user", thread }),
       });
     } catch {

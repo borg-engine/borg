@@ -26,8 +26,26 @@ import {
   REFETCH_TASK_MESSAGES,
 } from "./constants";
 
+// Fetched once at module load; null if server doesn't require auth or unreachable
+let authToken: string | null = null;
+export const tokenReady: Promise<void> = fetch("/api/auth/token")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((data: { token: string } | null) => {
+    if (data?.token) authToken = data.token;
+  })
+  .catch(() => {});
+
+export function authHeaders(): Record<string, string> {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+}
+
+export function sseUrl(url: string): string {
+  return authToken ? `${url}${url.includes("?") ? "&" : "?"}token=${authToken}` : url;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  await tokenReady;
+  const res = await fetch(url, { headers: authHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
@@ -121,9 +139,10 @@ export function useCustomModes() {
 }
 
 export async function saveCustomMode(mode: PipelineModeFull): Promise<{ ok: boolean }> {
+  await tokenReady;
   const res = await fetch("/api/modes/custom", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(mode),
   });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -131,8 +150,10 @@ export async function saveCustomMode(mode: PipelineModeFull): Promise<{ ok: bool
 }
 
 export async function removeCustomMode(name: string): Promise<{ ok: boolean }> {
+  await tokenReady;
   const res = await fetch(`/api/modes/custom/${encodeURIComponent(name)}`, {
     method: "DELETE",
+    headers: authHeaders(),
   });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
@@ -166,9 +187,10 @@ export function useSettings() {
 }
 
 export async function updateSettings(settings: Partial<Settings>): Promise<{ updated: number }> {
+  await tokenReady;
   const res = await fetch("/api/settings", {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(settings),
   });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -184,55 +206,64 @@ export function useFocus() {
 }
 
 export async function setFocus(text: string): Promise<void> {
+  await tokenReady;
   const res = await fetch("/api/focus", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ text }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
 export async function clearFocus(): Promise<void> {
-  const res = await fetch("/api/focus", { method: "DELETE" });
+  await tokenReady;
+  const res = await fetch("/api/focus", { method: "DELETE", headers: authHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
 export async function approveProposal(id: number): Promise<{ task_id: number }> {
-  const res = await fetch(`/api/proposals/${id}/approve`, { method: "POST" });
+  await tokenReady;
+  const res = await fetch(`/api/proposals/${id}/approve`, { method: "POST", headers: authHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
 
 export async function dismissProposal(id: number): Promise<void> {
-  const res = await fetch(`/api/proposals/${id}/dismiss`, { method: "POST" });
+  await tokenReady;
+  const res = await fetch(`/api/proposals/${id}/dismiss`, { method: "POST", headers: authHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
 export async function triageProposals(): Promise<{ scored: number }> {
-  const res = await fetch("/api/proposals/triage", { method: "POST" });
+  await tokenReady;
+  const res = await fetch("/api/proposals/triage", { method: "POST", headers: authHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
 
 export async function reopenProposal(id: number): Promise<void> {
-  const res = await fetch(`/api/proposals/${id}/reopen`, { method: "POST" });
+  await tokenReady;
+  const res = await fetch(`/api/proposals/${id}/reopen`, { method: "POST", headers: authHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
 export async function retryTask(id: number): Promise<void> {
-  const res = await fetch(`/api/tasks/${id}/retry`, { method: "POST" });
+  await tokenReady;
+  const res = await fetch(`/api/tasks/${id}/retry`, { method: "POST", headers: authHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
 export async function retryAllFailed(): Promise<void> {
-  const res = await fetch("/api/tasks/retry-all-failed", { method: "POST" });
+  await tokenReady;
+  const res = await fetch("/api/tasks/retry-all-failed", { method: "POST", headers: authHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
 export async function setTaskBackend(id: number, backend: string): Promise<void> {
+  await tokenReady;
   const res = await fetch(`/api/tasks/${id}/backend`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ backend }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -257,18 +288,20 @@ export function useRepos() {
 }
 
 export async function setRepoBackend(id: number, backend: string): Promise<void> {
+  await tokenReady;
   const res = await fetch(`/api/repos/${id}/backend`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ backend }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
 export async function createTask(title: string, description: string, mode: string, repo_path?: string): Promise<{ id: number }> {
+  await tokenReady;
   const res = await fetch("/api/tasks/create", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ title, description, mode, repo: repo_path }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -284,7 +317,7 @@ export function useLogs() {
 
   const connect = useCallback(() => {
     if (esRef.current) esRef.current.close();
-    const es = new EventSource("/api/logs");
+    const es = new EventSource(sseUrl("/api/logs"));
     esRef.current = es;
 
     es.onopen = () => setConnected(true);
@@ -356,9 +389,10 @@ export async function createProject(
   name: string,
   mode = "general"
 ): Promise<{ id: number }> {
+  await tokenReady;
   const res = await fetch("/api/projects", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ name, mode }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -378,7 +412,8 @@ export async function fetchProjectFileContent(
   projectId: number,
   fileId: number
 ): Promise<ArrayBuffer> {
-  const res = await fetch(`/api/projects/${projectId}/files/${fileId}/content`);
+  await tokenReady;
+  const res = await fetch(`/api/projects/${projectId}/files/${fileId}/content`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`Failed to load file (${res.status})`);
   return res.arrayBuffer();
 }
@@ -387,10 +422,12 @@ export async function uploadProjectFiles(
   projectId: number,
   files: FileList | File[]
 ): Promise<{ uploaded: ProjectFile[] }> {
+  await tokenReady;
   const form = new FormData();
   Array.from(files).forEach((file) => form.append("files", file));
   const res = await fetch(`/api/projects/${projectId}/files/upload`, {
     method: "POST",
+    headers: authHeaders(),
     body: form,
   });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -408,9 +445,10 @@ export async function sendProjectChat(
   text: string,
   sender = "web-user"
 ): Promise<{ ok: boolean }> {
+  await tokenReady;
   const res = await fetch(`/api/projects/${projectId}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ text, sender }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -423,7 +461,8 @@ export function useTaskMessages(taskId: number | null) {
     queryFn: async () => {
       if (!taskId) return [];
       try {
-        const res = await fetch(`/api/tasks/${taskId}/messages`);
+        await tokenReady;
+        const res = await fetch(`/api/tasks/${taskId}/messages`, { headers: authHeaders() });
         if (!res.ok) return [];
         const data = await res.json();
         return data.messages ?? [];
@@ -440,9 +479,10 @@ export function useSendTaskMessage(taskId: number) {
   const queryClient = useQueryClient();
   return useMutation<void, Error, string>({
     mutationFn: async (content: string) => {
+      await tokenReady;
       const res = await fetch(`/api/tasks/${taskId}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ role: "user", content }),
       });
       if (!res.ok) throw new Error(`${res.status}`);
@@ -477,7 +517,7 @@ export function useTaskStream(taskId: number | null, active: boolean) {
     // Clear stale events on every reconnect (taskId change or retry)
     setEvents([]);
 
-    const es = new EventSource(`/api/tasks/${taskId}/stream`);
+    const es = new EventSource(sseUrl(`/api/tasks/${taskId}/stream`));
     esRef.current = es;
     setStreaming(true);
 
@@ -534,11 +574,12 @@ export async function uploadKnowledgeFile(
   description: string,
   inline: boolean,
 ): Promise<{ id: number; file_name: string }> {
+  await tokenReady;
   const form = new FormData();
   form.append("file", file);
   form.append("description", description);
   form.append("inline", inline ? "true" : "false");
-  const res = await fetch("/api/knowledge/upload", { method: "POST", body: form });
+  const res = await fetch("/api/knowledge/upload", { method: "POST", headers: authHeaders(), body: form });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
@@ -547,9 +588,10 @@ export async function updateKnowledgeFile(
   id: number,
   patch: { description?: string; inline?: boolean },
 ): Promise<{ ok: boolean }> {
+  await tokenReady;
   const res = await fetch(`/api/knowledge/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -557,7 +599,8 @@ export async function updateKnowledgeFile(
 }
 
 export async function deleteKnowledgeFile(id: number): Promise<{ ok: boolean }> {
-  const res = await fetch(`/api/knowledge/${id}`, { method: "DELETE" });
+  await tokenReady;
+  const res = await fetch(`/api/knowledge/${id}`, { method: "DELETE", headers: authHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
@@ -594,7 +637,8 @@ export function useCacheVolumes() {
 }
 
 export async function deleteCacheVolume(name: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`/api/cache/${encodeURIComponent(name)}`, { method: "DELETE" });
+  await tokenReady;
+  const res = await fetch(`/api/cache/${encodeURIComponent(name)}`, { method: "DELETE", headers: authHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }

@@ -7,6 +7,7 @@ import {
   useModes,
   useProjectFiles,
   useProjects,
+  sseUrl,
 } from "@/lib/api";
 import { Eye, Mic, MicOff } from "lucide-react";
 import { FilePreviewModal, isPreviewable } from "./file-preview-modal";
@@ -90,7 +91,7 @@ export function ProjectsPanel() {
 
     function connectSSE() {
       if (esRef.current) esRef.current.close();
-      const es = new EventSource("/api/chat/events");
+      const es = new EventSource(sseUrl("/api/chat/events"));
       esRef.current = es;
 
       es.onopen = () => { sseRetriesRef.current = 0; };

@@ -163,7 +163,13 @@ async fn main() -> anyhow::Result<()> {
     // and ensure the agent bridge network exists.
     let agent_network_available = if sandbox_mode == borg_core::sandbox::SandboxMode::Docker {
         Sandbox::prune_orphan_containers().await;
-        Sandbox::ensure_agent_network().await
+        let net_ok = Sandbox::ensure_agent_network().await;
+        if net_ok {
+            if !Sandbox::install_network_rules().await {
+                tracing::warn!("sandbox: iptables rules not installed — agent containers have unrestricted network access");
+            }
+        }
+        net_ok
     } else {
         false
     };
@@ -783,6 +789,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if agent_network_available {
+        Sandbox::remove_network_rules().await;
         Sandbox::remove_agent_network().await;
     }
 

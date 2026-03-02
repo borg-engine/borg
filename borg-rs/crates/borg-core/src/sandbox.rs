@@ -278,6 +278,85 @@ impl Sandbox {
         ok
     }
 
+    /// Install iptables rules that block agent containers from reaching localhost and LAN.
+    /// Rules are inserted into the DOCKER-USER chain (Docker's designated chain for user rules).
+    /// This is idempotent — rules are checked before insertion.
+    pub async fn install_network_rules() -> bool {
+        if cfg!(not(target_os = "linux")) {
+            return false;
+        }
+
+        // (source, dest, action) — order matters: ACCEPT for 172.30/16 before DROP for 172.16/12
+        let rules: &[(&str, &str, &str)] = &[
+            (Self::AGENT_SUBNET, "172.30.0.0/16", "ACCEPT"),
+            (Self::AGENT_SUBNET, "127.0.0.0/8",   "DROP"),
+            (Self::AGENT_SUBNET, "10.0.0.0/8",    "DROP"),
+            (Self::AGENT_SUBNET, "192.168.0.0/16", "DROP"),
+            (Self::AGENT_SUBNET, "169.254.0.0/16", "DROP"),
+            (Self::AGENT_SUBNET, "172.16.0.0/12",  "DROP"),
+        ];
+
+        let mut all_ok = true;
+        for (src, dst, action) in rules {
+            // Check if rule already exists
+            let exists = tokio::process::Command::new("iptables")
+                .args(["-C", "DOCKER-USER", "-s", src, "-d", dst, "-j", action])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .await
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+            if exists {
+                continue;
+            }
+
+            let ok = tokio::process::Command::new("iptables")
+                .args(["-I", "DOCKER-USER", "-s", src, "-d", dst, "-j", action])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .await
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+            if ok {
+                info!("sandbox: iptables DOCKER-USER -s {src} -d {dst} -j {action}");
+            } else {
+                warn!("sandbox: failed to install iptables rule -s {src} -d {dst} -j {action} (needs CAP_NET_ADMIN?)");
+                all_ok = false;
+            }
+        }
+        all_ok
+    }
+
+    /// Remove the iptables rules installed by install_network_rules().
+    pub async fn remove_network_rules() {
+        if cfg!(not(target_os = "linux")) {
+            return;
+        }
+
+        let rules: &[(&str, &str, &str)] = &[
+            (Self::AGENT_SUBNET, "172.30.0.0/16", "ACCEPT"),
+            (Self::AGENT_SUBNET, "127.0.0.0/8",   "DROP"),
+            (Self::AGENT_SUBNET, "10.0.0.0/8",    "DROP"),
+            (Self::AGENT_SUBNET, "192.168.0.0/16", "DROP"),
+            (Self::AGENT_SUBNET, "169.254.0.0/16", "DROP"),
+            (Self::AGENT_SUBNET, "172.16.0.0/12",  "DROP"),
+        ];
+
+        for (src, dst, action) in rules {
+            let _ = tokio::process::Command::new("iptables")
+                .args(["-D", "DOCKER-USER", "-s", src, "-d", dst, "-j", action])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .await;
+        }
+        info!("sandbox: removed agent network iptables rules");
+    }
+
     /// Remove the agent network (best-effort, called on shutdown).
     pub async fn remove_agent_network() {
         let _ = tokio::process::Command::new("docker")
