@@ -653,9 +653,13 @@ impl Pipeline {
         mode: &PipelineMode,
     ) -> Result<()> {
         let session_dir_rel = format!("store/sessions/task-{}", task.id);
-        tokio::fs::create_dir_all(&session_dir_rel).await.ok();
+        tokio::fs::create_dir_all(&session_dir_rel)
+            .await
+            .with_context(|| format!("failed to create session directory {session_dir_rel}"))?;
         let session_dir = std::fs::canonicalize(&session_dir_rel)
-            .unwrap_or_else(|_| std::path::PathBuf::from(&session_dir_rel))
+            .with_context(|| {
+                format!("failed to canonicalize session directory {session_dir_rel}")
+            })?
             .to_string_lossy()
             .to_string();
 
