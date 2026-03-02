@@ -1,0 +1,10 @@
+{
+  "task_id": 11,
+  "task_title": "Test build_knowledge_section() inline vs non-inline and empty-file handling",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-11",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-02T06:35:37.668641471Z"
+}
