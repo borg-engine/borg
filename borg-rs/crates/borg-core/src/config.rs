@@ -45,6 +45,8 @@ pub struct Config {
     // Container / sandbox
     pub container_setup: String,
     pub container_memory_mb: u64,
+    /// CPU quota for docker run --cpus (0.0 = no limit).
+    pub container_cpus: f64,
     /// "auto" (default), "bwrap", "docker", or "none".
     pub sandbox_backend: String,
 
@@ -54,6 +56,8 @@ pub struct Config {
     pub proposal_promote_threshold: i64,
     pub pipeline_tick_s: u64,
     pub remote_check_interval_s: i64,
+    /// Seconds between bare-mirror `git fetch` refreshes (default 60).
+    pub mirror_refresh_interval_s: i64,
     /// Min seconds between automated agent spawns per task (default 120).
     pub pipeline_agent_cooldown_s: i64,
 
@@ -383,6 +387,7 @@ impl Config {
             ("dashboard_dist_dir", self.dashboard_dist_dir.clone()),
             ("container_setup", self.container_setup.clone()),
             ("container_memory_mb", self.container_memory_mb.to_string()),
+            ("container_cpus", format!("{:.2}", self.container_cpus)),
             ("sandbox_backend", self.sandbox_backend.clone()),
             (
                 "pipeline_max_backlog",
@@ -400,6 +405,10 @@ impl Config {
             (
                 "remote_check_interval_s",
                 self.remote_check_interval_s.to_string(),
+            ),
+            (
+                "mirror_refresh_interval_s",
+                self.mirror_refresh_interval_s.to_string(),
             ),
             ("git_author_name", self.git_author_name.clone()),
             ("git_author_email", self.git_author_email.clone()),
@@ -498,6 +507,10 @@ impl Config {
         load_u32!("pipeline_max_backlog", c.pipeline_max_backlog);
         load_u64!("container_memory_mb", c.container_memory_mb);
         load_u64!("pipeline_tick_s", c.pipeline_tick_s);
+        load_i64!("mirror_refresh_interval_s", c.mirror_refresh_interval_s);
+        if let Some(v) = get("container_cpus").and_then(|s| s.parse::<f64>().ok()) {
+            c.container_cpus = v;
+        }
         load_u16!("web_port", c.web_port);
         c
     }
@@ -569,13 +582,20 @@ impl Config {
             web_port: get_u16("WEB_PORT", &dotenv, 3131),
             dashboard_dist_dir: get_str("DASHBOARD_DIST_DIR", &dotenv, "dashboard/dist"),
             container_setup: get_str("CONTAINER_SETUP", &dotenv, ""),
-            container_memory_mb: get_u64("CONTAINER_MEMORY_MB", &dotenv, 1024),
+            container_memory_mb: get_u64("CONTAINER_MEMORY_MB", &dotenv, 2048),
+            container_cpus: get(
+                "CONTAINER_CPUS",
+                &dotenv,
+            )
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(2.0),
             sandbox_backend: get_str("SANDBOX_BACKEND", &dotenv, "auto"),
             pipeline_max_backlog: get_u32("PIPELINE_MAX_BACKLOG", &dotenv, 5),
             pipeline_seed_cooldown_s: get_i64("PIPELINE_SEED_COOLDOWN_S", &dotenv, 3600),
             proposal_promote_threshold: get_i64("PIPELINE_PROPOSAL_THRESHOLD", &dotenv, 8),
             pipeline_tick_s: get_u64("PIPELINE_TICK_S", &dotenv, 10),
             remote_check_interval_s: get_i64("REMOTE_CHECK_INTERVAL_S", &dotenv, 300),
+            mirror_refresh_interval_s: get_i64("MIRROR_REFRESH_INTERVAL_S", &dotenv, 60),
             pipeline_agent_cooldown_s: get_i64("PIPELINE_AGENT_COOLDOWN_S", &dotenv, 120),
             git_author_name: get_str("GIT_AUTHOR_NAME", &dotenv, ""),
             git_author_email: get_str("GIT_AUTHOR_EMAIL", &dotenv, ""),

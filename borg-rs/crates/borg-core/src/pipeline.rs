@@ -421,6 +421,7 @@ impl Pipeline {
             .unwrap_or_else(|e| warn!("check_health: {e}"));
         self.check_remote_updates().await;
         self.maybe_apply_self_update();
+        self.refresh_mirrors().await;
 
         // Check if main loop should exit for self-update restart
         if self
@@ -1437,15 +1438,15 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         let host_mirror = format!("/home/shulgin/borg-data/mirrors/{repo_name}.git");
         let container_mirror = format!("/mirrors/{repo_name}.git");
 
-        // Build clone command (use mirror reference if available)
+        // Shallow clone — test containers only need the branch tip.
         let clone_cmd = if std::path::Path::new(&host_mirror).exists() {
             format!(
-                "git clone --depth 50 --reference {container_mirror} {repo_url} /workspace/repo",
+                "git clone --depth 1 --single-branch --reference {container_mirror} {repo_url} /workspace/repo",
                 repo_url = task.repo_path
             )
         } else {
             format!(
-                "git clone --depth 50 {repo_url} /workspace/repo",
+                "git clone --depth 1 --single-branch {repo_url} /workspace/repo",
                 repo_url = task.repo_path
             )
         };
@@ -1480,6 +1481,8 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 "",
                 &bash_cmd,
                 &[],
+                self.config.container_memory_mb,
+                self.config.container_cpus,
             )
             .kill_on_drop(true)
             .output(),
@@ -2533,6 +2536,71 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         // Signal main loop to exit; systemd restarts the process
         self.force_restart
             .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    // ── Mirror refresh ────────────────────────────────────────────────────
+
+    /// Refresh bare mirrors for all watched repos at the configured interval.
+    /// Mirrors are mounted read-only into containers to accelerate `git clone`.
+    async fn refresh_mirrors(&self) {
+        let interval = self.config.mirror_refresh_interval_s;
+        if interval <= 0 {
+            return;
+        }
+        let now = chrono::Utc::now().timestamp();
+        if now - self.db.get_ts("last_mirror_refresh_ts") < interval {
+            return;
+        }
+        self.db.set_ts("last_mirror_refresh_ts", now);
+
+        let mirrors_dir = format!("{}/mirrors", self.config.data_dir);
+        if let Err(e) = std::fs::create_dir_all(&mirrors_dir) {
+            warn!("refresh_mirrors: cannot create mirrors dir: {e}");
+            return;
+        }
+
+        for repo in &self.config.watched_repos {
+            let repo_name = std::path::Path::new(&repo.path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if repo_name.is_empty() {
+                continue;
+            }
+            let mirror_path = format!("{mirrors_dir}/{repo_name}.git");
+            let path = repo.path.clone();
+            let mirror = mirror_path.clone();
+            tokio::spawn(async move {
+                if !std::path::Path::new(&mirror).exists() {
+                    let out = tokio::process::Command::new("git")
+                        .args(["clone", "--mirror", &path, &mirror])
+                        .output()
+                        .await;
+                    match out {
+                        Ok(o) if o.status.success() =>
+                            info!("mirrored {path} → {mirror}"),
+                        Ok(o) => warn!(
+                            "git clone --mirror failed for {path}: {}",
+                            String::from_utf8_lossy(&o.stderr).trim()
+                        ),
+                        Err(e) => warn!("git clone --mirror spawn failed for {path}: {e}"),
+                    }
+                } else {
+                    let out = tokio::process::Command::new("git")
+                        .args(["-C", &mirror, "fetch", "--prune", "--tags"])
+                        .output()
+                        .await;
+                    if let Ok(o) = out {
+                        if !o.status.success() {
+                            warn!(
+                                "git fetch on mirror {mirror} failed: {}",
+                                String::from_utf8_lossy(&o.stderr).trim()
+                            );
+                        }
+                    }
+                }
+            });
+        }
     }
 
     // ── Auto-promote + auto-triage ────────────────────────────────────────

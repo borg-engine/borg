@@ -1,10 +1,11 @@
 import type { StreamEvent } from "./api";
 
 export interface TermLine {
-  type: "system" | "text" | "tool" | "result" | "tool_result" | "phase_result";
+  type: "system" | "text" | "tool" | "result" | "tool_result" | "phase_result" | "container";
   tool?: string;
   label?: string;
   content: string;
+  variant?: "info" | "success" | "error" | "warn";
 }
 
 export function formatToolInput(
@@ -104,6 +105,9 @@ export function parseStreamEvents(events: StreamEvent[]): TermLine[] {
       if (content.trim()) {
         lines.push({ type: "phase_result", label: ev.phase || "", content });
       }
+    } else if (ev.type === "container_event") {
+      const line = formatContainerEvent(ev as Record<string, unknown>);
+      if (line) lines.push(line);
     }
   }
 

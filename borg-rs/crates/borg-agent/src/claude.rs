@@ -64,6 +64,10 @@ pub struct ClaudeBackend {
     pub timeout_s: u64,
     /// Path to Claude credentials file for fresh token reads.
     pub credentials_path: String,
+    /// Memory limit for Docker containers in MiB (0 = no limit).
+    pub container_memory_mb: u64,
+    /// CPU quota for Docker containers (0.0 = no limit).
+    pub container_cpus: f64,
 }
 
 impl ClaudeBackend {
@@ -79,11 +83,19 @@ impl ClaudeBackend {
             docker_image: docker_image.into(),
             timeout_s: 0,
             credentials_path: format!("{home}/.claude/.credentials.json"),
+            container_memory_mb: 0,
+            container_cpus: 0.0,
         }
     }
 
     pub fn with_timeout(mut self, timeout_s: u64) -> Self {
         self.timeout_s = timeout_s;
+        self
+    }
+
+    pub fn with_resource_limits(mut self, memory_mb: u64, cpus: f64) -> Self {
+        self.container_memory_mb = memory_mb;
+        self.container_cpus = cpus;
         self
     }
 
@@ -425,6 +437,8 @@ impl AgentBackend for ClaudeBackend {
                     "",
                     &[],
                     &env_ref,
+                    self.container_memory_mb,
+                    self.container_cpus,
                 );
                 if let Some(ref cid_path) = cidfile_path {
                     // Inject --cidfile before the image name by re-building args.

@@ -65,7 +65,7 @@ if [ -n "$REPO_URL" ]; then
     CLONE_START=$(date +%s%3N)
     log_event "{\"type\":\"container_event\",\"event\":\"clone_started\",\"repo\":\"${REPO_URL}\",\"branch\":\"${BRANCH}\"}"
 
-    CLONE_ARGS=(--depth 50)
+    CLONE_ARGS=(--depth 50 --single-branch)
     if [ -n "$MIRROR_PATH" ] && [ -d "$MIRROR_PATH" ]; then
         CLONE_ARGS+=(--reference "$MIRROR_PATH")
     fi

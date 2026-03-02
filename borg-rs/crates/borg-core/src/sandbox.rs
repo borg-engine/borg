@@ -161,6 +161,8 @@ impl Sandbox {
     /// `env_vars`: passed as `-e KEY=VALUE` pairs.
     /// `working_dir`: container working directory; skipped if empty.
     /// `command`: appended after the image name (empty = use entrypoint default).
+    /// `memory_mb`: memory limit in MiB (0 = no limit).
+    /// `cpus`: CPU quota (0.0 = no limit).
     pub fn docker_command(
         image: &str,
         binds: &[(&str, &str, bool)],
@@ -168,6 +170,8 @@ impl Sandbox {
         working_dir: &str,
         command: &[String],
         env_vars: &[(&str, &str)],
+        memory_mb: u64,
+        cpus: f64,
     ) -> Command {
         let mut args = vec![
             "run".to_string(),
@@ -175,7 +179,18 @@ impl Sandbox {
             "-i".to_string(),
             "--pids-limit".to_string(),
             "256".to_string(),
+            "--label".to_string(),
+            "borg-agent=1".to_string(),
         ];
+
+        if memory_mb > 0 {
+            args.push("--memory".to_string());
+            args.push(format!("{memory_mb}m"));
+        }
+        if cpus > 0.0 {
+            args.push("--cpus".to_string());
+            args.push(format!("{cpus:.2}"));
+        }
 
         // Linux-only security hardening and host networking
         if cfg!(target_os = "linux") {
@@ -216,6 +231,43 @@ impl Sandbox {
         let mut cmd = Command::new("docker");
         cmd.args(args);
         cmd
+    }
+
+    /// Remove any containers with label `borg-agent=1` that are not running.
+    /// Call once at startup to clean up orphans from a previous crash.
+    pub async fn prune_orphan_containers() {
+        let Ok(out) = tokio::process::Command::new("docker")
+            .args([
+                "ps", "-a", "--filter", "label=borg-agent=1",
+                "--filter", "status=exited",
+                "--filter", "status=dead",
+                "--filter", "status=created",
+                "--format", "{{.ID}}",
+            ])
+            .output()
+            .await
+        else {
+            return;
+        };
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let ids: Vec<&str> = stdout
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        let mut cmd = tokio::process::Command::new("docker");
+        cmd.arg("rm").arg("-f");
+        cmd.args(&ids);
+        cmd.stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        if let Ok(status) = cmd.status().await {
+            if status.success() {
+                info!("pruned {} orphan borg-agent container(s)", ids.len());
+            }
+        }
     }
 
     /// List all Docker volumes whose names start with the given prefix.

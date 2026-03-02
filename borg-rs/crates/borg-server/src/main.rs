@@ -144,6 +144,11 @@ async fn main() -> anyhow::Result<()> {
     // Detect sandbox backend (bwrap preferred, docker fallback, configurable via SANDBOX_BACKEND)
     let sandbox_mode = Sandbox::detect(&config.sandbox_backend).await;
 
+    // Remove any orphaned borg-agent containers left over from a previous crash.
+    if sandbox_mode == borg_core::sandbox::SandboxMode::Docker {
+        Sandbox::prune_orphan_containers().await;
+    }
+
     // Build backends map
     let mut backends: std::collections::HashMap<String, Arc<dyn borg_core::agent::AgentBackend>> =
         std::collections::HashMap::new();
@@ -151,7 +156,8 @@ async fn main() -> anyhow::Result<()> {
         "claude".into(),
         Arc::new(
             ClaudeBackend::new("claude", sandbox_mode.clone(), &config.container_image)
-                .with_timeout(config.agent_timeout_s as u64),
+                .with_timeout(config.agent_timeout_s as u64)
+                .with_resource_limits(config.container_memory_mb, config.container_cpus),
         ),
     );
     if !config.codex_api_key.is_empty()
