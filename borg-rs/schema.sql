@@ -90,9 +90,11 @@ CREATE TABLE IF NOT EXISTS pipeline_tasks (
   session_id TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL DEFAULT 'sweborg',
   backend TEXT,                  -- backend that actually ran this task
+  project_id INTEGER REFERENCES projects(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_pipeline_project ON pipeline_tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_status ON pipeline_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_pipeline_repo ON pipeline_tasks(repo_path);
 CREATE INDEX IF NOT EXISTS idx_pipeline_repo_status ON pipeline_tasks(repo_id, status);
@@ -152,6 +154,14 @@ CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   mode TEXT NOT NULL DEFAULT 'general',
+  client_name TEXT NOT NULL DEFAULT '',
+  case_number TEXT NOT NULL DEFAULT '',
+  jurisdiction TEXT NOT NULL DEFAULT '',
+  matter_type TEXT NOT NULL DEFAULT '',
+  opposing_counsel TEXT NOT NULL DEFAULT '',
+  deadline TEXT,
+  privilege_level TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

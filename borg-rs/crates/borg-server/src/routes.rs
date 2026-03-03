@@ -33,6 +33,27 @@ pub(crate) fn internal(e: impl std::fmt::Display) -> StatusCode {
     StatusCode::INTERNAL_SERVER_ERROR
 }
 
+fn base64_decode(input: &str) -> anyhow::Result<Vec<u8>> {
+    let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
+    let mut out = Vec::with_capacity(clean.len() * 3 / 4);
+    let table = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut buf = 0u32;
+    let mut bits = 0u32;
+    for c in clean.bytes() {
+        if c == b'=' { break; }
+        let val = table.iter().position(|&t| t == c)
+            .ok_or_else(|| anyhow::anyhow!("invalid base64 char"))? as u32;
+        buf = (buf << 6) | val;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Ok(out)
+}
+
 // ── Request body types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -41,6 +62,13 @@ pub(crate) struct CreateTaskBody {
     pub description: Option<String>,
     pub mode: Option<String>,
     pub repo: Option<String>,
+    pub project_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DocQuery {
+    pub path: Option<String>,
+    pub ref_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -89,6 +117,23 @@ pub(crate) struct ChatPostBody {
 pub(crate) struct CreateProjectBody {
     pub name: String,
     pub mode: Option<String>,
+    pub client_name: Option<String>,
+    pub jurisdiction: Option<String>,
+    pub matter_type: Option<String>,
+    pub privilege_level: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UpdateProjectBody {
+    pub name: Option<String>,
+    pub client_name: Option<String>,
+    pub case_number: Option<String>,
+    pub jurisdiction: Option<String>,
+    pub matter_type: Option<String>,
+    pub opposing_counsel: Option<String>,
+    pub deadline: Option<Option<String>>,
+    pub privilege_level: Option<String>,
+    pub status: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -155,6 +200,14 @@ pub(crate) struct ProjectJson {
     pub id: i64,
     pub name: String,
     pub mode: String,
+    pub client_name: String,
+    pub case_number: String,
+    pub jurisdiction: String,
+    pub matter_type: String,
+    pub opposing_counsel: String,
+    pub deadline: Option<String>,
+    pub privilege_level: String,
+    pub status: String,
     pub created_at: String,
 }
 
@@ -164,6 +217,14 @@ impl From<ProjectRow> for ProjectJson {
             id: p.id,
             name: p.name,
             mode: p.mode,
+            client_name: p.client_name,
+            case_number: p.case_number,
+            jurisdiction: p.jurisdiction,
+            matter_type: p.matter_type,
+            opposing_counsel: p.opposing_counsel,
+            deadline: p.deadline,
+            privilege_level: p.privilege_level,
+            status: p.status,
             created_at: p.created_at.to_rfc3339(),
         }
     }
@@ -731,8 +792,223 @@ pub(crate) async fn create_project(
         return Err(StatusCode::BAD_REQUEST);
     }
     let mode = body.mode.unwrap_or_else(|| "general".to_string());
-    let id = state.db.insert_project(name, &mode).map_err(internal)?;
+    let client_name = body.client_name.as_deref().unwrap_or("");
+    let jurisdiction = body.jurisdiction.as_deref().unwrap_or("");
+    let matter_type = body.matter_type.as_deref().unwrap_or("");
+    let privilege_level = body.privilege_level.as_deref().unwrap_or("");
+    let id = state
+        .db
+        .insert_project(name, &mode, client_name, jurisdiction, matter_type, privilege_level)
+        .map_err(internal)?;
     Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+}
+
+pub(crate) async fn update_project(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateProjectBody>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.db.get_project(id).map_err(internal)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    state
+        .db
+        .update_project(
+            id,
+            body.name.as_deref(),
+            body.client_name.as_deref(),
+            body.case_number.as_deref(),
+            body.jurisdiction.as_deref(),
+            body.matter_type.as_deref(),
+            body.opposing_counsel.as_deref(),
+            body.deadline.as_ref().map(|d| d.as_deref()),
+            body.privilege_level.as_deref(),
+            body.status.as_deref(),
+        )
+        .map_err(internal)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub(crate) async fn list_project_tasks(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.db.get_project(id).map_err(internal)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let tasks = state.db.list_project_tasks(id).map_err(internal)?;
+    Ok(Json(json!(tasks)))
+}
+
+pub(crate) async fn list_project_documents(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.db.get_project(id).map_err(internal)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let tasks = state.db.list_project_tasks(id).map_err(internal)?;
+    let mut documents: Vec<Value> = Vec::new();
+
+    for task in &tasks {
+        if task.branch.is_empty() {
+            continue;
+        }
+        let repo = state
+            .config
+            .watched_repos
+            .iter()
+            .find(|r| r.path == task.repo_path);
+        let slug = repo.map(|r| r.repo_slug.as_str()).unwrap_or("");
+        if slug.is_empty() {
+            continue;
+        }
+
+        // List files on the task branch via GitHub API
+        let out = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            tokio::process::Command::new("gh")
+                .args([
+                    "api",
+                    &format!("repos/{slug}/git/trees/{}", task.branch),
+                    "--jq",
+                    ".tree[] | select(.type==\"blob\") | .path",
+                ])
+                .stderr(std::process::Stdio::null())
+                .output(),
+        )
+        .await;
+
+        if let Ok(Ok(output)) = out {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let legal_files = ["research.md", "analysis.md", "memo.md", "brief.md",
+                    "demand-letter.md", "contract-analysis.md", "review_notes.md"];
+                for line in stdout.lines() {
+                    let name = line.trim();
+                    if legal_files.iter().any(|f| name == *f) || name.ends_with(".md") {
+                        documents.push(json!({
+                            "task_id": task.id,
+                            "branch": task.branch,
+                            "path": name,
+                            "repo_slug": slug,
+                            "task_title": task.title,
+                            "task_status": task.status,
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(Json(json!(documents)))
+}
+
+pub(crate) async fn get_project_document_content(
+    State(state): State<Arc<AppState>>,
+    Path((id, task_id)): Path<(i64, i64)>,
+    Query(q): Query<DocQuery>,
+) -> Result<axum::response::Response, StatusCode> {
+    if state.db.get_project(id).map_err(internal)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let task = state
+        .db
+        .get_task(task_id)
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let repo = state
+        .config
+        .watched_repos
+        .iter()
+        .find(|r| r.path == task.repo_path);
+    let slug = repo.map(|r| r.repo_slug.as_str()).unwrap_or("");
+    if slug.is_empty() || task.branch.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let path = q.path.as_deref().unwrap_or("research.md");
+    let ref_name = q.ref_name.as_deref().unwrap_or(&task.branch);
+
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::process::Command::new("gh")
+            .args([
+                "api",
+                &format!("repos/{slug}/contents/{path}?ref={ref_name}"),
+                "--jq",
+                ".content",
+            ])
+            .stderr(std::process::Stdio::null())
+            .output(),
+    )
+    .await
+    .map_err(internal)?
+    .map_err(internal)?;
+
+    if !out.status.success() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // GitHub returns base64-encoded content
+    let b64 = String::from_utf8_lossy(&out.stdout).trim().replace('\n', "");
+    let bytes = base64_decode(&b64).map_err(internal)?;
+
+    Ok(axum::response::Response::builder()
+        .header("content-type", "text/markdown; charset=utf-8")
+        .body(axum::body::Body::from(bytes))
+        .unwrap())
+}
+
+pub(crate) async fn get_project_document_versions(
+    State(state): State<Arc<AppState>>,
+    Path((id, task_id)): Path<(i64, i64)>,
+    Query(q): Query<DocQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.db.get_project(id).map_err(internal)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let task = state
+        .db
+        .get_task(task_id)
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let repo = state
+        .config
+        .watched_repos
+        .iter()
+        .find(|r| r.path == task.repo_path);
+    let slug = repo.map(|r| r.repo_slug.as_str()).unwrap_or("");
+    if slug.is_empty() || task.branch.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let path = q.path.as_deref().unwrap_or("research.md");
+
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::process::Command::new("gh")
+            .args([
+                "api",
+                &format!("repos/{slug}/commits?sha={}&path={path}", task.branch),
+                "--jq",
+                r#"[.[] | {sha: .sha, message: .commit.message, date: .commit.author.date, author: .commit.author.name}]"#,
+            ])
+            .stderr(std::process::Stdio::null())
+            .output(),
+    )
+    .await
+    .map_err(internal)?
+    .map_err(internal)?;
+
+    if !out.status.success() {
+        return Ok(Json(json!([])));
+    }
+
+    let versions: Value = serde_json::from_slice(&out.stdout).unwrap_or(json!([]));
+    Ok(Json(versions))
 }
 
 pub(crate) async fn list_project_files(
@@ -894,6 +1170,7 @@ pub(crate) async fn create_task(
         session_id: String::new(),
         mode,
         backend: String::new(),
+        project_id: body.project_id.unwrap_or(0),
     };
     let id = state.db.insert_task(&task).map_err(internal)?;
     Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
@@ -1128,9 +1405,11 @@ pub(crate) async fn approve_proposal(
             .map(|r| r.mode.clone())
             .unwrap_or_else(|| "sweborg".into()),
         backend: String::new(),
+        project_id: 0,
     };
     let task_id = state.db.insert_task(&task).map_err(internal)?;
     Ok(Json(json!({ "task_id": task_id })))
+
 }
 
 pub(crate) async fn dismiss_proposal(
@@ -1218,6 +1497,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 session_id: String::new(),
                 mode: "sweborg".into(),
                 backend: String::new(),
+                project_id: 0,
             };
 
             let phase = PhaseConfig {

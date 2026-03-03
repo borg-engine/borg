@@ -106,6 +106,14 @@ pub struct ProjectRow {
     pub id: i64,
     pub name: String,
     pub mode: String,
+    pub client_name: String,
+    pub case_number: String,
+    pub jurisdiction: String,
+    pub matter_type: String,
+    pub opposing_counsel: String,
+    pub deadline: Option<String>,
+    pub privilege_level: String,
+    pub status: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -147,6 +155,10 @@ fn now_str() -> String {
 
 // ── Row mappers ───────────────────────────────────────────────────────────
 
+const TASK_COLS: &str = "id, title, description, repo_path, branch, status, attempt, \
+    max_attempts, last_error, created_by, notify_chat, created_at, \
+    session_id, mode, backend, project_id";
+
 fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let created_at_str: String = row.get(11)?;
     Ok(Task {
@@ -165,6 +177,7 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         session_id: row.get(12)?,
         mode: row.get(13)?,
         backend: row.get::<_, Option<String>>(14)?.unwrap_or_default(),
+        project_id: row.get::<_, Option<i64>>(15)?.unwrap_or(0),
     })
 }
 
@@ -268,12 +281,23 @@ fn row_to_legacy_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<LegacyEvent>
     })
 }
 
+const PROJECT_COLS: &str = "id, name, mode, client_name, case_number, jurisdiction, \
+    matter_type, opposing_counsel, deadline, privilege_level, status, created_at";
+
 fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectRow> {
-    let created_at_str: String = row.get(3)?;
+    let created_at_str: String = row.get(11)?;
     Ok(ProjectRow {
         id: row.get(0)?,
         name: row.get(1)?,
         mode: row.get(2)?,
+        client_name: row.get(3)?,
+        case_number: row.get(4)?,
+        jurisdiction: row.get(5)?,
+        matter_type: row.get(6)?,
+        opposing_counsel: row.get(7)?,
+        deadline: row.get(8)?,
+        privilege_level: row.get(9)?,
+        status: row.get(10)?,
         created_at: parse_ts(&created_at_str),
     })
 }
@@ -317,8 +341,17 @@ impl Db {
         let alters = [
             "ALTER TABLE pipeline_tasks ADD COLUMN repo_id INTEGER REFERENCES repos(id)",
             "ALTER TABLE pipeline_tasks ADD COLUMN backend TEXT",
+            "ALTER TABLE pipeline_tasks ADD COLUMN project_id INTEGER REFERENCES projects(id)",
             "ALTER TABLE proposals ADD COLUMN repo_id INTEGER REFERENCES repos(id)",
             "ALTER TABLE repos ADD COLUMN repo_slug TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN client_name TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN case_number TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN jurisdiction TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN matter_type TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN opposing_counsel TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN deadline TEXT",
+            "ALTER TABLE projects ADD COLUMN privilege_level TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
         ];
         for sql in alters {
             let _ = conn.execute(sql, []);
@@ -332,10 +365,7 @@ impl Db {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let result = conn
             .query_row(
-                "SELECT id, title, description, repo_path, branch, status, attempt, \
-                 max_attempts, last_error, created_by, notify_chat, created_at, \
-                 session_id, mode, backend \
-                 FROM pipeline_tasks WHERE id = ?1",
+                &format!("SELECT {TASK_COLS} FROM pipeline_tasks WHERE id = ?1"),
                 params![id],
                 row_to_task,
             )
@@ -346,11 +376,8 @@ impl Db {
 
     pub fn list_active_tasks(&self) -> Result<Vec<Task>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let mut stmt = conn.prepare(
-            "SELECT id, title, description, repo_path, branch, status, attempt, \
-             max_attempts, last_error, created_by, notify_chat, created_at, \
-             session_id, mode, backend \
-             FROM pipeline_tasks \
+        let sql = format!(
+            "SELECT {TASK_COLS} FROM pipeline_tasks \
              WHERE status NOT IN ('done', 'merged', 'failed', 'blocked', 'pending_review') \
              ORDER BY CASE status \
                WHEN 'rebase' THEN 0 \
@@ -362,7 +389,8 @@ impl Db {
                WHEN 'spec' THEN 3 \
                ELSE 4 \
              END, id ASC",
-        )?;
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let tasks = stmt
             .query_map([], row_to_task)?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -373,11 +401,12 @@ impl Db {
     pub fn insert_task(&self, task: &Task) -> Result<i64> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let created_at = task.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
+        let project_id = if task.project_id == 0 { None } else { Some(task.project_id) };
         conn.execute(
             "INSERT INTO pipeline_tasks \
              (title, description, repo_path, branch, status, attempt, max_attempts, \
-              last_error, created_by, notify_chat, created_at, session_id, mode, backend) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+              last_error, created_by, notify_chat, created_at, session_id, mode, backend, project_id) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 task.title,
                 task.description,
@@ -397,6 +426,7 @@ impl Db {
                 } else {
                     Some(task.backend.as_str())
                 },
+                project_id,
             ],
         )
         .context("insert_task")?;
@@ -615,8 +645,8 @@ impl Db {
 
     pub fn list_projects(&self) -> Result<Vec<ProjectRow>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let mut stmt =
-            conn.prepare("SELECT id, name, mode, created_at FROM projects ORDER BY id DESC")?;
+        let sql = format!("SELECT {PROJECT_COLS} FROM projects ORDER BY id DESC");
+        let mut stmt = conn.prepare(&sql)?;
         let projects = stmt
             .query_map([], row_to_project)?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -626,26 +656,101 @@ impl Db {
 
     pub fn get_project(&self, id: i64) -> Result<Option<ProjectRow>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let sql = format!("SELECT {PROJECT_COLS} FROM projects WHERE id=?1");
         let project = conn
-            .query_row(
-                "SELECT id, name, mode, created_at FROM projects WHERE id=?1",
-                params![id],
-                row_to_project,
-            )
+            .query_row(&sql, params![id], row_to_project)
             .optional()
             .context("get_project")?;
         Ok(project)
     }
 
-    pub fn insert_project(&self, name: &str, mode: &str) -> Result<i64> {
+    pub fn insert_project(
+        &self,
+        name: &str,
+        mode: &str,
+        client_name: &str,
+        jurisdiction: &str,
+        matter_type: &str,
+        privilege_level: &str,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let created_at = now_str();
         conn.execute(
-            "INSERT INTO projects (name, mode, created_at) VALUES (?1, ?2, ?3)",
-            params![name, mode, created_at],
+            "INSERT INTO projects (name, mode, client_name, jurisdiction, matter_type, \
+             privilege_level, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![name, mode, client_name, jurisdiction, matter_type, privilege_level, created_at],
         )
         .context("insert_project")?;
         Ok(conn.last_insert_rowid())
+    }
+
+    pub fn update_project(
+        &self,
+        id: i64,
+        name: Option<&str>,
+        client_name: Option<&str>,
+        case_number: Option<&str>,
+        jurisdiction: Option<&str>,
+        matter_type: Option<&str>,
+        opposing_counsel: Option<&str>,
+        deadline: Option<Option<&str>>,
+        privilege_level: Option<&str>,
+        status: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sets = Vec::new();
+        let mut vals: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let mut idx = 1;
+
+        macro_rules! maybe_set {
+            ($field:expr, $col:expr) => {
+                if let Some(v) = $field {
+                    sets.push(format!("{} = ?{}", $col, idx));
+                    vals.push(Box::new(v.to_string()));
+                    idx += 1;
+                }
+            };
+        }
+        maybe_set!(name, "name");
+        maybe_set!(client_name, "client_name");
+        maybe_set!(case_number, "case_number");
+        maybe_set!(jurisdiction, "jurisdiction");
+        maybe_set!(matter_type, "matter_type");
+        maybe_set!(opposing_counsel, "opposing_counsel");
+        maybe_set!(privilege_level, "privilege_level");
+        maybe_set!(status, "status");
+
+        if let Some(dl) = deadline {
+            sets.push(format!("deadline = ?{}", idx));
+            vals.push(Box::new(dl.map(|s| s.to_string())));
+            idx += 1;
+        }
+
+        if sets.is_empty() {
+            return Ok(());
+        }
+
+        let sql = format!(
+            "UPDATE projects SET {} WHERE id = ?{}",
+            sets.join(", "),
+            idx,
+        );
+        vals.push(Box::new(id));
+        let params: Vec<&dyn rusqlite::ToSql> = vals.iter().map(|v| v.as_ref()).collect();
+        conn.execute(&sql, params.as_slice())
+            .context("update_project")?;
+        Ok(())
+    }
+
+    pub fn list_project_tasks(&self, project_id: i64) -> Result<Vec<Task>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let sql = format!("SELECT {TASK_COLS} FROM pipeline_tasks WHERE project_id = ?1 ORDER BY id DESC");
+        let mut stmt = conn.prepare(&sql)?;
+        let tasks = stmt
+            .query_map(params![project_id], row_to_task)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("list_project_tasks")?;
+        Ok(tasks)
     }
 
     pub fn list_project_files(&self, project_id: i64) -> Result<Vec<ProjectFileRow>> {
@@ -1247,18 +1352,16 @@ impl Db {
     /// Return "done" tasks that have no integration_queue entry (orphaned after restart).
     pub fn list_done_tasks_without_queue(&self) -> Result<Vec<Task>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let mut stmt = conn.prepare(
-            "SELECT id, title, description, repo_path, branch, status, attempt, \
-             max_attempts, last_error, created_by, notify_chat, created_at, \
-             session_id, mode, backend \
-             FROM pipeline_tasks \
+        let sql = format!(
+            "SELECT {TASK_COLS} FROM pipeline_tasks \
              WHERE status = 'done' \
              AND NOT EXISTS ( \
                SELECT 1 FROM integration_queue q \
                WHERE q.task_id = pipeline_tasks.id \
                AND q.status IN ('queued', 'excluded', 'merged') \
              )",
-        )?;
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let tasks = stmt
             .query_map([], row_to_task)?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -1290,12 +1393,10 @@ impl Db {
 
     pub fn get_recent_merged_tasks(&self, limit: i64) -> Result<Vec<Task>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let mut stmt = conn.prepare(
-            "SELECT id, title, description, repo_path, branch, status, attempt, \
-             max_attempts, last_error, created_by, notify_chat, created_at, \
-             session_id, mode, backend \
-             FROM pipeline_tasks WHERE status = 'merged' ORDER BY id DESC LIMIT ?1",
-        )?;
+        let sql = format!(
+            "SELECT {TASK_COLS} FROM pipeline_tasks WHERE status = 'merged' ORDER BY id DESC LIMIT ?1"
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let tasks = stmt
             .query_map(params![limit], row_to_task)?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -1343,13 +1444,12 @@ impl Db {
 
     pub fn list_all_tasks(&self, repo_path: Option<&str>) -> Result<Vec<Task>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let sql = "SELECT id, title, description, repo_path, branch, status, attempt, \
-                   max_attempts, last_error, created_by, notify_chat, created_at, \
-                   session_id, mode, backend \
-                   FROM pipeline_tasks \
-                   WHERE (?1 IS NULL OR repo_path = ?1) \
-                   ORDER BY id DESC";
-        let mut stmt = conn.prepare(sql)?;
+        let sql = format!(
+            "SELECT {TASK_COLS} FROM pipeline_tasks \
+             WHERE (?1 IS NULL OR repo_path = ?1) \
+             ORDER BY id DESC"
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let tasks = stmt
             .query_map(params![repo_path], row_to_task)?
             .collect::<rusqlite::Result<Vec<_>>>()

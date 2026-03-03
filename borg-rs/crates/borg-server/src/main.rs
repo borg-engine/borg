@@ -340,6 +340,7 @@ async fn main() -> anyhow::Result<()> {
                                     session_id: String::new(),
                                     mode,
                                     backend: String::new(),
+                                    project_id: 0,
                                 };
                                 let task_title = task.title.clone();
                                 let tg2 = Arc::clone(&tg);
@@ -723,6 +724,17 @@ async fn main() -> anyhow::Result<()> {
             get(routes::get_project_chat_messages),
         )
         .route("/api/projects/:id/chat", post(routes::post_project_chat))
+        .route("/api/projects/:id", put(routes::update_project))
+        .route("/api/projects/:id/tasks", get(routes::list_project_tasks))
+        .route("/api/projects/:id/documents", get(routes::list_project_documents))
+        .route(
+            "/api/projects/:id/documents/:task_id/content",
+            get(routes::get_project_document_content),
+        )
+        .route(
+            "/api/projects/:id/documents/:task_id/versions",
+            get(routes::get_project_document_versions),
+        )
         // Modes
         .route("/api/modes", get(routes::get_modes))
         .route("/api/modes/full", get(routes::get_full_modes))

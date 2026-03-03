@@ -91,6 +91,9 @@ pub struct Task {
     pub mode: String,
     /// Agent backend override (e.g. "claude", "codex"). Empty = use global default.
     pub backend: String,
+    /// Link to a project/matter (0 = none).
+    #[serde(default)]
+    pub project_id: i64,
 }
 
 /// A user-facing proposal that can be promoted to a Task.
