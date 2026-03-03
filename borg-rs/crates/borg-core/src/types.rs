@@ -441,6 +441,8 @@ pub struct PhaseContext {
     pub agent_network: Option<String>,
     /// Prior research chunks from the knowledge graph (injected for lawborg tasks).
     pub prior_research: Vec<String>,
+    /// How many revision rounds this task has been through. 0 = first draft.
+    pub revision_count: i64,
 }
 
 /// A single in-container test/lint/compile result emitted by the entrypoint.

@@ -1,4 +1,5 @@
-import { useTaskDetail, useTaskStream, useTaskContainer, useFullModes, retryTask, setTaskBackend, approveTask, rejectTask, requestRevision } from "@/lib/api";
+import { useTaskDetail, useTaskStream, useTaskContainer, useFullModes, retryTask, setTaskBackend, approveTask, rejectTask, requestRevision, getRevisionHistory } from "@/lib/api";
+import type { RevisionHistory } from "@/lib/api";
 import { PhaseTracker } from "./phase-tracker";
 import { StatusBadge } from "./status-badge";
 import { LiveTerminal } from "./live-terminal";
@@ -28,6 +29,8 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
   const [retrying, setRetrying] = useState(false);
   const [showRevision, setShowRevision] = useState(false);
   const [revisionFeedback, setRevisionFeedback] = useState("");
+  const [revHistory, setRevHistory] = useState<RevisionHistory | null>(null);
+  const [showRevHistory, setShowRevHistory] = useState(false);
 
   if (isLoading || !task) {
     return (
@@ -205,6 +208,49 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
       {task.description && (
         <div className="max-h-16 overflow-y-auto border-b border-white/[0.06] px-5 py-2.5 text-[11px] leading-relaxed text-zinc-500">
           {task.description}
+        </div>
+      )}
+
+      {(task.revision_count ?? 0) > 0 && (
+        <div className="mx-4 mt-3">
+          <button
+            onClick={async () => {
+              if (showRevHistory) { setShowRevHistory(false); return; }
+              const h = await getRevisionHistory(task.id);
+              setRevHistory(h);
+              setShowRevHistory(true);
+            }}
+            className="flex items-center gap-2 text-[11px] text-amber-500/70 hover:text-amber-400 transition-colors"
+          >
+            <span>{showRevHistory ? "Hide" : "Show"} Revision History ({task.revision_count} revision{task.revision_count !== 1 ? "s" : ""})</span>
+          </button>
+          {showRevHistory && revHistory && (
+            <div className="mt-2 space-y-2 border-l-2 border-amber-500/20 pl-3">
+              {revHistory.rounds.map((round) => (
+                <div key={round.round} className="space-y-1">
+                  <div className="text-[10px] font-medium text-zinc-300">
+                    {round.round === 0 ? "Initial Draft" : `Draft ${round.round + 1}`}
+                  </div>
+                  {round.feedback && (
+                    <div className="rounded border border-amber-500/10 bg-amber-500/[0.03] px-2 py-1.5 text-[11px]">
+                      <div className="text-[9px] text-amber-500/60 mb-0.5">Reviewer feedback</div>
+                      <div className="text-zinc-300 whitespace-pre-wrap">{round.feedback}</div>
+                    </div>
+                  )}
+                  {round.phases.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {round.phases.map((p, j) => (
+                        <span key={j} className={cn(
+                          "rounded px-1.5 py-0.5 text-[9px] font-medium",
+                          p.exit_code === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+                        )}>{p.phase}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -2001,6 +2001,92 @@ pub(crate) async fn request_revision(
     Ok(Json(json!({ "ok": true, "target_phase": target_phase })))
 }
 
+// ── Revision history ──────────────────────────────────────────────────
+
+pub(crate) async fn get_revision_history(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    let task = state.db.get_task(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
+    let messages = state.db.get_task_messages(id).map_err(internal)?;
+    let outputs = state.db.get_task_outputs(id).map_err(internal)?;
+
+    // Build revision rounds: each "user" message with delivered_phase set = revision feedback
+    let mut rounds: Vec<Value> = Vec::new();
+    let mut current_round = 0;
+
+    // Round 0 = initial draft (outputs before any revision feedback)
+    let mut round_outputs: Vec<&borg_core::db::TaskOutput> = Vec::new();
+    let mut round_feedback: Option<String> = None;
+    let mut round_feedback_at: Option<String> = None;
+
+    // Interleave: all messages with role=user are revision feedback
+    let mut msg_iter = messages.iter().filter(|m| m.role == "user").peekable();
+
+    for output in &outputs {
+        // Check if there's feedback that was delivered before this output was created
+        while let Some(msg) = msg_iter.peek() {
+            if msg.created_at <= output.created_at {
+                // Save current round before starting a new one
+                if !round_outputs.is_empty() || round_feedback.is_some() {
+                    rounds.push(json!({
+                        "round": current_round,
+                        "feedback": round_feedback,
+                        "feedback_at": round_feedback_at,
+                        "phases": round_outputs.iter().map(|o| json!({
+                            "phase": o.phase,
+                            "exit_code": o.exit_code,
+                            "output_preview": if o.output.len() > 500 { format!("{}…", &o.output[..500]) } else { o.output.clone() },
+                            "created_at": o.created_at.to_rfc3339(),
+                        })).collect::<Vec<_>>(),
+                    }));
+                    round_outputs.clear();
+                }
+                current_round += 1;
+                round_feedback = Some(msg.content.clone());
+                round_feedback_at = Some(msg.created_at.to_rfc3339());
+                msg_iter.next();
+            } else {
+                break;
+            }
+        }
+        round_outputs.push(output);
+    }
+
+    // Final round
+    if !round_outputs.is_empty() || round_feedback.is_some() {
+        rounds.push(json!({
+            "round": current_round,
+            "feedback": round_feedback,
+            "feedback_at": round_feedback_at,
+            "phases": round_outputs.iter().map(|o| json!({
+                "phase": o.phase,
+                "exit_code": o.exit_code,
+                "output_preview": if o.output.len() > 500 { format!("{}…", &o.output[..500]) } else { o.output.clone() },
+                "created_at": o.created_at.to_rfc3339(),
+            })).collect::<Vec<_>>(),
+        }));
+    }
+
+    // Also include any remaining unprocessed feedback (pending revision)
+    for msg in msg_iter {
+        current_round += 1;
+        rounds.push(json!({
+            "round": current_round,
+            "feedback": msg.content,
+            "feedback_at": msg.created_at.to_rfc3339(),
+            "phases": [],
+        }));
+    }
+
+    Ok(Json(json!({
+        "task_id": id,
+        "revision_count": task.revision_count,
+        "review_status": task.review_status,
+        "rounds": rounds,
+    })))
+}
+
 // ── Citation verification ──────────────────────────────────────────────
 
 pub(crate) async fn get_task_citations(
@@ -2451,6 +2537,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 knowledge_dir: String::new(),
                 agent_network: None,
                 prior_research: Vec::new(),
+                revision_count: 0,
             };
 
             tokio::fs::create_dir_all(&ctx.session_dir).await.ok();

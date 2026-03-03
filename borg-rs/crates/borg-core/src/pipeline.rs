@@ -244,6 +244,7 @@ impl Pipeline {
                 None
             },
             prior_research: Vec::new(),
+            revision_count: task.revision_count,
         }
     }
 

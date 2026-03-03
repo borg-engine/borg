@@ -26,7 +26,8 @@ import { BorgingIndicator } from "./borging";
 import { ChatMarkdown } from "./chat-markdown";
 import { useDictation } from "@/lib/dictation";
 import { cn } from "@/lib/utils";
-import { retryTask, patchTask, approveTask, rejectTask, requestRevision, useFullModes } from "@/lib/api";
+import { retryTask, patchTask, approveTask, rejectTask, requestRevision, getRevisionHistory, useFullModes } from "@/lib/api";
+import type { RevisionHistory } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ChevronDown, ChevronUp, Edit2, Check, X, FileText, RotateCcw, Mic, MicOff, Trash2 } from "lucide-react";
 
@@ -775,6 +776,7 @@ function TasksTab({ projectId }: { projectId: number }) {
   const [reviewingId, setReviewingId] = useState<number | null>(null);
   const [revisionFeedback, setRevisionFeedback] = useState("");
   const [citationsId, setCitationsId] = useState<number | null>(null);
+  const [revisionsId, setRevisionsId] = useState<number | null>(null);
   const [editDesc, setEditDesc] = useState("");
 
   if (isLoading) {
@@ -861,6 +863,14 @@ function TasksTab({ projectId }: { projectId: number }) {
                     className="flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 hover:border-blue-500/30 hover:text-blue-400 transition-colors"
                   >
                     {citationsId === task.id ? "Hide" : "Citations"}
+                  </button>
+                )}
+                {(task.revision_count ?? 0) > 0 && (
+                  <button
+                    onClick={() => setRevisionsId(revisionsId === task.id ? null : task.id)}
+                    className="flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1 text-[10px] text-amber-500/60 hover:border-amber-500/30 hover:text-amber-400 transition-colors"
+                  >
+                    {revisionsId === task.id ? "Hide" : `Revisions (${task.revision_count})`}
                   </button>
                 )}
                 {isActive && (
@@ -1014,6 +1024,9 @@ function TasksTab({ projectId }: { projectId: number }) {
             {citationsId === task.id && (
               <CitationPanel taskId={task.id} />
             )}
+            {revisionsId === task.id && (
+              <RevisionHistoryPanel taskId={task.id} />
+            )}
           </div>
         );
       })}
@@ -1083,6 +1096,88 @@ function CitationPanel({ taskId }: { taskId: number }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Revision history panel ───────────────────────────────────────────────────
+
+function RevisionHistoryPanel({ taskId }: { taskId: number }) {
+  const [history, setHistory] = useState<RevisionHistory | null>(null);
+
+  useEffect(() => {
+    getRevisionHistory(taskId).then(setHistory).catch(() => {});
+  }, [taskId]);
+
+  if (!history || history.rounds.length === 0) {
+    return (
+      <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+        <span className="text-[11px] text-zinc-600">No revision history</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-medium text-zinc-400">
+          Revision History
+        </span>
+        <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
+          {history.revision_count} revision{history.revision_count !== 1 ? "s" : ""}
+        </span>
+        {history.review_status && (
+          <span className={cn(
+            "rounded px-1.5 py-0.5 text-[9px] font-medium",
+            history.review_status === "approved" ? "bg-emerald-500/10 text-emerald-400" :
+            history.review_status === "rejected" ? "bg-red-500/10 text-red-400" :
+            "bg-amber-500/10 text-amber-400"
+          )}>
+            {history.review_status.replace("_", " ")}
+          </span>
+        )}
+      </div>
+      <div className="relative space-y-0">
+        {history.rounds.map((round, i) => (
+          <div key={round.round} className="relative pl-5">
+            {i < history.rounds.length - 1 && (
+              <div className="absolute left-[7px] top-4 bottom-0 w-px bg-white/[0.06]" />
+            )}
+            <div className="absolute left-0 top-1 h-3.5 w-3.5 rounded-full border border-white/10 bg-zinc-900 flex items-center justify-center">
+              <span className="text-[7px] text-zinc-500">{round.round}</span>
+            </div>
+            <div className="pb-3">
+              <div className="text-[10px] font-medium text-zinc-300">
+                {round.round === 0 ? "Initial Draft" : `Draft ${round.round + 1}`}
+              </div>
+              {round.feedback && (
+                <div className="mt-1 rounded border border-amber-500/10 bg-amber-500/[0.03] px-2 py-1.5">
+                  <div className="text-[9px] text-amber-500/60 mb-0.5">Reviewer feedback</div>
+                  <div className="text-[11px] text-zinc-300 whitespace-pre-wrap">{round.feedback}</div>
+                  {round.feedback_at && (
+                    <div className="text-[9px] text-zinc-600 mt-1">{new Date(round.feedback_at).toLocaleString()}</div>
+                  )}
+                </div>
+              )}
+              {round.phases.length > 0 && (
+                <div className="mt-1 space-y-1">
+                  {round.phases.map((p, j) => (
+                    <div key={j} className="flex items-center gap-2 text-[10px]">
+                      <span className={cn(
+                        "shrink-0 rounded px-1.5 py-0.5 font-medium",
+                        p.exit_code === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+                      )}>
+                        {p.phase}
+                      </span>
+                      <span className="text-zinc-600 truncate">{p.output_preview.slice(0, 100)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -51,9 +51,26 @@ pub fn build_instruction(task: &Task, phase: &PhaseConfig, ctx: &PhaseContext, f
     }
 
     if !ctx.pending_messages.is_empty() {
-        s.push_str("\n\n---\nThe following messages were sent by the user or director while this task was queued:\n");
-        for (role, content) in &ctx.pending_messages {
-            s.push_str(&format!("\n[{}]: {}", role, content));
+        let is_revision = ctx.revision_count > 0;
+        if is_revision {
+            s.push_str(&format!(
+                "\n\n---\n## Revision #{} — Reviewer Feedback\n\
+                 Your previous draft was reviewed and changes were requested. \
+                 Address ALL of the following feedback points specifically:\n",
+                ctx.revision_count
+            ));
+            for (role, content) in &ctx.pending_messages {
+                s.push_str(&format!("\n**[{}]**: {}\n", role, content));
+            }
+            s.push_str(
+                "\nIMPORTANT: Focus on the reviewer's feedback. Do not rewrite sections that were not flagged. \
+                 Make targeted, precise changes that directly address each feedback point.\n"
+            );
+        } else {
+            s.push_str("\n\n---\nThe following messages were sent by the user or director while this task was queued:\n");
+            for (role, content) in &ctx.pending_messages {
+                s.push_str(&format!("\n[{}]: {}", role, content));
+            }
         }
     }
 

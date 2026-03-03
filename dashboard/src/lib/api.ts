@@ -297,6 +297,29 @@ export async function requestRevision(id: number, feedback: string): Promise<{ t
   return res.json();
 }
 
+export interface RevisionRound {
+  round: number;
+  feedback: string | null;
+  feedback_at: string | null;
+  phases: Array<{
+    phase: string;
+    exit_code: number;
+    output_preview: string;
+    created_at: string;
+  }>;
+}
+
+export interface RevisionHistory {
+  task_id: number;
+  revision_count: number;
+  review_status: string | null;
+  rounds: RevisionRound[];
+}
+
+export async function getRevisionHistory(taskId: number): Promise<RevisionHistory> {
+  return fetchJson(`/api/tasks/${taskId}/revisions`);
+}
+
 export interface CitationVerification {
   id: number;
   task_id: number;
