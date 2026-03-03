@@ -1,170 +1,109 @@
-use borg_core::sandbox::{Sandbox, SandboxMode};
+use borg_core::sandbox::Sandbox;
 use tempfile::TempDir;
 
-#[test]
-fn bwrap_parses_to_bwrap() {
-    assert_eq!(SandboxMode::from_str_or_auto("bwrap"), Some(SandboxMode::Bwrap));
+fn cmd(args: &[&str]) -> Vec<String> {
+    args.iter().map(|s| s.to_string()).collect()
+}
+
+fn pos(args: &[String], token: &str) -> Option<usize> {
+    args.iter().position(|a| a == token)
 }
 
 #[test]
-fn docker_parses_to_docker() {
-    assert_eq!(SandboxMode::from_str_or_auto("docker"), Some(SandboxMode::Docker));
+fn ro_bind_root_and_dev_present_and_ordered() {
+    let args = Sandbox::bwrap_args(&[], "/work", &cmd(&["sh"]));
+
+    let ro = pos(&args, "--ro-bind").expect("--ro-bind missing");
+    assert_eq!(args[ro + 1], "/", "--ro-bind src");
+    assert_eq!(args[ro + 2], "/", "--ro-bind dst");
+
+    let dev = pos(&args, "--dev").expect("--dev missing");
+    assert_eq!(args[dev + 1], "/dev", "--dev path");
+
+    assert!(ro < dev, "--ro-bind must precede --dev");
 }
 
 #[test]
-fn direct_parses_to_direct() {
-    assert_eq!(SandboxMode::from_str_or_auto("direct"), Some(SandboxMode::Direct));
+fn command_appended_after_double_dash() {
+    let command = cmd(&["claude", "--dangerously-skip-permissions"]);
+    let args = Sandbox::bwrap_args(&[], "/work", &command);
+
+    let sep = pos(&args, "--").expect("-- separator missing");
+    let tail: Vec<&str> = args[sep + 1..].iter().map(String::as_str).collect();
+    assert_eq!(tail, ["claude", "--dangerously-skip-permissions"]);
 }
 
 #[test]
-fn none_parses_to_direct() {
-    assert_eq!(SandboxMode::from_str_or_auto("none"), Some(SandboxMode::Direct));
+fn nonexistent_writable_dir_omitted() {
+    let missing = "/tmp/borg_sandbox_test_nonexistent_dir_abc123";
+    let args = Sandbox::bwrap_args(&[missing], "/work", &cmd(&["true"]));
+
+    // No --bind referencing the missing path should appear
+    let has_bind = args
+        .windows(3)
+        .any(|w| w[0] == "--bind" && w[1] == missing);
+    assert!(!has_bind, "non-existent dir must not appear as --bind");
 }
 
 #[test]
-fn auto_returns_none() {
-    assert_eq!(SandboxMode::from_str_or_auto("auto"), None);
-}
-
-#[test]
-fn unknown_string_returns_none() {
-    assert_eq!(SandboxMode::from_str_or_auto("podman"), None);
-}
-
-#[test]
-fn empty_string_returns_none() {
-    assert_eq!(SandboxMode::from_str_or_auto(""), None);
-}
-
-#[test]
-fn case_insensitive_bwrap() {
-    assert_eq!(SandboxMode::from_str_or_auto("BWRAP"), Some(SandboxMode::Bwrap));
-    assert_eq!(SandboxMode::from_str_or_auto("Bwrap"), Some(SandboxMode::Bwrap));
-}
-
-#[test]
-fn case_insensitive_docker() {
-    assert_eq!(SandboxMode::from_str_or_auto("DOCKER"), Some(SandboxMode::Docker));
-    assert_eq!(SandboxMode::from_str_or_auto("Docker"), Some(SandboxMode::Docker));
-}
-
-#[test]
-fn case_insensitive_direct() {
-    assert_eq!(SandboxMode::from_str_or_auto("DIRECT"), Some(SandboxMode::Direct));
-    assert_eq!(SandboxMode::from_str_or_auto("NONE"), Some(SandboxMode::Direct));
-}
-
-fn strs(args: &[String]) -> Vec<&str> {
-    args.iter().map(|s| s.as_str()).collect()
-}
-
-fn has_seq(haystack: &[&str], needle: &[&str]) -> bool {
-    haystack.windows(needle.len()).any(|w| w == needle)
-}
-
-#[test]
-fn bwrap_args_contains_unshare_all() {
-    let args = Sandbox::bwrap_args(&[], "/work", &[]);
-    assert!(
-        strs(&args).contains(&"--unshare-all"),
-        "args must contain --unshare-all for full namespace isolation"
-    );
-}
-
-#[test]
-fn bwrap_args_working_dir_set_via_chdir() {
-    let args = Sandbox::bwrap_args(&[], "/some/working/dir", &[]);
-    let s = strs(&args);
-    assert!(
-        has_seq(&s, &["--chdir", "/some/working/dir"]),
-        "--chdir <working_dir> must be present in args"
-    );
-}
-
-#[test]
-fn bwrap_args_ro_bind_covers_slash() {
-    let args = Sandbox::bwrap_args(&[], "/work", &[]);
-    let s = strs(&args);
-    assert!(
-        has_seq(&s, &["--ro-bind", "/", "/"]),
-        "--ro-bind / / must be present, covering /usr, /lib, and other read-only system paths"
-    );
-}
-
-#[test]
-fn bwrap_args_command_appended_after_separator() {
-    let cmd = vec!["sh".to_string(), "-c".to_string(), "echo hello".to_string()];
-    let args = Sandbox::bwrap_args(&[], "/work", &cmd);
-    let s = strs(&args);
-    let sep = s.iter().position(|&a| a == "--").expect("-- separator must be present");
-    assert_eq!(&s[sep + 1..], &["sh", "-c", "echo hello"]);
-}
-
-#[test]
-fn bwrap_args_zero_writable_dirs() {
-    let cmd = vec!["echo".to_string(), "ok".to_string()];
-    let args = Sandbox::bwrap_args(&[], "/tmp/work", &cmd);
-    let s = strs(&args);
-
-    assert!(s.contains(&"--unshare-all"));
-    assert!(has_seq(&s, &["--ro-bind", "/", "/"]));
-    assert!(s.contains(&"--"));
-    assert!(s.contains(&"echo"));
-
-    // Only /tmp should be bound (no extra writable dirs)
-    let bind_count = s.windows(3).filter(|w| w[0] == "--bind").count();
-    assert_eq!(bind_count, 1, "zero writable dirs → only /tmp should be bound");
-}
-
-#[test]
-fn bwrap_args_single_writable_dir_bound() {
+fn existing_writable_dir_bound_readwrite() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().to_str().unwrap();
 
-    let args = Sandbox::bwrap_args(&[path], "/work", &[]);
-    let s = strs(&args);
+    let args = Sandbox::bwrap_args(&[path], "/work", &cmd(&["true"]));
 
-    assert!(
-        has_seq(&s, &["--bind", path, path]),
-        "--bind <dir> <dir> must appear for each writable directory"
-    );
+    let bound = args
+        .windows(3)
+        .any(|w| w[0] == "--bind" && w[1] == path && w[2] == path);
+    assert!(bound, "--bind <dir> <dir> must appear for existing writable dir");
 }
 
 #[test]
-fn bwrap_args_multiple_writable_dirs_all_bound() {
-    let dir1 = TempDir::new().unwrap();
-    let dir2 = TempDir::new().unwrap();
-    let dir3 = TempDir::new().unwrap();
-    let paths: Vec<&str> = [&dir1, &dir2, &dir3]
-        .iter()
-        .map(|d| d.path().to_str().unwrap())
-        .collect();
+fn chdir_set_to_working_dir() {
+    let args = Sandbox::bwrap_args(&[], "/my/work/dir", &cmd(&["make"]));
 
-    let cmd = vec!["cargo".to_string(), "test".to_string()];
-    let args = Sandbox::bwrap_args(&paths, paths[0], &cmd);
-    let s = strs(&args);
+    let idx = pos(&args, "--chdir").expect("--chdir missing");
+    assert_eq!(args[idx + 1], "/my/work/dir");
+}
 
-    for path in &paths {
-        assert!(
-            has_seq(&s, &["--bind", path, path]),
-            "--bind {path} {path} must be present for each writable dir"
-        );
+#[test]
+fn isolation_flags_present() {
+    let args = Sandbox::bwrap_args(&[], "/work", &cmd(&["sh"]));
+    for flag in ["--unshare-pid", "--new-session", "--die-with-parent"] {
+        assert!(pos(&args, flag).is_some(), "{flag} missing from bwrap args");
     }
-
-    // Command follows -- separator
-    let sep = s.iter().position(|&a| a == "--").expect("-- separator must be present");
-    assert_eq!(&s[sep + 1..], &["cargo", "test"]);
+    let proc = pos(&args, "--proc").expect("--proc missing");
+    assert_eq!(args[proc + 1], "/proc");
 }
 
 #[test]
-fn bwrap_args_nonexistent_dir_skipped() {
-    let path = "/nonexistent/borg/test/dir/that/cannot/exist";
-    let args = Sandbox::bwrap_args(&[path], "/work", &[]);
-    let s = strs(&args);
+fn chdir_precedes_double_dash() {
+    let args = Sandbox::bwrap_args(&[], "/work", &cmd(&["sh"]));
+    let chdir = pos(&args, "--chdir").unwrap();
+    let sep = pos(&args, "--").unwrap();
+    assert!(chdir < sep, "--chdir must come before --");
+}
 
-    // Non-existent dir must not appear in --bind args
-    assert!(
-        !has_seq(&s, &["--bind", path, path]),
-        "non-existent writable dir must be silently skipped"
-    );
+#[test]
+fn tmp_always_bound() {
+    // /tmp bind must appear even with no writable_dirs
+    let args = Sandbox::bwrap_args(&[], "/work", &cmd(&["sh"]));
+    let bound = args
+        .windows(3)
+        .any(|w| w[0] == "--bind" && w[1] == "/tmp" && w[2] == "/tmp");
+    assert!(bound, "--bind /tmp /tmp must always be present");
+}
+
+#[test]
+fn ro_bind_before_writable_bind() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().to_str().unwrap();
+    let args = Sandbox::bwrap_args(&[path], "/work", &cmd(&["true"]));
+
+    let ro = pos(&args, "--ro-bind").unwrap();
+    let bind_idx = args
+        .windows(3)
+        .position(|w| w[0] == "--bind" && w[1] == path)
+        .expect("writable bind missing");
+    assert!(ro < bind_idx, "--ro-bind / / must come before --bind <dir>");
 }
