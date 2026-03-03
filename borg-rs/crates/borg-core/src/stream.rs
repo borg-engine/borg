@@ -74,13 +74,18 @@ impl TaskStreamManager {
         let line = r#"{"type":"stream_end"}"#.to_string();
         let mut map = self.streams.lock().await;
         if let Some(s) = map.get_mut(&task_id) {
-            let _ = s.tx.send(line.clone());
-            s.history.push_back(line);
+            // Commit to history and set ended=true before broadcasting so
+            // that the invariant "ended=true ⟹ stream_end in history" holds
+            // for any concurrent subscriber that acquires the lock next.
+            s.history.push_back(line.clone());
             if s.history.len() > MAX_HISTORY_LINES {
                 s.history.pop_front();
             }
             s.ended = true;
-            s.ended_at = Some(Instant::now());
+            // Broadcast after the flag is set. Existing receivers still get
+            // the sentinel; new subscribers arriving after this point will
+            // see ended=true and find it in the history snapshot instead.
+            let _ = s.tx.send(line);
         }
     }
 
@@ -93,6 +98,12 @@ impl TaskStreamManager {
     /// Subscribe to a task's stream.
     /// Returns (history_snapshot, live_receiver).
     /// If the stream has ended or doesn't exist, receiver is None.
+    ///
+    /// The history snapshot and the ended check are taken atomically under the
+    /// lock, so the two outcomes are mutually exclusive:
+    ///  - ended=true  → history contains the stream_end sentinel; no live rx.
+    ///  - ended=false → tx.subscribe() fires before end_task() can set ended,
+    ///                  so the returned receiver will eventually deliver it.
     pub async fn subscribe(
         &self,
         task_id: i64,
