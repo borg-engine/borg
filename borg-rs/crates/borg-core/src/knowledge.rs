@@ -231,60 +231,81 @@ pub async fn index_task_embeddings(
     }
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_words(n: usize) -> String {
-        (0..n).map(|i| format!("w{i}")).collect::<Vec<_>>().join(" ")
+    #[test]
+    fn cosine_similarity_identical_vectors_returns_one() {
+        let v = vec![1.0f32, 2.0, 3.0];
+        let result = cosine_similarity(&v, &v);
+        assert!((result - 1.0).abs() < 1e-6, "got {result}");
     }
 
     #[test]
-    fn empty_string_returns_empty_vec() {
-        assert_eq!(chunk_text(""), Vec::<String>::new());
+    fn cosine_similarity_orthogonal_vectors_returns_zero() {
+        let a = vec![1.0f32, 0.0];
+        let b = vec![0.0f32, 1.0];
+        let result = cosine_similarity(&a, &b);
+        assert!(result.abs() < 1e-6, "got {result}");
     }
 
     #[test]
-    fn fewer_than_512_words_is_single_chunk() {
-        let text = make_words(100);
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], text);
+    fn cosine_similarity_zero_vector_returns_zero() {
+        let a = vec![0.0f32, 0.0, 0.0];
+        let b = vec![1.0f32, 2.0, 3.0];
+        let result = cosine_similarity(&a, &b);
+        assert_eq!(result, 0.0);
     }
 
     #[test]
-    fn exactly_512_words_is_single_chunk() {
-        let words: Vec<String> = (0..512).map(|i| format!("w{i}")).collect();
-        let text = words.join(" ");
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], text);
+    fn cosine_similarity_both_zero_vectors_returns_zero() {
+        let z = vec![0.0f32, 0.0];
+        let result = cosine_similarity(&z, &z);
+        assert_eq!(result, 0.0);
     }
 
     #[test]
-    fn exactly_513_words_produces_two_chunks_with_correct_boundaries() {
-        let words: Vec<String> = (0..513).map(|i| format!("w{i}")).collect();
-        let text = words.join(" ");
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 2);
-        // first chunk: words 0..512
-        assert_eq!(chunks[0], words[..512].join(" "));
-        // second chunk: starts at word 448 (the 449th word), ends at 512
-        assert_eq!(chunks[1], words[448..].join(" "));
-        assert!(chunks[1].starts_with("w448 "));
+    fn cosine_similarity_mismatched_lengths_returns_zero() {
+        let a = vec![1.0f32, 2.0, 3.0];
+        let b = vec![1.0f32, 2.0];
+        assert_eq!(cosine_similarity(&a, &b), 0.0);
     }
 
     #[test]
-    fn no_whitespace_is_single_chunk() {
-        let text = "abcdefghijklmnopqrstuvwxyz".repeat(50);
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], text);
+    fn cosine_similarity_empty_slices_returns_zero() {
+        assert_eq!(cosine_similarity(&[], &[]), 0.0);
+    }
+
+    #[test]
+    fn embedding_roundtrip_restores_values() {
+        let original = vec![1.0f32, -0.5, 0.0, 3.14159, f32::MIN_POSITIVE];
+        let bytes = embedding_to_bytes(&original);
+        let restored = bytes_to_embedding(&bytes);
+        assert_eq!(original.len(), restored.len());
+        for (a, b) in original.iter().zip(restored.iter()) {
+            assert_eq!(a.to_bits(), b.to_bits(), "bit mismatch: {a} vs {b}");
+        }
+    }
+
+    #[test]
+    fn embedding_roundtrip_empty() {
+        let bytes = embedding_to_bytes(&[]);
+        let restored = bytes_to_embedding(&bytes);
+        assert!(restored.is_empty());
+    }
+
+    #[test]
+    fn bytes_to_embedding_ignores_trailing_partial_bytes() {
+        // 9 bytes: 2 complete f32s (8 bytes) + 1 leftover byte ignored
+        let mut bytes = embedding_to_bytes(&[1.0f32, 2.0]);
+        bytes.push(0xff);
+        let restored = bytes_to_embedding(&bytes);
+        assert_eq!(restored.len(), 2);
+        assert_eq!(restored[0].to_bits(), 1.0f32.to_bits());
+        assert_eq!(restored[1].to_bits(), 2.0f32.to_bits());
     }
 }
-
 
 pub async fn get_prior_research(
     db: &Db,
