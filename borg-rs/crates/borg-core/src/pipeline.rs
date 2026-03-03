@@ -1064,17 +1064,19 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             };
 
             if let Some(ref sid) = agent_result.new_session_id {
-                self.db.update_task_session(task.id, sid).ok();
+                if let Err(e) = self.db.update_task_session(task.id, sid) {
+                    warn!("task #{}: failed to update session id: {e}", task.id);
+                }
             }
-            self.db
-                .insert_task_output(
-                    task.id,
-                    &fix_phase.name,
-                    &agent_result.output,
-                    &agent_result.raw_stream,
-                    if agent_result.success { 0 } else { 1 },
-                )
-                .ok();
+            if let Err(e) = self.db.insert_task_output(
+                task.id,
+                &fix_phase.name,
+                &agent_result.output,
+                &agent_result.raw_stream,
+                if agent_result.success { 0 } else { 1 },
+            ) {
+                warn!("task #{}: failed to insert task output: {e}", task.id);
+            }
 
             let git = Git::new(&task.repo_path);
             let (_, user_coauthor) = self.git_coauthor_settings();
@@ -1151,11 +1153,13 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             };
 
             if let Some(ref sid) = result.new_session_id {
-                self.db.update_task_session(task.id, sid).ok();
+                if let Err(e) = self.db.update_task_session(task.id, sid) {
+                    warn!("task #{}: failed to update session id: {e}", task.id);
+                }
             }
-            self.db
-                .insert_task_output(task.id, &fix_phase.name, &result.output, &result.raw_stream, if result.success { 0 } else { 1 })
-                .ok();
+            if let Err(e) = self.db.insert_task_output(task.id, &fix_phase.name, &result.output, &result.raw_stream, if result.success { 0 } else { 1 }) {
+                warn!("task #{}: failed to insert task output: {e}", task.id);
+            }
 
             let git = Git::new(&task.repo_path);
             let (_, user_coauthor) = self.git_coauthor_settings();
