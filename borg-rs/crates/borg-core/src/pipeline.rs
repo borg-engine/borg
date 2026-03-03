@@ -358,14 +358,31 @@ impl Pipeline {
             }
         }
 
-        // Dispatch ready tasks
+        // Merging done tasks is top priority — run integration BEFORE dispatch
+        let queued_merges = self.db.count_queued_integration().unwrap_or(0);
+        if queued_merges > 0 {
+            info!("Integration queue has {queued_merges} entries — processing before dispatch");
+        }
+        self.clone()
+            .check_integration()
+            .await
+            .unwrap_or_else(|e| warn!("check_integration: {e}"));
+
+        // Dispatch ready tasks (throttled when merge backlog exists)
         let tasks = self.db.list_active_tasks().context("list_active_tasks")?;
         let max_agents = self.config.pipeline_max_agents as usize;
         let mut dispatched = 0usize;
 
+        // When there's a merge backlog, reserve agent capacity for integration
+        let effective_max = if queued_merges > 0 {
+            1.max(max_agents / 2)
+        } else {
+            max_agents
+        };
+
         for task in tasks {
             let mut guard = self.in_flight.lock().await;
-            if guard.len() >= max_agents {
+            if guard.len() >= effective_max {
                 break;
             }
             if guard.contains(&task.id) {
@@ -454,10 +471,6 @@ impl Pipeline {
         }
 
         // Periodic background work (each is internally throttled)
-        self.clone()
-            .check_integration()
-            .await
-            .unwrap_or_else(|e| warn!("check_integration: {e}"));
         self.maybe_auto_promote_proposals();
         self.maybe_auto_triage().await;
         self.check_health()

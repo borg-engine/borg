@@ -2089,6 +2089,16 @@ impl Db {
         Ok(n)
     }
 
+    pub fn count_queued_integration(&self) -> Result<i64> {
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        conn.query_row(
+            "SELECT COUNT(*) FROM integration_queue WHERE status = 'queued'",
+            [],
+            |r| r.get(0),
+        )
+        .context("count_queued_integration")
+    }
+
     pub fn active_task_count(&self) -> Result<i64> {
         let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
         conn.query_row(
