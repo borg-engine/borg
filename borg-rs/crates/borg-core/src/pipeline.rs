@@ -55,10 +55,8 @@ pub struct Pipeline {
     seed_cooldowns: Mutex<HashMap<(String, String), i64>>,
     pub(crate) last_self_update_secs: std::sync::atomic::AtomicI64,
     last_cache_prune_secs: std::sync::atomic::AtomicI64,
-    last_session_prune_secs: std::sync::atomic::AtomicI64,
-    pub(crate) startup_heads: HashMap<String, String>,
-    in_flight: Mutex<HashSet<i64>>,
-    in_flight_repos: Mutex<HashSet<String>>,
+    startup_heads: HashMap<String, String>,
+    in_flight: std::sync::Mutex<HashSet<i64>>,
     /// Per-task last agent dispatch timestamp (epoch seconds) for rate limiting.
     last_agent_dispatch: Mutex<HashMap<i64, i64>>,
     /// Per-task deferred retry unlock timestamp (epoch seconds).
@@ -151,8 +149,7 @@ impl Pipeline {
             last_cache_prune_secs: std::sync::atomic::AtomicI64::new(0),
             last_session_prune_secs: std::sync::atomic::AtomicI64::new(0),
             startup_heads,
-            in_flight: Mutex::new(HashSet::new()),
-            in_flight_repos: Mutex::new(HashSet::new()),
+            in_flight: std::sync::Mutex::new(HashSet::new()),
             last_agent_dispatch: Mutex::new(HashMap::new()),
             retry_not_before: Mutex::new(HashMap::new()),
             seeding_active: std::sync::atomic::AtomicBool::new(false),
@@ -674,8 +671,8 @@ impl Pipeline {
         let mut dispatched = 0usize;
 
         for task in tasks {
-            let mut id_guard = self.in_flight.lock().await;
-            if id_guard.len() >= max_agents {
+            let mut guard = self.in_flight.lock().unwrap();
+            if guard.len() >= max_agents {
                 break;
             }
             if id_guard.contains(&task.id) {
@@ -705,13 +702,7 @@ impl Pipeline {
                 }
                 impl Drop for InFlightGuard {
                     fn drop(&mut self) {
-                        let pipeline = Arc::clone(&self.pipeline);
-                        let task_id = self.task_id;
-                        let task_repo = self.task_repo.clone();
-                        tokio::spawn(async move {
-                            pipeline.in_flight.lock().await.remove(&task_id);
-                            pipeline.in_flight_repos.lock().await.remove(&task_repo);
-                        });
+                        self.pipeline.in_flight.lock().unwrap().remove(&self.task_id);
                     }
                 }
                 let _guard = InFlightGuard {
@@ -770,12 +761,24 @@ impl Pipeline {
             });
         }
 
-        if dispatched == 0 {
-            // Hold the lock across the CAS so the emptiness check and the
-            // seeding_active flip are jointly atomic with task dispatch.
-            let guard = self.in_flight.lock().await;
-            if guard.is_empty()
-                && self
+        if dispatched == 0
+            && self.in_flight.lock().unwrap().is_empty()
+            && self
+                .seeding_active
+                .compare_exchange(
+                    false,
+                    true,
+                    std::sync::atomic::Ordering::AcqRel,
+                    std::sync::atomic::Ordering::Relaxed,
+                )
+                .is_ok()
+        {
+            let pipeline = Arc::clone(&self);
+            tokio::spawn(async move {
+                if let Err(e) = pipeline.seed_if_idle().await {
+                    warn!("seed_if_idle error: {e}");
+                }
+                pipeline
                     .seeding_active
                     .compare_exchange(
                         false,
