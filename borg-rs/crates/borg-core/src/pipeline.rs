@@ -1013,10 +1013,25 @@ impl Pipeline {
             return self.run_rebase_phase_docker(task, phase).await;
         }
 
-        // Non-Docker rebase: rebase the worktree branch onto origin/main, then advance.
-        let work_dir = self.task_work_dir(task);
+        // Non-Docker rebase: re-create worktree if needed, rebase onto origin/main, then advance.
+        let branch = format!("task-{}", task.id);
         let git = Git::new(&task.repo_path);
-        if let Err(e) = git.rebase_onto_main(&work_dir) {
+        let wt_path = format!("{}/.worktrees/{}", task.repo_path, branch);
+        if !std::path::Path::new(&wt_path).exists() {
+            // Worktree was cleaned up after previous done; re-create from existing branch.
+            let _ = git.exec(&task.repo_path, &["worktree", "remove", "--force", &wt_path]);
+            let result = git.exec(
+                &task.repo_path,
+                &["worktree", "add", &wt_path, &branch],
+            )?;
+            if !result.success() {
+                let msg = format!("recreate worktree: {}", result.combined_output());
+                warn!("task #{} rebase: {msg}", task.id);
+                self.fail_or_retry(task, "rebase", &msg)?;
+                return Ok(());
+            }
+        }
+        if let Err(e) = git.rebase_onto_main(&wt_path) {
             warn!("task #{} rebase: {e}", task.id);
             self.fail_or_retry(task, "rebase", &e.to_string())?;
             return Ok(());
