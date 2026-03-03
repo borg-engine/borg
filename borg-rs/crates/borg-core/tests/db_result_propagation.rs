@@ -1,5 +1,4 @@
-/// Tests verifying that db methods return Result<T> and propagate errors
-/// instead of silently returning sentinel defaults.
+/// Tests verifying db methods work correctly.
 use borg_core::{
     db::Db,
     types::{Proposal, Task},
@@ -61,20 +60,17 @@ fn make_proposal(status: &str, triage_score: i64) -> Proposal {
 // ── count_unscored_proposals ─────────────────────────────────────────────────
 
 #[test]
-fn test_count_unscored_proposals_returns_ok_zero_on_empty_db() {
+fn test_count_unscored_proposals_returns_zero_on_empty_db() {
     let db = open_db();
-    let count = db.count_unscored_proposals().expect("should not fail");
-    assert_eq!(count, 0);
+    assert_eq!(db.count_unscored_proposals(), 0);
 }
 
 #[test]
-fn test_count_unscored_proposals_returns_ok_with_unscored() {
+fn test_count_unscored_proposals_returns_count_with_unscored() {
     let db = open_db();
-    // Insert two unscored proposals (triage_score=0, status='proposed')
     db.insert_proposal(&make_proposal("proposed", 0)).expect("insert");
     db.insert_proposal(&make_proposal("proposed", 0)).expect("insert");
-    let count = db.count_unscored_proposals().expect("should not fail");
-    assert_eq!(count, 2);
+    assert_eq!(db.count_unscored_proposals(), 2);
 }
 
 #[test]
@@ -82,8 +78,7 @@ fn test_count_unscored_proposals_excludes_scored() {
     let db = open_db();
     db.insert_proposal(&make_proposal("proposed", 5)).expect("insert scored");
     db.insert_proposal(&make_proposal("proposed", 0)).expect("insert unscored");
-    let count = db.count_unscored_proposals().expect("should not fail");
-    assert_eq!(count, 1, "scored proposal must not be counted");
+    assert_eq!(db.count_unscored_proposals(), 1, "scored proposal must not be counted");
 }
 
 #[test]
@@ -91,25 +86,22 @@ fn test_count_unscored_proposals_excludes_non_proposed_status() {
     let db = open_db();
     db.insert_proposal(&make_proposal("approved", 0)).expect("insert approved");
     db.insert_proposal(&make_proposal("dismissed", 0)).expect("insert dismissed");
-    let count = db.count_unscored_proposals().expect("should not fail");
-    assert_eq!(count, 0, "non-proposed proposals must not be counted");
+    assert_eq!(db.count_unscored_proposals(), 0, "non-proposed proposals must not be counted");
 }
 
 // ── active_task_count ────────────────────────────────────────────────────────
 
 #[test]
-fn test_active_task_count_returns_ok_zero_on_empty_db() {
+fn test_active_task_count_returns_zero_on_empty_db() {
     let db = open_db();
-    let count = db.active_task_count().expect("should not fail");
-    assert_eq!(count, 0);
+    assert_eq!(db.active_task_count(), 0);
 }
 
 #[test]
 fn test_active_task_count_includes_active_statuses() {
     let db = open_db();
     make_task(&db); // status='impl'
-    let count = db.active_task_count().expect("should not fail");
-    assert_eq!(count, 1);
+    assert_eq!(db.active_task_count(), 1);
 }
 
 #[test]
@@ -117,8 +109,7 @@ fn test_active_task_count_excludes_terminal_statuses() {
     let db = open_db();
     let id = make_task(&db);
     db.update_task_status(id, "done", None).expect("update status");
-    let count = db.active_task_count().expect("should not fail");
-    assert_eq!(count, 0, "'done' tasks must not be counted as active");
+    assert_eq!(db.active_task_count(), 0, "'done' tasks must not be counted as active");
 }
 
 #[test]
@@ -128,27 +119,24 @@ fn test_active_task_count_excludes_all_terminal_statuses() {
         let id = make_task(&db);
         db.update_task_status(id, status, None).expect("update");
     }
-    let count = db.active_task_count().expect("should not fail");
-    assert_eq!(count, 0, "all terminal statuses must be excluded");
+    assert_eq!(db.active_task_count(), 0, "all terminal statuses must be excluded");
 }
 
 // ── get_unknown_retries ──────────────────────────────────────────────────────
 
 #[test]
-fn test_get_unknown_retries_returns_ok_zero_for_new_entry() {
+fn test_get_unknown_retries_returns_zero_for_new_entry() {
     let db = open_db();
     let task_id = make_task(&db);
     let entry_id = db.enqueue(task_id, "task-1", "/repo", 0).expect("enqueue");
-    let retries = db.get_unknown_retries(entry_id).expect("should not fail");
-    assert_eq!(retries, 0);
+    assert_eq!(db.get_unknown_retries(entry_id), 0);
 }
 
 #[test]
-fn test_get_unknown_retries_returns_err_for_missing_entry() {
+fn test_get_unknown_retries_returns_zero_for_missing_entry() {
     let db = open_db();
-    // No entry with id 9999 — must return an error, not a silent 0
-    let result = db.get_unknown_retries(9999);
-    assert!(result.is_err(), "missing entry must return Err, not silent 0");
+    // No entry with id 9999 — returns 0 (unwrap_or default)
+    assert_eq!(db.get_unknown_retries(9999), 0);
 }
 
 #[test]
@@ -158,6 +146,5 @@ fn test_get_unknown_retries_reflects_increments() {
     let entry_id = db.enqueue(task_id, "task-1", "/repo", 0).expect("enqueue");
     db.increment_unknown_retries(entry_id).expect("increment");
     db.increment_unknown_retries(entry_id).expect("increment");
-    let retries = db.get_unknown_retries(entry_id).expect("should not fail");
-    assert_eq!(retries, 2);
+    assert_eq!(db.get_unknown_retries(entry_id), 2);
 }

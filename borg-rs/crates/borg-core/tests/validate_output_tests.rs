@@ -47,7 +47,7 @@ fn test_validate_failure_saved_to_task_outputs() {
     let task_id = make_task(&db);
 
     let error = "error[E0308]: mismatched types\n  --> src/main.rs:5:18";
-    db.insert_task_output(task_id, "validate", error, "", 1, "", "")
+    db.insert_task_output(task_id, "validate", error, "", 1)
         .expect("insert_task_output");
 
     let outputs = db.get_task_outputs(task_id).expect("get_task_outputs");
@@ -65,7 +65,7 @@ fn test_validate_success_saved_to_task_outputs() {
     let task_id = make_task(&db);
 
     let stdout = "running 5 tests\ntest result: ok. 5 passed; 0 failed";
-    db.insert_task_output(task_id, "validate", stdout, "", 0, "", "")
+    db.insert_task_output(task_id, "validate", stdout, "", 0)
         .expect("insert_task_output");
 
     let outputs = db.get_task_outputs(task_id).expect("get_task_outputs");
@@ -84,9 +84,9 @@ fn test_validate_output_appears_in_phase_history() {
     let db = open_db();
     let task_id = make_task(&db);
 
-    db.insert_task_output(task_id, "impl", "wrote code", "", 0, "", "")
+    db.insert_task_output(task_id, "impl", "wrote code", "", 0)
         .expect("insert impl output");
-    db.insert_task_output(task_id, "validate", "FAILED: test_foo panicked", "", 1, "", "")
+    db.insert_task_output(task_id, "validate", "FAILED: test_foo panicked", "", 1)
         .expect("insert validate output");
 
     let outputs = db.get_task_outputs(task_id).expect("get_task_outputs");
@@ -116,7 +116,7 @@ fn test_validate_output_in_retry_summary() {
     let db = open_db();
     let task_id = make_task(&db);
 
-    db.insert_task_output(task_id, "impl", "wrote code", "", 0, "", "")
+    db.insert_task_output(task_id, "impl", "wrote code", "", 0)
         .expect("insert impl output");
     db.insert_task_output(
         task_id,
@@ -124,8 +124,6 @@ fn test_validate_output_in_retry_summary() {
         "thread 'test_add' panicked at 'assertion failed'",
         "",
         1,
-        "",
-        "",
     )
     .expect("insert validate output");
 
@@ -160,11 +158,11 @@ fn test_multiple_validate_runs_accumulate() {
     let db = open_db();
     let task_id = make_task(&db);
 
-    db.insert_task_output(task_id, "validate", "compile error attempt 1", "", 1, "", "")
+    db.insert_task_output(task_id, "validate", "compile error attempt 1", "", 1)
         .expect("first validate");
-    db.insert_task_output(task_id, "validate", "test failed attempt 2", "", 1, "", "")
+    db.insert_task_output(task_id, "validate", "test failed attempt 2", "", 1)
         .expect("second validate");
-    db.insert_task_output(task_id, "validate", "running 3 tests\nok", "", 0, "", "")
+    db.insert_task_output(task_id, "validate", "running 3 tests\nok", "", 0)
         .expect("third validate (pass)");
 
     let outputs = db.get_task_outputs(task_id).expect("get_task_outputs");
@@ -185,7 +183,7 @@ fn test_compile_check_failure_saved_independently() {
 
     // Simulate: compile check fails → saved; test suite never runs.
     let compile_err = "error[E0425]: cannot find value `foo`";
-    db.insert_task_output(task_id, "validate", compile_err, "", 1, "", "")
+    db.insert_task_output(task_id, "validate", compile_err, "", 1)
         .expect("insert compile check output");
 
     let outputs = db.get_task_outputs(task_id).expect("get_task_outputs");
