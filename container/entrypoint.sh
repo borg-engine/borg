@@ -24,7 +24,12 @@ run_check() {
     local cmd="$2"
     if [ -z "$cmd" ]; then return; fi
     local out rc=0
-    out=$(bash -c "$cmd" 2>&1) || rc=$?
+    local tmpscript
+    tmpscript=$(mktemp /tmp/borg-check.XXXXXX)
+    chmod 700 "$tmpscript"
+    printf '%s\n' "$cmd" > "$tmpscript"
+    out=$(bash "$tmpscript" 2>&1) || rc=$?
+    rm -f "$tmpscript"
     local passed="false"
     [ "$rc" -eq 0 ] && passed="true"
     local truncated escaped
