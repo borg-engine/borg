@@ -94,6 +94,9 @@ pub struct Task {
     /// Link to a project/matter (0 = none).
     #[serde(default)]
     pub project_id: i64,
+    /// Legal task type (research_memo, contract_analysis, etc.). Empty = unspecified.
+    #[serde(default)]
+    pub task_type: String,
 }
 
 /// A user-facing proposal that can be promoted to a Task.

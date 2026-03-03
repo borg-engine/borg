@@ -191,6 +191,7 @@ export interface ProjectTask {
   status: string;
   branch: string;
   mode?: string;
+  task_type?: string;
   created_at: string;
   attempt: number;
   max_attempts: number;
@@ -231,11 +232,17 @@ const SWE_PHASE_LABELS: Record<string, string> = {
   lint_fix: "Lint Fix", rebase: "Rebase", done: "Done", merged: "Merged",
 };
 
-// lawborg phases
-const LEGAL_DISPLAY_PHASES = ["backlog", "research", "draft", "review", "done"] as const;
+// lawborg phases — task-type-specific display
+const LEGAL_DISPLAY_PHASES = ["backlog", "implement", "review", "done"] as const;
 const LEGAL_PHASE_LABELS: Record<string, string> = {
-  backlog: "Backlog", research: "Research", draft: "Drafting",
-  review: "Review", done: "Complete",
+  backlog: "Backlog", implement: "Research & Draft", review: "Review", done: "Complete",
+};
+
+const LEGAL_TASK_TYPE_LABELS: Record<string, Record<string, string>> = {
+  contract_analysis: { backlog: "Backlog", implement: "Extract & Analyze", review: "Review", done: "Complete" },
+  regulatory_analysis: { backlog: "Backlog", implement: "Monitor & Analyze", review: "Review", done: "Complete" },
+  demand_letter: { backlog: "Backlog", implement: "Research & Draft", review: "Review", done: "Complete" },
+  motion_brief: { backlog: "Backlog", implement: "Research & Draft", review: "Review", done: "Complete" },
 };
 
 // webborg phases
@@ -245,14 +252,18 @@ const WEB_PHASE_LABELS: Record<string, string> = {
   done: "Done", merged: "Merged",
 };
 
-export function getDisplayPhases(mode?: string): readonly string[] {
+export function getDisplayPhases(mode?: string, _taskType?: string): readonly string[] {
   if (mode === "lawborg" || mode === "legal") return LEGAL_DISPLAY_PHASES;
   if (mode === "webborg") return WEB_DISPLAY_PHASES;
   return SWE_DISPLAY_PHASES;
 }
 
-export function getPhaseLabel(phase: string, mode?: string): string {
-  if (mode === "lawborg" || mode === "legal") return LEGAL_PHASE_LABELS[phase] ?? phase;
+export function getPhaseLabel(phase: string, mode?: string, taskType?: string): string {
+  if (mode === "lawborg" || mode === "legal") {
+    const typeLabels = taskType ? LEGAL_TASK_TYPE_LABELS[taskType] : undefined;
+    if (typeLabels?.[phase]) return typeLabels[phase];
+    return LEGAL_PHASE_LABELS[phase] ?? phase;
+  }
   if (mode === "webborg") return WEB_PHASE_LABELS[phase] ?? phase;
   return SWE_PHASE_LABELS[phase] ?? phase;
 }

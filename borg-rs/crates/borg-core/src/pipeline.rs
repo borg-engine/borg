@@ -2038,6 +2038,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 mode: mode_name.clone(),
                 backend: String::new(),
                 project_id: 0,
+                task_type: String::new(),
             };
             match self.db.insert_task(&task) {
                 Ok(id) => {
@@ -2124,6 +2125,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             mode: mode_name.to_string(),
             backend: String::new(),
                 project_id: 0,
+                task_type: String::new(),
         };
 
         let task_suffix =
@@ -2227,6 +2229,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                         mode: mode_name.to_string(),
                         backend: String::new(),
                 project_id: 0,
+                task_type: String::new(),
                     };
                     match self.db.insert_task(&task) {
                         Ok(id) => info!("seed created task #{id}: {}", task.title),
@@ -2335,6 +2338,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             mode: "sweborg".into(),
             backend: String::new(),
                 project_id: 0,
+                task_type: String::new(),
         };
         match self.db.insert_task(&task) {
             Ok(id) => {
@@ -2702,6 +2706,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 mode: mode.to_string(),
                 backend: String::new(),
                 project_id: 0,
+                task_type: String::new(),
             };
             match self.db.insert_task(&task) {
                 Ok(id) => {

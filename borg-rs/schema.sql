@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS pipeline_tasks (
   mode TEXT NOT NULL DEFAULT 'sweborg',
   backend TEXT,                  -- backend that actually ran this task
   project_id INTEGER REFERENCES projects(id),
+  task_type TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

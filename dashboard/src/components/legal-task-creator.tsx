@@ -300,7 +300,7 @@ export function LegalTaskCreator() {
         privileged,
       });
 
-      const { id: taskId } = await createTask(title, description, "lawborg", undefined, projectId);
+      const { id: taskId } = await createTask(title, description, "lawborg", undefined, projectId, taskType);
 
       if (pendingFiles.length > 0) {
         try {

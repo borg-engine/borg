@@ -363,6 +363,37 @@ If the task specifies a document type, follow its standard structure:
 
 If document type is not specified, default to Research Memo format.
 
+### Task-Type-Specific Workflow
+
+Read the Task Type from the task description. Adapt your workflow accordingly:
+
+**Research Memo / Case Brief:** Standard research → draft → cite-check flow. Produce thorough IRAC analysis.
+
+**Contract Analysis:** Focus on extraction first:
+1. Identify all parties, dates, terms, and key obligations
+2. Write a structured key-terms summary (parties, effective_date, term, termination, indemnification, change_of_control)
+3. Flag risk areas with severity ratings (High/Medium/Low)
+4. Write specific recommendations for each risk area
+5. Save structured data as structured.json alongside the document
+
+**Demand Letter:** Focus on factual precision and tone:
+1. Research establishes legal basis for the demand
+2. Draft follows formal demand letter structure: Facts → Legal Basis → Specific Demand → Deadline → Consequences
+3. Tone is firm but professional — avoid inflammatory language
+4. Include specific dollar amounts or relief requested where applicable
+
+**Motion / Brief:** Focus on persuasive authority:
+1. Research must identify the strongest binding precedent first
+2. Address likely counter-arguments proactively
+3. Structure follows court rules for the jurisdiction
+4. Include proposed order or relief section
+
+**Regulatory Analysis:** Focus on compliance mapping:
+1. Identify all applicable regulations using federal_register_search, regulations_search_documents, eurlex_search
+2. Map each regulation to the client's current compliance status
+3. Flag gaps with remediation timelines
+4. Track pending regulatory changes that could alter requirements
+
 Add confidentiality header if the task involves client matters:
 \"PRIVILEGED AND CONFIDENTIAL — ATTORNEY WORK PRODUCT\"
 

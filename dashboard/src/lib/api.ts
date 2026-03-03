@@ -313,12 +313,13 @@ export async function createTask(
   description: string,
   mode: string,
   repo_path?: string,
-  project_id?: number
+  project_id?: number,
+  task_type?: string
 ): Promise<{ id: number }> {
   const res = await apiFetch("/api/tasks/create", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, description, mode, repo: repo_path, project_id }),
+    body: JSON.stringify({ title, description, mode, repo: repo_path, project_id, task_type }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();

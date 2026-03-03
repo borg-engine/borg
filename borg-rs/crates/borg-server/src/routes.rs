@@ -63,6 +63,7 @@ pub(crate) struct CreateTaskBody {
     pub mode: Option<String>,
     pub repo: Option<String>,
     pub project_id: Option<i64>,
+    pub task_type: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1625,6 +1626,7 @@ pub(crate) async fn create_task(
         mode,
         backend: String::new(),
         project_id: body.project_id.unwrap_or(0),
+        task_type: body.task_type.unwrap_or_default(),
     };
     let id = state.db.insert_task(&task).map_err(internal)?;
     Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
@@ -1872,6 +1874,7 @@ pub(crate) async fn approve_proposal(
             .unwrap_or_else(|| "sweborg".into()),
         backend: String::new(),
         project_id: 0,
+        task_type: String::new(),
     };
     let task_id = state.db.insert_task(&task).map_err(internal)?;
     Ok(Json(json!({ "task_id": task_id })))
@@ -1964,6 +1967,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 mode: "sweborg".into(),
                 backend: String::new(),
                 project_id: 0,
+                task_type: String::new(),
             };
 
             let phase = PhaseConfig {

@@ -179,7 +179,7 @@ fn normalize_party_name(name: &str) -> String {
 
 const TASK_COLS: &str = "id, title, description, repo_path, branch, status, attempt, \
     max_attempts, last_error, created_by, notify_chat, created_at, \
-    session_id, mode, backend, project_id";
+    session_id, mode, backend, project_id, task_type";
 
 fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let created_at_str: String = row.get(11)?;
@@ -200,6 +200,7 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         mode: row.get(13)?,
         backend: row.get::<_, Option<String>>(14)?.unwrap_or_default(),
         project_id: row.get::<_, Option<i64>>(15)?.unwrap_or(0),
+        task_type: row.get::<_, Option<String>>(16)?.unwrap_or_default(),
     })
 }
 
@@ -376,6 +377,7 @@ impl Db {
             "ALTER TABLE projects ADD COLUMN deadline TEXT",
             "ALTER TABLE projects ADD COLUMN privilege_level TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+            "ALTER TABLE pipeline_tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT ''",
         ];
         for sql in alters {
             let _ = conn.execute(sql, []);
@@ -462,8 +464,8 @@ impl Db {
         conn.execute(
             "INSERT INTO pipeline_tasks \
              (title, description, repo_path, branch, status, attempt, max_attempts, \
-              last_error, created_by, notify_chat, created_at, session_id, mode, backend, project_id) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+              last_error, created_by, notify_chat, created_at, session_id, mode, backend, project_id, task_type) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 task.title,
                 task.description,
@@ -484,6 +486,11 @@ impl Db {
                     Some(task.backend.as_str())
                 },
                 project_id,
+                if task.task_type.is_empty() {
+                    None
+                } else {
+                    Some(task.task_type.as_str())
+                },
             ],
         )
         .context("insert_task")?;

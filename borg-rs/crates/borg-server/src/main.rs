@@ -341,6 +341,7 @@ async fn main() -> anyhow::Result<()> {
                                     mode,
                                     backend: String::new(),
                                     project_id: 0,
+                                    task_type: String::new(),
                                 };
                                 let task_title = task.title.clone();
                                 let tg2 = Arc::clone(&tg);
