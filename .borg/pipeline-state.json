@@ -1,10 +1,10 @@
 {
-  "task_id": 241,
-  "task_title": "Shell injection in entrypoint.sh via unquoted bash -c variable",
+  "task_id": 242,
+  "task_title": "Shell injection in observer.rs Source::Command passes raw config to sh -c",
   "phase": "implement",
-  "worktree_path": "/home/shulgin/borg/.worktrees/task-241",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-242",
   "pr_url": null,
   "pending_approvals": [],
   "phase_history": [],
-  "generated_at": "2026-03-03T08:01:30.266373840Z"
+  "generated_at": "2026-03-03T08:03:50.680632747Z"
 }
