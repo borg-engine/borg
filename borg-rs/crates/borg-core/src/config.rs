@@ -93,11 +93,8 @@ pub struct Config {
     pub observer_config: String,
 }
 
-fn parse_dotenv() -> HashMap<String, String> {
+fn parse_dotenv_str(contents: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
-    let Ok(contents) = std::fs::read_to_string(".env") else {
-        return map;
-    };
     for line in contents.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -116,6 +113,13 @@ fn parse_dotenv() -> HashMap<String, String> {
         }
     }
     map
+}
+
+fn parse_dotenv() -> HashMap<String, String> {
+    let Ok(contents) = std::fs::read_to_string(".env") else {
+        return HashMap::new();
+    };
+    parse_dotenv_str(&contents)
 }
 
 fn get(key: &str, dotenv: &HashMap<String, String>) -> Option<String> {
@@ -629,5 +633,69 @@ impl Config {
             wa_disabled: get_bool("WA_DISABLED", &dotenv, false),
             observer_config: get_str("OBSERVER_CONFIG", &dotenv, ""),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Serialise CWD changes so parallel tests don't interfere with each other.
+    static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn test_missing_env_file_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let orig = std::env::current_dir().unwrap();
+        let _guard = CWD_LOCK.lock().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = parse_dotenv();
+        std::env::set_current_dir(orig).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_comment_lines_skipped() {
+        let map = parse_dotenv_str("# comment\nFOO=bar");
+        assert!(!map.contains_key("# comment"));
+        assert_eq!(map["FOO"], "bar");
+    }
+
+    #[test]
+    fn test_empty_lines_skipped() {
+        let map = parse_dotenv_str("\n\nFOO=bar\n\n");
+        assert_eq!(map.len(), 1);
+        assert_eq!(map["FOO"], "bar");
+    }
+
+    #[test]
+    fn test_double_quoted_values_unquoted() {
+        let map = parse_dotenv_str(r#"FOO="hello world""#);
+        assert_eq!(map["FOO"], "hello world");
+    }
+
+    #[test]
+    fn test_single_quoted_values_unquoted() {
+        let map = parse_dotenv_str("FOO='hello world'");
+        assert_eq!(map["FOO"], "hello world");
+    }
+
+    #[test]
+    fn test_unquoted_values_returned_as_is() {
+        let map = parse_dotenv_str("FOO=plainvalue");
+        assert_eq!(map["FOO"], "plainvalue");
+    }
+
+    #[test]
+    fn test_whitespace_around_key_and_value_trimmed() {
+        let map = parse_dotenv_str("  FOO  =  bar  ");
+        assert_eq!(map["FOO"], "bar");
+    }
+
+    #[test]
+    fn test_line_without_equals_ignored() {
+        let map = parse_dotenv_str("NOEQUALSIGN\nFOO=bar");
+        assert!(!map.contains_key("NOEQUALSIGN"));
+        assert_eq!(map["FOO"], "bar");
     }
 }
