@@ -959,11 +959,11 @@ impl Pipeline {
         self.run_rebase_phase_docker(task, phase).await
     }
 
-    /// Docker-mode rebase: use GitHub's update-branch API to rebase the PR onto main.
+    /// Rebase: try GitHub update-branch API first; on conflict spawn a Docker agent.
     async fn run_rebase_phase_docker(&self, task: &Task, phase: &PhaseConfig) -> Result<()> {
         let repo = self.repo_config(task);
         if repo.repo_slug.is_empty() {
-            warn!("task #{} docker rebase: no repo_slug, skipping", task.id);
+            warn!("task #{} rebase: no repo_slug, skipping", task.id);
             self.db.update_task_status(task.id, &phase.next, None)?;
             return Ok(());
         }
@@ -988,23 +988,98 @@ impl Pipeline {
             ]).await;
             match update_out {
                 Ok(o) if o.exit_code == 0 => {
-                    info!("task #{} docker rebase: update-branch succeeded", task.id);
+                    info!("task #{} rebase: update-branch succeeded", task.id);
                     self.db.update_task_status(task.id, &phase.next, None)?;
+                    return Ok(());
                 },
                 Ok(o) => {
                     let err = o.stderr.trim().chars().take(300).collect::<String>();
-                    warn!("task #{} docker rebase: update-branch failed: {err}", task.id);
-                    self.fail_or_retry(task, "rebase", &err)?;
+                    warn!("task #{} rebase: update-branch failed, spawning agent: {err}", task.id);
                 },
                 Err(e) => {
-                    warn!("task #{} docker rebase: update-branch error: {e}", task.id);
-                    self.fail_or_retry(task, "rebase", &e.to_string())?;
+                    warn!("task #{} rebase: update-branch error, spawning agent: {e}", task.id);
                 },
             }
         } else {
-            // No PR yet — branch may not exist on remote. Advance and let integration create it.
-            info!("task #{} docker rebase: no PR found, advancing", task.id);
+            info!("task #{} rebase: no PR found, advancing", task.id);
             self.db.update_task_status(task.id, &phase.next, None)?;
+            return Ok(());
+        }
+
+        // GitHub API couldn't auto-merge — spawn a Docker agent to resolve conflicts
+        self.run_rebase_agent(task, phase, &branch).await
+    }
+
+    /// Spawn a Docker agent to rebase the branch onto main and resolve conflicts.
+    async fn run_rebase_agent(
+        &self,
+        task: &Task,
+        phase: &PhaseConfig,
+        branch: &str,
+    ) -> Result<()> {
+        let rebase_phase = PhaseConfig {
+            name: "rebase_fix".into(),
+            label: "Rebase Fix".into(),
+            system_prompt: "You are a rebase agent. Your job is to rebase the current branch \
+onto origin/main and resolve any merge conflicts. Preserve the intent of the branch's changes \
+while incorporating upstream updates. After resolving conflicts, ensure the code compiles and \
+tests pass if a test command is available. Push the result.".into(),
+            instruction: format!(
+                "Rebase branch `{branch}` onto `origin/main`. Steps:\n\
+1. `git fetch origin`\n\
+2. `git rebase origin/main`\n\
+3. If conflicts arise, resolve them preserving the branch's intent\n\
+4. `git rebase --continue` after resolving each conflict\n\
+5. `git push --force-with-lease origin {branch}`\n\n\
+If the rebase is too complex or the conflicts are unclear, abort with `git rebase --abort` \
+and report what went wrong.",
+            ),
+            allowed_tools: "Read,Glob,Grep,Write,Edit,Bash".into(),
+            use_docker: true,
+            fresh_session: true,
+            ..PhaseConfig::default()
+        };
+
+        let session_dir_rel = format!("store/sessions/task-{}", task.id);
+        tokio::fs::create_dir_all(&session_dir_rel).await.ok();
+        let session_dir = std::fs::canonicalize(&session_dir_rel)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&session_dir_rel))
+            .to_string_lossy()
+            .to_string();
+
+        let ctx = self.make_context(task, session_dir.clone(), session_dir, Vec::new());
+
+        let backend = match self.resolve_backend(task) {
+            Some(b) => b,
+            None => {
+                warn!("task #{} rebase: no backend available", task.id);
+                self.fail_or_retry(task, "rebase", "no agent backend")?;
+                return Ok(());
+            }
+        };
+
+        let result = backend
+            .run_phase(task, &rebase_phase, ctx)
+            .await
+            .unwrap_or_else(|e| {
+                error!("rebase agent for task #{}: {e}", task.id);
+                PhaseOutput::failed(String::new())
+            });
+
+        if let Some(ref sid) = result.new_session_id {
+            self.db.update_task_session(task.id, sid).ok();
+        }
+
+        self.db
+            .insert_task_output(task.id, "rebase_fix", &result.output, &result.raw_stream, if result.success { 0 } else { 1 })
+            .ok();
+
+        if result.success {
+            info!("task #{} rebase: agent resolved conflicts", task.id);
+            self.db.update_task_status(task.id, &phase.next, None)?;
+        } else {
+            warn!("task #{} rebase: agent failed to resolve conflicts", task.id);
+            self.fail_or_retry(task, "rebase", &result.output)?;
         }
 
         Ok(())
