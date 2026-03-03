@@ -97,11 +97,6 @@ impl ClaudeBackend {
         self
     }
 
-    /// Refresh OAuth token (triggers CLI refresh if near-expiry, then re-reads from disk).
-    fn fresh_oauth_token(&self, fallback: &str) -> String {
-        borg_core::config::refresh_oauth_token(&self.credentials_path, fallback)
-    }
-
     /// Build JSON payload for the container entrypoint (Docker mode).
     fn build_docker_input(
         &self,

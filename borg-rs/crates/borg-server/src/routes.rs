@@ -4667,6 +4667,9 @@ mod tests {
     fn stage_project_files_uses_stored_path_basename() {
         let dir = tempfile::tempdir().unwrap();
         let session_dir = dir.path().to_str().unwrap();
+        let storage = crate::storage::FileStorage::Local {
+            data_dir: dir.path().to_string_lossy().to_string(),
+        };
 
         // Two source files with different content but same display file_name
         let src1 = dir.path().join("1700000001_aaa_report.pdf");
@@ -4679,7 +4682,8 @@ mod tests {
             make_file("report.pdf", src2.to_str().unwrap()),
         ];
 
-        stage_project_files(session_dir, &files);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(stage_project_files(session_dir, &files, &storage));
 
         let dest_dir = dir.path().join("project_files");
         let staged1 = std::fs::read(dest_dir.join("1700000001_aaa_report.pdf")).unwrap();
@@ -4692,6 +4696,9 @@ mod tests {
     fn stage_project_files_unique_names_no_collision() {
         let dir = tempfile::tempdir().unwrap();
         let session_dir = dir.path().to_str().unwrap();
+        let storage = crate::storage::FileStorage::Local {
+            data_dir: dir.path().to_string_lossy().to_string(),
+        };
 
         let src1 = dir.path().join("1700000001_aaa_doc.txt");
         let src2 = dir.path().join("1700000002_bbb_doc.txt");
@@ -4703,7 +4710,8 @@ mod tests {
             make_file("doc.txt", src2.to_str().unwrap()),
         ];
 
-        stage_project_files(session_dir, &files);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(stage_project_files(session_dir, &files, &storage));
 
         let dest_dir = dir.path().join("project_files");
         let entries: Vec<_> = std::fs::read_dir(&dest_dir)

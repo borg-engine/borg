@@ -25,6 +25,11 @@ fn make_task() -> Task {
         backend: String::new(),
         project_id: 0,
         task_type: String::new(),
+        started_at: None,
+        completed_at: None,
+        duration_secs: None,
+        review_status: None,
+        revision_count: 0,
     }
 }
 
@@ -51,7 +56,7 @@ fn make_ctx() -> PhaseContext {
         },
         data_dir: String::new(),
         session_dir: String::new(),
-        worktree_path: "/nonexistent-worktree".into(),
+        work_dir: "/nonexistent-worktree".into(),
         oauth_token: String::new(),
         model: String::new(),
         pending_messages: Vec::new(),
@@ -64,6 +69,8 @@ fn make_ctx() -> PhaseContext {
         knowledge_files: Vec::new(),
         knowledge_dir: String::new(),
         agent_network: None,
+        prior_research: Vec::new(),
+        revision_count: 0,
     }
 }
 
@@ -75,6 +82,10 @@ fn make_knowledge_file(file_name: &str, description: &str, inline: bool) -> Know
         size_bytes: 0,
         inline,
         created_at: String::new(),
+        tags: String::new(),
+        category: "general".into(),
+        jurisdiction: String::new(),
+        project_id: None,
     }
 }
 
@@ -343,7 +354,7 @@ fn test_knowledge_section_comes_first() {
 fn test_repo_prompt_excluded_when_no_file() {
     let task = make_task();
     let phase = make_phase();
-    let ctx = make_ctx(); // worktree_path is /nonexistent-worktree, no prompt.md
+    let ctx = make_ctx(); // work_dir is /nonexistent-worktree, no prompt.md
     let result = build_instruction(&task, &phase, &ctx, None);
     assert!(!result.contains("## Project Context"), "repo prompt section should be absent");
 }
@@ -358,7 +369,7 @@ fn test_repo_prompt_included_when_file_exists() {
     let task = make_task();
     let phase = make_phase();
     let mut ctx = make_ctx();
-    ctx.worktree_path = tmp.to_string_lossy().into_owned();
+    ctx.work_dir = tmp.to_string_lossy().into_owned();
     ctx.repo_config.path = "/different-path".into();
 
     let result = build_instruction(&task, &phase, &ctx, None);
@@ -386,7 +397,7 @@ fn test_full_section_ordering() {
         ..Default::default()
     };
     let mut ctx = make_ctx();
-    ctx.worktree_path = tmp.to_string_lossy().into_owned();
+    ctx.work_dir = tmp.to_string_lossy().into_owned();
     ctx.repo_config.path = "/different".into();
     ctx.knowledge_files = vec![make_knowledge_file("kb.md", "KB desc", false)];
     ctx.pending_messages = vec![("user".into(), "Check this.".into())];
