@@ -248,6 +248,18 @@ impl Sandbox {
     /// Subnet for the agent bridge network.
     pub const AGENT_SUBNET: &'static str = "172.30.0.0/16";
 
+    /// iptables rules that isolate agent containers from localhost and LAN.
+    /// Order matters: the ACCEPT for the agent subnet must precede the DROP for 172.16/12.
+    /// Each entry is `(source, destination, action)`.
+    const NETWORK_RULES: &'static [(&'static str, &'static str, &'static str)] = &[
+        (Sandbox::AGENT_SUBNET, "172.30.0.0/16", "ACCEPT"),
+        (Sandbox::AGENT_SUBNET, "127.0.0.0/8",   "DROP"),
+        (Sandbox::AGENT_SUBNET, "10.0.0.0/8",    "DROP"),
+        (Sandbox::AGENT_SUBNET, "192.168.0.0/16", "DROP"),
+        (Sandbox::AGENT_SUBNET, "169.254.0.0/16", "DROP"),
+        (Sandbox::AGENT_SUBNET, "172.16.0.0/12",  "DROP"),
+    ];
+
     /// Create the borg-agent-net bridge network if it doesn't already exist.
     /// Returns true if the network is available (created or already existed).
     pub async fn ensure_agent_network() -> bool {
@@ -295,18 +307,8 @@ impl Sandbox {
             return false;
         }
 
-        // (source, dest, action) — order matters: ACCEPT for 172.30/16 before DROP for 172.16/12
-        let rules: &[(&str, &str, &str)] = &[
-            (Self::AGENT_SUBNET, "172.30.0.0/16", "ACCEPT"),
-            (Self::AGENT_SUBNET, "127.0.0.0/8",   "DROP"),
-            (Self::AGENT_SUBNET, "10.0.0.0/8",    "DROP"),
-            (Self::AGENT_SUBNET, "192.168.0.0/16", "DROP"),
-            (Self::AGENT_SUBNET, "169.254.0.0/16", "DROP"),
-            (Self::AGENT_SUBNET, "172.16.0.0/12",  "DROP"),
-        ];
-
         let mut all_ok = true;
-        for (src, dst, action) in rules {
+        for (src, dst, action) in Self::NETWORK_RULES {
             // Check if rule already exists
             let exists = tokio::process::Command::new("iptables")
                 .args(["-C", "DOCKER-USER", "-s", src, "-d", dst, "-j", action])
@@ -346,16 +348,7 @@ impl Sandbox {
             return;
         }
 
-        let rules: &[(&str, &str, &str)] = &[
-            (Self::AGENT_SUBNET, "172.30.0.0/16", "ACCEPT"),
-            (Self::AGENT_SUBNET, "127.0.0.0/8",   "DROP"),
-            (Self::AGENT_SUBNET, "10.0.0.0/8",    "DROP"),
-            (Self::AGENT_SUBNET, "192.168.0.0/16", "DROP"),
-            (Self::AGENT_SUBNET, "169.254.0.0/16", "DROP"),
-            (Self::AGENT_SUBNET, "172.16.0.0/12",  "DROP"),
-        ];
-
-        for (src, dst, action) in rules {
+        for (src, dst, action) in Self::NETWORK_RULES {
             let _ = tokio::process::Command::new("iptables")
                 .args(["-D", "DOCKER-USER", "-s", src, "-d", dst, "-j", action])
                 .stdout(Stdio::null())
@@ -649,6 +642,38 @@ impl Sandbox {
             .await
             .map(|s| s.success())
             .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn network_rules_accept_before_drop() {
+        let rules = Sandbox::NETWORK_RULES;
+        assert!(!rules.is_empty(), "NETWORK_RULES must not be empty");
+
+        // All rules must originate from the agent subnet.
+        for (src, _dst, _action) in rules {
+            assert_eq!(*src, Sandbox::AGENT_SUBNET);
+        }
+
+        // The ACCEPT rule for the agent subnet itself must come before the broad DROP
+        // for 172.16.0.0/12 (which covers the agent subnet).
+        let accept_pos = rules
+            .iter()
+            .position(|(_, dst, action)| *dst == "172.30.0.0/16" && *action == "ACCEPT")
+            .expect("NETWORK_RULES must contain an ACCEPT for 172.30.0.0/16");
+        let drop_pos = rules
+            .iter()
+            .position(|(_, dst, action)| *dst == "172.16.0.0/12" && *action == "DROP")
+            .expect("NETWORK_RULES must contain a DROP for 172.16.0.0/12");
+
+        assert!(
+            accept_pos < drop_pos,
+            "ACCEPT for agent subnet must precede DROP for 172.16.0.0/12"
+        );
     }
 }
 
