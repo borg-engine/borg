@@ -25,7 +25,7 @@ use tokio_stream::{
     StreamExt,
 };
 
-use crate::{storage::FileStorage, AppState};
+use crate::{ingestion::IngestionQueue, storage::FileStorage, AppState};
 
 // ── Error helper ──────────────────────────────────────────────────────────
 
@@ -2089,26 +2089,28 @@ pub(crate) async fn upload_project_files(
         }
     }
 
-    // Extract text from uploaded files in background
-    let db = state.db.clone();
-    let storage = state.file_storage.clone();
-    let project_id = id;
-    tokio::spawn(async move {
-        for file in db.list_project_files(project_id).unwrap_or_default() {
-            if !file.extracted_text.is_empty() { continue; }
-            let bytes = match storage.read_all(&file.stored_path).await {
-                Ok(b) => b,
-                Err(_) => continue,
-            };
-            if let Ok(text) = extract_text_from_bytes(&file.file_name, &file.mime_type, &bytes).await {
-                if !text.is_empty() {
-                    let _ = db.update_project_file_text(file.id, &text);
-                    let _ = db.fts_index_document(project_id, 0, &file.file_name, &file.file_name, &text);
-                    tracing::info!("extracted {} chars from {}", text.len(), file.file_name);
+    if matches!(state.ingestion_queue.as_ref(), IngestionQueue::Disabled) {
+        // Extract text from uploaded files in background (legacy mode when queue is disabled)
+        let db = state.db.clone();
+        let storage = state.file_storage.clone();
+        let project_id = id;
+        tokio::spawn(async move {
+            for file in db.list_project_files(project_id).unwrap_or_default() {
+                if !file.extracted_text.is_empty() { continue; }
+                let bytes = match storage.read_all(&file.stored_path).await {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+                if let Ok(text) = extract_text_from_bytes(&file.file_name, &file.mime_type, &bytes).await {
+                    if !text.is_empty() {
+                        let _ = db.update_project_file_text(file.id, &text);
+                        let _ = db.fts_index_document(project_id, 0, &file.file_name, &file.file_name, &text);
+                        tracing::info!("extracted {} chars from {}", text.len(), file.file_name);
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 
     Ok(Json(json!({ "uploaded": uploaded })))
 }
@@ -4188,20 +4190,22 @@ pub(crate) async fn import_cloud_files(
         total_bytes += file_size;
         imported.push(json!({ "id": file_id, "file_name": safe_name, "size_bytes": file_size }));
 
-        // Kick off text extraction
-        let db2 = state.db.clone();
-        let mime2 = mime.clone();
-        let bytes2 = bytes.clone();
-        let proj_id = id;
-        let fname = safe_name.clone();
-        tokio::spawn(async move {
-            if let Ok(text) = extract_text_from_bytes(&fname, &mime2, &bytes2).await {
-                if !text.is_empty() {
-                    let _ = db2.update_project_file_text(file_id, &text);
-                    let _ = db2.fts_index_document(proj_id, 0, &fname, &fname, &text);
+        if matches!(state.ingestion_queue.as_ref(), IngestionQueue::Disabled) {
+            // Kick off text extraction in-process when queue is disabled
+            let db2 = state.db.clone();
+            let mime2 = mime.clone();
+            let bytes2 = bytes.clone();
+            let proj_id = id;
+            let fname = safe_name.clone();
+            tokio::spawn(async move {
+                if let Ok(text) = extract_text_from_bytes(&fname, &mime2, &bytes2).await {
+                    if !text.is_empty() {
+                        let _ = db2.update_project_file_text(file_id, &text);
+                        let _ = db2.fts_index_document(proj_id, 0, &fname, &fname, &text);
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     Ok(Json(json!({ "imported": imported })))

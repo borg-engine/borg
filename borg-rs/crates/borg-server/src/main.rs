@@ -704,6 +704,15 @@ async fn main() -> anyhow::Result<()> {
         ingestion_queue: Arc::clone(&ingestion_queue),
     });
 
+    {
+        let queue = Arc::clone(&state.ingestion_queue);
+        let db = Arc::clone(&state.db);
+        let storage = Arc::clone(&state.file_storage);
+        tokio::spawn(async move {
+            queue.run_worker(db, storage).await;
+        });
+    }
+
     let dashboard_dir = config.dashboard_dist_dir.clone();
     let serve_dir = ServeDir::new(&dashboard_dir).fallback(tower_http::services::ServeFile::new(
         format!("{dashboard_dir}/index.html"),
