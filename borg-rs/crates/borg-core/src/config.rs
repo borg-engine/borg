@@ -93,11 +93,8 @@ pub struct Config {
     pub observer_config: String,
 }
 
-fn parse_dotenv() -> HashMap<String, String> {
+fn parse_dotenv_str(contents: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
-    let Ok(contents) = std::fs::read_to_string(".env") else {
-        return map;
-    };
     for line in contents.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -116,6 +113,12 @@ fn parse_dotenv() -> HashMap<String, String> {
         }
     }
     map
+}
+
+fn parse_dotenv() -> HashMap<String, String> {
+    std::fs::read_to_string(".env")
+        .map(|s| parse_dotenv_str(&s))
+        .unwrap_or_default()
 }
 
 fn get(key: &str, dotenv: &HashMap<String, String>) -> Option<String> {
@@ -629,5 +632,128 @@ impl Config {
             wa_disabled: get_bool("WA_DISABLED", &dotenv, false),
             observer_config: get_str("OBSERVER_CONFIG", &dotenv, ""),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- parse_dotenv_str ---
+
+    #[test]
+    fn parse_dotenv_str_double_quoted() {
+        let map = parse_dotenv_str(r#"FOO="hello world""#);
+        assert_eq!(map["FOO"], "hello world");
+    }
+
+    #[test]
+    fn parse_dotenv_str_single_quoted() {
+        let map = parse_dotenv_str("BAR='single quoted'");
+        assert_eq!(map["BAR"], "single quoted");
+    }
+
+    #[test]
+    fn parse_dotenv_str_unquoted() {
+        let map = parse_dotenv_str("BAZ=plain");
+        assert_eq!(map["BAZ"], "plain");
+    }
+
+    #[test]
+    fn parse_dotenv_str_skips_comments() {
+        let map = parse_dotenv_str("# this is a comment\nKEY=val");
+        assert!(!map.contains_key("# this is a comment"));
+        assert_eq!(map["KEY"], "val");
+    }
+
+    #[test]
+    fn parse_dotenv_str_skips_blank_lines() {
+        let map = parse_dotenv_str("\n\nKEY=val\n\n");
+        assert_eq!(map.len(), 1);
+        assert_eq!(map["KEY"], "val");
+    }
+
+    #[test]
+    fn parse_dotenv_str_whitespace_around_key() {
+        let map = parse_dotenv_str("  KEY  =value");
+        assert_eq!(map["KEY"], "value");
+    }
+
+    #[test]
+    fn parse_dotenv_str_whitespace_around_value() {
+        let map = parse_dotenv_str("KEY=  value  ");
+        assert_eq!(map["KEY"], "value");
+    }
+
+    #[test]
+    fn parse_dotenv_str_multiple_entries() {
+        let input = "A=1\nB=2\nC=3";
+        let map = parse_dotenv_str(input);
+        assert_eq!(map["A"], "1");
+        assert_eq!(map["B"], "2");
+        assert_eq!(map["C"], "3");
+    }
+
+    #[test]
+    fn parse_dotenv_str_empty_input() {
+        let map = parse_dotenv_str("");
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn parse_dotenv_str_only_comments_and_blanks() {
+        let map = parse_dotenv_str("# comment\n\n# another");
+        assert!(map.is_empty());
+    }
+
+    // --- get_bool ---
+
+    #[test]
+    fn get_bool_true_string() {
+        let mut map = HashMap::new();
+        map.insert("FLAG".to_string(), "true".to_string());
+        assert!(get_bool("FLAG", &map, false));
+    }
+
+    #[test]
+    fn get_bool_one_string() {
+        let mut map = HashMap::new();
+        map.insert("FLAG".to_string(), "1".to_string());
+        assert!(get_bool("FLAG", &map, false));
+    }
+
+    #[test]
+    fn get_bool_false_string() {
+        let mut map = HashMap::new();
+        map.insert("FLAG".to_string(), "false".to_string());
+        assert!(!get_bool("FLAG", &map, true));
+    }
+
+    #[test]
+    fn get_bool_zero_string() {
+        let mut map = HashMap::new();
+        map.insert("FLAG".to_string(), "0".to_string());
+        assert!(!get_bool("FLAG", &map, true));
+    }
+
+    #[test]
+    fn get_bool_unknown_value_uses_default_true() {
+        let mut map = HashMap::new();
+        map.insert("FLAG".to_string(), "yes".to_string());
+        assert!(get_bool("FLAG", &map, true));
+    }
+
+    #[test]
+    fn get_bool_unknown_value_uses_default_false() {
+        let mut map = HashMap::new();
+        map.insert("FLAG".to_string(), "yes".to_string());
+        assert!(!get_bool("FLAG", &map, false));
+    }
+
+    #[test]
+    fn get_bool_absent_key_uses_default() {
+        let map: HashMap<String, String> = HashMap::new();
+        assert!(get_bool("MISSING", &map, true));
+        assert!(!get_bool("MISSING", &map, false));
     }
 }
