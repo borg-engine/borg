@@ -7,8 +7,7 @@ import {
   useTaskStream,
   getProjectChatMessages,
   sendProjectChat,
-  sseUrl,
-  tokenReady,
+  openSse,
 } from "@/lib/api";
 import type { Project, ProjectTask, ProjectDocument } from "@/lib/types";
 import { StatusBadge } from "./status-badge";
@@ -542,8 +541,7 @@ function ChatTab({ projectId }: { projectId: number }) {
 
     function connectSSE() {
       if (esRef.current) esRef.current.close();
-      tokenReady.then(() => {
-        const es = new EventSource(sseUrl("/api/chat/events"));
+      openSse("/api/chat/events").then((es) => {
         esRef.current = es;
 
         es.onopen = () => { sseRetriesRef.current = 0; };

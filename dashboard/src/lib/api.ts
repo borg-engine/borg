@@ -47,9 +47,17 @@ export function authHeaders(): Record<string, string> {
   return authToken ? { Authorization: `Bearer ${authToken}` } : {};
 }
 
-export function sseUrl(path: string): string {
-  const url = `${apiBase()}${path}`;
-  return authToken ? `${url}${url.includes("?") ? "&" : "?"}token=${authToken}` : url;
+// Opens an SSE connection using a short-lived one-time ticket instead of the
+// long-lived Bearer token, preventing the token from appearing in access logs.
+export async function openSse(path: string): Promise<EventSource> {
+  await tokenReady;
+  const base = `${apiBase()}${path}`;
+  if (!authToken) return new EventSource(base);
+  const res = await apiFetch("/api/auth/sse-ticket", { method: "POST" });
+  if (!res.ok) return new EventSource(base);
+  const { ticket } = await res.json();
+  const sep = base.includes("?") ? "&" : "?";
+  return new EventSource(`${base}${sep}ticket=${ticket}`);
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -326,9 +334,7 @@ export function useLogs() {
 
   const connect = useCallback(() => {
     if (esRef.current) esRef.current.close();
-    // Wait for auth token before opening SSE (EventSource can't set headers)
-    tokenReady.then(() => {
-      const es = new EventSource(sseUrl("/api/logs"));
+    openSse("/api/logs").then((es) => {
       esRef.current = es;
 
       es.onopen = () => {
@@ -599,9 +605,8 @@ export function useTaskStream(taskId: number | null, active: boolean) {
     setEvents([]);
     let cancelled = false;
 
-    tokenReady.then(() => {
-      if (cancelled) return;
-      const es = new EventSource(sseUrl(`/api/tasks/${taskId}/stream`));
+    openSse(`/api/tasks/${taskId}/stream`).then((es) => {
+      if (cancelled) { es.close(); return; }
       esRef.current = es;
       setStreaming(true);
 

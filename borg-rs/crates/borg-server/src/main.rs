@@ -53,6 +53,7 @@ pub struct AppState {
     pub force_restart: Arc<std::sync::atomic::AtomicBool>,
     pub chat_rate: Arc<std::sync::Mutex<HashMap<String, std::time::Instant>>>,
     pub triage_running: Arc<std::sync::atomic::AtomicBool>,
+    pub sse_tickets: auth::SseTickets,
 }
 
 impl AppState {
@@ -669,6 +670,7 @@ async fn main() -> anyhow::Result<()> {
         force_restart,
         chat_rate: Arc::new(std::sync::Mutex::new(HashMap::new())),
         triage_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        sse_tickets: Arc::new(TokioMutex::new(HashMap::new())),
     });
 
     let dashboard_dir = config.dashboard_dist_dir.clone();
@@ -681,6 +683,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/health", get(routes::health))
         // Token endpoint (localhost-only, no bearer required)
         .route("/api/auth/token", get(auth::get_token))
+        // SSE ticket endpoint — exchange Bearer token for a one-time SSE ticket
+        .route("/api/auth/sse-ticket", post(auth::post_sse_ticket))
         // Tasks
         .route("/api/tasks", get(routes::list_tasks))
         .route("/api/tasks/create", post(routes::create_task))

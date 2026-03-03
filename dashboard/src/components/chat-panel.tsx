@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { useDictation } from "@/lib/dictation";
 import { BorgingIndicator } from "./borging";
 import { ChatMarkdown } from "./chat-markdown";
-import { authHeaders, sseUrl, tokenReady } from "@/lib/api";
+import { authHeaders, openSse } from "@/lib/api";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -81,8 +81,7 @@ export function ChatPanel() {
   const sseRetriesRef = useRef(0);
   const connect = useCallback(() => {
     if (esRef.current) esRef.current.close();
-    tokenReady.then(() => {
-      const es = new EventSource(sseUrl("/api/chat/events"));
+    openSse("/api/chat/events").then((es) => {
       esRef.current = es;
 
       es.onopen = () => { sseRetriesRef.current = 0; };
