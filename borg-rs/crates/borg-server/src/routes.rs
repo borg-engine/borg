@@ -3110,7 +3110,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 },
                 data_dir: state.config.data_dir.clone(),
                 session_dir: format!("{}/sessions/triage-{}", state.config.data_dir, proposal.id),
-                work_dir: proposal.repo_path.clone(),
+                worktree_path: proposal.repo_path.clone(),
                 oauth_token: oauth.clone(),
                 model: model.clone(),
                 pending_messages: Vec::new(),
