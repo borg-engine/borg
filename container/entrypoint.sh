@@ -80,7 +80,8 @@ if [ -n "$REPO_URL" ]; then
     rm -rf "$CLONE_TMP"
     cd "$REPO_DIR"
     if [ -n "$BRANCH" ]; then
-        # Try to checkout existing remote branch; fall back to creating new from BASE
+        # Fetch the task branch if it exists on remote
+        git fetch origin "$BRANCH" 2>/dev/null || true
         if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
             git checkout -b "$BRANCH" "origin/$BRANCH"
         else
