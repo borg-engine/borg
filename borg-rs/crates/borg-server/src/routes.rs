@@ -24,6 +24,8 @@ use tokio_stream::{
     StreamExt,
 };
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+
 use crate::AppState;
 
 // ── Error helper ──────────────────────────────────────────────────────────
@@ -31,27 +33,6 @@ use crate::AppState;
 pub(crate) fn internal(e: impl std::fmt::Display) -> StatusCode {
     tracing::error!("internal error: {e}");
     StatusCode::INTERNAL_SERVER_ERROR
-}
-
-fn base64_decode(input: &str) -> anyhow::Result<Vec<u8>> {
-    let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
-    let mut out = Vec::with_capacity(clean.len() * 3 / 4);
-    let table = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut buf = 0u32;
-    let mut bits = 0u32;
-    for c in clean.bytes() {
-        if c == b'=' { break; }
-        let val = table.iter().position(|&t| t == c)
-            .ok_or_else(|| anyhow::anyhow!("invalid base64 char"))? as u32;
-        buf = (buf << 6) | val;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push((buf >> bits) as u8);
-            buf &= (1 << bits) - 1;
-        }
-    }
-    Ok(out)
 }
 
 // ── Request body types ────────────────────────────────────────────────────
@@ -921,7 +902,7 @@ async fn git_show_file(repo_path: &str, slug: &str, ref_name: &str, path: &str) 
         if let Ok(Ok(output)) = out {
             if output.status.success() {
                 let b64 = String::from_utf8_lossy(&output.stdout).trim().replace('\n', "");
-                return base64_decode(&b64).ok();
+                return BASE64.decode(b64).ok();
             }
         }
     }
