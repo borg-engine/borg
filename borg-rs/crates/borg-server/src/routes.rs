@@ -404,17 +404,18 @@ fn is_binary_mime(mime: &str) -> bool {
         || mime.starts_with("application/octet-stream")
 }
 
-fn stage_project_files(session_dir: &str, files: &[ProjectFileRow]) {
+fn stage_project_files(session_dir: &str, files: &[ProjectFileRow]) -> anyhow::Result<()> {
     let dest_dir = format!("{session_dir}/project_files");
-    let _ = std::fs::create_dir_all(&dest_dir);
+    std::fs::create_dir_all(&dest_dir)?;
     for file in files {
         let safe_name = std::path::Path::new(&file.file_name)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unnamed");
         let dest = format!("{dest_dir}/{safe_name}");
-        let _ = std::fs::copy(&file.stored_path, &dest);
+        std::fs::copy(&file.stored_path, &dest)?;
     }
+    Ok(())
 }
 
 fn build_project_context(project: &ProjectRow, files: &[ProjectFileRow], session_dir: &str, db: &Db) -> String {
@@ -428,7 +429,9 @@ fn build_project_context(project: &ProjectRow, files: &[ProjectFileRow], session
     }
 
     if !files.is_empty() {
-        stage_project_files(session_dir, files);
+        if let Err(e) = stage_project_files(session_dir, files) {
+            tracing::warn!(session_dir, "failed to stage project files: {e}");
+        }
     }
 
     const MAX_CONTEXT_BYTES: usize = 120_000;
@@ -2677,3 +2680,67 @@ pub(crate) async fn get_task_container(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn make_file_row(file_name: &str, stored_path: &str) -> ProjectFileRow {
+        ProjectFileRow {
+            id: 1,
+            project_id: 1,
+            file_name: file_name.to_string(),
+            stored_path: stored_path.to_string(),
+            mime_type: "text/plain".to_string(),
+            size_bytes: 0,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn stage_project_files_copies_files() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let session_dir = tempfile::tempdir().unwrap();
+
+        let src_file = src_dir.path().join("doc.txt");
+        std::fs::write(&src_file, b"hello").unwrap();
+
+        let row = make_file_row("doc.txt", src_file.to_str().unwrap());
+        stage_project_files(session_dir.path().to_str().unwrap(), &[row]).unwrap();
+
+        let dest = session_dir.path().join("project_files/doc.txt");
+        assert!(dest.exists());
+        assert_eq!(std::fs::read(dest).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn stage_project_files_strips_path_components() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let session_dir = tempfile::tempdir().unwrap();
+
+        let src_file = src_dir.path().join("real.txt");
+        std::fs::write(&src_file, b"data").unwrap();
+
+        // file_name with directory separators — only the base name should be used
+        let row = make_file_row("../../etc/passwd", src_file.to_str().unwrap());
+        stage_project_files(session_dir.path().to_str().unwrap(), &[row]).unwrap();
+
+        let dest = session_dir.path().join("project_files/passwd");
+        assert!(dest.exists());
+    }
+
+    #[test]
+    fn stage_project_files_errors_on_missing_source() {
+        let session_dir = tempfile::tempdir().unwrap();
+        let row = make_file_row("missing.txt", "/nonexistent/path/missing.txt");
+        let result = stage_project_files(session_dir.path().to_str().unwrap(), &[row]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn stage_project_files_empty_list_is_ok() {
+        let session_dir = tempfile::tempdir().unwrap();
+        let result = stage_project_files(session_dir.path().to_str().unwrap(), &[]);
+        assert!(result.is_ok());
+    }
+}
