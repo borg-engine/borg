@@ -76,17 +76,45 @@ function extractCitations(content: string): Citation[] {
   }));
 }
 
-function deriveCitationStatus(content: string, pos: number, _text: string): CitationStatus {
-  const window = content.slice(Math.max(0, pos - 200), pos + 200).toUpperCase();
-  if (window.includes("FLAGGED") || window.includes("INVALID") || window.includes("OVERRULED")) {
+function deriveCitationStatus(content: string, pos: number, text: string): CitationStatus {
+  // Search a window around the citation for verification signals
+  const window = content.slice(Math.max(0, pos - 300), pos + 300).toUpperCase();
+
+  // Negative treatment — flagged
+  if (window.includes("OVERRULED") || window.includes("REVERSED") || window.includes("ABROGATED") ||
+      window.includes("NEGATIVE TREATMENT") || window.includes("FLAGGED") || window.includes("NO LONGER GOOD LAW")) {
     return "flagged";
   }
-  if (window.includes("VERIFIED") || window.includes("CONFIRMED")) {
+
+  // Verified via premium tools (Shepard's, KeyCite) or confirmed by name
+  if (window.includes("VERIFIED") || window.includes("GOOD LAW") || window.includes("POSITIVE TREATMENT") ||
+      window.includes("SHEPARD") || window.includes("KEYCITE") || window.includes("CONFIDENCE: HIGH")) {
     return "verified";
   }
-  if (window.includes("UNVERIFIED") || window.includes("TRAINING-DATA-ONLY") || window.includes("TRAINING DATA")) {
+
+  // Existence confirmed (CourtListener) — partial verification
+  if (window.includes("EXISTENCE CONFIRMED") || window.includes("COURTLISTENER")) {
+    return "verified";
+  }
+
+  // Also scan the whole doc's Key Authorities section for this specific citation
+  const citShort = text.slice(0, 40);
+  const authIdx = content.indexOf("## Key Authorities");
+  if (authIdx >= 0) {
+    const authSection = content.slice(authIdx, content.indexOf("\n## ", authIdx + 5) || undefined).toUpperCase();
+    if (authSection.includes(citShort.toUpperCase())) {
+      if (authSection.includes("VERIFIED") || authSection.includes("EXISTENCE CONFIRMED")) {
+        return "verified";
+      }
+    }
+  }
+
+  // Explicit unverified signals
+  if (window.includes("UNVERIFIED") || window.includes("TRAINING-DATA-ONLY") ||
+      window.includes("TRAINING DATA") || window.includes("CONFIDENCE: LOW")) {
     return "unverified";
   }
+
   return "unverified";
 }
 

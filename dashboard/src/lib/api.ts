@@ -483,6 +483,14 @@ export function useProjectDocuments(projectId: number | null) {
   });
 }
 
+export function useProjectDocumentVersions(projectId: number | null, taskId: number | null, path: string | null) {
+  return useQuery<{ sha: string; message: string; date: string; author: string }[]>({
+    queryKey: ["project_doc_versions", projectId, taskId, path],
+    queryFn: () => fetchJson(`/api/projects/${projectId}/documents/${taskId}/versions?path=${encodeURIComponent(path!)}`),
+    enabled: projectId !== null && taskId !== null && !!path,
+  });
+}
+
 export function useProjectDetail(projectId: number | null) {
   return useQuery<Project>({
     queryKey: ["project", projectId],

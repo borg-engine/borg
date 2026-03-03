@@ -417,12 +417,19 @@ fn stage_project_files(session_dir: &str, files: &[ProjectFileRow]) {
     }
 }
 
-fn build_project_context(project: &ProjectRow, files: &[ProjectFileRow], session_dir: &str) -> String {
-    if files.is_empty() {
+fn build_project_context(project: &ProjectRow, files: &[ProjectFileRow], session_dir: &str, db: &Db) -> String {
+    let tasks = db.list_project_tasks(project.id).unwrap_or_default();
+    let completed_tasks: Vec<_> = tasks.iter()
+        .filter(|t| t.status == "merged" || t.status == "done" || t.status == "complete")
+        .collect();
+
+    if files.is_empty() && completed_tasks.is_empty() {
         return String::new();
     }
 
-    stage_project_files(session_dir, files);
+    if !files.is_empty() {
+        stage_project_files(session_dir, files);
+    }
 
     const MAX_CONTEXT_BYTES: usize = 120_000;
     const MAX_FILE_PREVIEW_BYTES: usize = 12_000;
@@ -493,6 +500,24 @@ fn build_project_context(project: &ProjectRow, files: &[ProjectFileRow], session
         }
     }
 
+    // Add completed task summaries for context
+    for task in completed_tasks {
+        if remaining < 256 {
+            break;
+        }
+        if let Ok(outputs) = db.get_task_outputs(task.id) {
+            if let Some(last) = outputs.last() {
+                let summary = if last.output.len() > 2000 { &last.output[..2000] } else { &last.output };
+                let entry = format!("\n\n## Prior research: {} (Task #{})\n{}", task.title, task.id, summary);
+                if entry.len() > remaining {
+                    break;
+                }
+                context.push_str(&entry);
+                remaining -= entry.len();
+            }
+        }
+    }
+
     context
 }
 
@@ -548,7 +573,7 @@ pub(crate) async fn run_chat_agent(
         match db.get_project(project_id) {
             Ok(Some(project)) => {
                 let files = db.list_project_files(project_id).unwrap_or_default();
-                let ctx = build_project_context(&project, &files, &session_dir);
+                let ctx = build_project_context(&project, &files, &session_dir, db);
                 if ctx.is_empty() {
                     prompt
                 } else {
@@ -1021,6 +1046,8 @@ pub(crate) async fn get_project_document_content(
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
 
+    tracing::info!(project_id = id, task_id, path, "document accessed");
+
     Ok(axum::response::Response::builder()
         .header("content-type", "text/markdown; charset=utf-8")
         .body(axum::body::Body::from(bytes))
@@ -1172,9 +1199,19 @@ pub(crate) async fn export_project_document(
             .unwrap());
     }
 
-    let md_bytes = git_show_file(&task.repo_path, slug, ref_name, path)
+    let raw_md_bytes = git_show_file(&task.repo_path, slug, ref_name, path)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    let project = state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
+    let md_bytes = if !project.privilege_level.is_empty() {
+        let header = format!("**PRIVILEGED AND CONFIDENTIAL — {}**\n\n---\n\n", project.privilege_level.to_uppercase());
+        let mut full = header.into_bytes();
+        full.extend_from_slice(&raw_md_bytes);
+        full
+    } else {
+        raw_md_bytes
+    };
 
     // Write markdown to a temp file
     let tmp_dir = tempfile::tempdir().map_err(internal)?;
@@ -1263,6 +1300,36 @@ pub(crate) async fn export_project_document(
         )
         .body(axum::body::Body::from(file_bytes))
         .unwrap())
+}
+
+pub(crate) async fn delete_project_document(
+    State(state): State<Arc<AppState>>,
+    Path((id, task_id)): Path<(i64, i64)>,
+) -> Result<Json<Value>, StatusCode> {
+    state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
+    let task = state.db.get_task(task_id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
+    if task.branch.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::process::Command::new("git")
+            .args(["-C", &task.repo_path, "branch", "-D", &task.branch])
+            .stderr(std::process::Stdio::piped())
+            .output(),
+    )
+    .await
+    .map_err(internal)?
+    .map_err(internal)?;
+
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        tracing::warn!(task_id, branch = task.branch, "git branch -D failed: {stderr}");
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    Ok(Json(json!({ "ok": true })))
 }
 
 pub(crate) async fn list_project_files(

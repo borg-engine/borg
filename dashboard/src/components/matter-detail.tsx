@@ -4,6 +4,7 @@ import {
   useProjectTasks,
   useProjectDocuments,
   useUpdateProject,
+  useTaskStream,
   getProjectChatMessages,
   sendProjectChat,
   sseUrl,
@@ -97,6 +98,36 @@ function InlineField({
           <Edit2 className="h-2.5 w-2.5" />
         </button>
       </div>
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onSave,
+}: {
+  label: string;
+  value: string | undefined;
+  options: string[];
+  onSave: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] text-zinc-600">{label}</span>
+      <select
+        value={value || ""}
+        onChange={(e) => onSave(e.target.value)}
+        className="rounded border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 text-[12px] text-zinc-200 outline-none focus:border-blue-500/40"
+      >
+        <option value="">unset</option>
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt.replace(/_/g, " ")}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -231,7 +262,12 @@ function MetadataPanel({ project, projectId }: { project: Project; projectId: nu
           <InlineField label="Opposing Counsel" value={project.opposing_counsel} onSave={save("opposing_counsel")} placeholder="unset" />
           <InlineField label="Deadline" value={project.deadline} onSave={save("deadline")} placeholder="unset" />
           <InlineField label="Privilege Level" value={project.privilege_level} onSave={save("privilege_level")} placeholder="unset" />
-          <InlineField label="Status" value={project.status} onSave={save("status")} placeholder="unset" />
+          <SelectField
+            label="Status"
+            value={project.status}
+            options={["active", "pending", "on_hold", "closed", "archived"]}
+            onSave={save("status")}
+          />
         </div>
       )}
     </div>
@@ -332,12 +368,69 @@ function DocumentsTab({
   );
 }
 
+// ── Task stream mini-panel ────────────────────────────────────────────────────
+
+function TaskStreamMini({ taskId }: { taskId: number }) {
+  const isActive = true;
+  const { events, streaming } = useTaskStream(taskId, isActive);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [events.length]);
+
+  const lines = useMemo(() => {
+    return events
+      .filter((e) => e.type === "assistant" && e.message?.content)
+      .map((e) => {
+        const content = e.message!.content;
+        if (typeof content === "string") return content;
+        if (Array.isArray(content)) {
+          return content
+            .filter((b): b is { type: string; text?: string } => b.type === "text" && !!b.text)
+            .map((b) => b.text!)
+            .join("");
+        }
+        return "";
+      })
+      .filter(Boolean);
+  }, [events]);
+
+  if (!streaming && lines.length === 0) return null;
+
+  return (
+    <div className="mt-2 rounded border border-white/[0.06] bg-black/30">
+      <div className="flex items-center gap-2 border-b border-white/[0.04] px-2.5 py-1.5">
+        {streaming && (
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />
+        )}
+        <span className="text-[10px] font-medium text-zinc-500">
+          {streaming ? "Live output" : "Output"}
+        </span>
+      </div>
+      <div
+        ref={scrollRef}
+        className="max-h-[200px] overflow-y-auto p-2.5 font-mono text-[10px] leading-relaxed text-zinc-500 whitespace-pre-wrap"
+      >
+        {lines.length > 0 ? lines[lines.length - 1].slice(-500) : (
+          <span className="text-zinc-700">Waiting for output…</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Tasks tab ─────────────────────────────────────────────────────────────────
+
+const ACTIVE_STATUSES = new Set(["implement", "review", "validate", "lint_fix", "rebase", "spec", "qa", "qa_fix", "retry"]);
 
 function TasksTab({ projectId }: { projectId: number }) {
   const { data: tasks = [], isLoading } = useProjectTasks(projectId);
   const queryClient = useQueryClient();
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [expandedStream, setExpandedStream] = useState<number | null>(null);
 
   if (isLoading) {
     return <div className="flex h-32 items-center justify-center text-[12px] text-zinc-600">Loading...</div>;
@@ -353,55 +446,74 @@ function TasksTab({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-2 p-4">
-      {tasks.map((task) => (
-        <div
-          key={task.id}
-          className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3"
-        >
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[10px] text-zinc-600">#{task.id}</span>
-                <StatusBadge status={task.status} />
-                {task.mode && task.mode !== "lawborg" && task.mode !== "legal" && (
-                  <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-medium text-violet-400">
-                    {task.mode}
-                  </span>
+      {tasks.map((task) => {
+        const isActive = ACTIVE_STATUSES.has(task.status);
+        return (
+          <div
+            key={task.id}
+            className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3"
+          >
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[10px] text-zinc-600">#{task.id}</span>
+                  <StatusBadge status={task.status} />
+                  {isActive && (
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" title="Running" />
+                  )}
+                  {task.mode && task.mode !== "lawborg" && task.mode !== "legal" && (
+                    <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-medium text-violet-400">
+                      {task.mode}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 text-[12px] font-medium text-zinc-200">{task.title}</div>
+                {task.description && (
+                  <div className="mt-0.5 line-clamp-2 text-[11px] text-zinc-600">{task.description}</div>
                 )}
               </div>
-              <div className="mt-1 text-[12px] font-medium text-zinc-200">{task.title}</div>
-              {task.description && (
-                <div className="mt-0.5 line-clamp-2 text-[11px] text-zinc-600">{task.description}</div>
-              )}
+              <div className="flex shrink-0 items-center gap-1">
+                {isActive && (
+                  <button
+                    onClick={() => setExpandedStream(expandedStream === task.id ? null : task.id)}
+                    className="flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 hover:border-blue-500/30 hover:text-blue-400 transition-colors"
+                  >
+                    {expandedStream === task.id ? "Hide" : "Stream"}
+                  </button>
+                )}
+                {task.status === "failed" && (
+                  <button
+                    onClick={async () => {
+                      setRetryingId(task.id);
+                      try {
+                        await retryTask(task.id);
+                        await queryClient.invalidateQueries({ queryKey: ["project_tasks", projectId] });
+                      } finally {
+                        setRetryingId(null);
+                      }
+                    }}
+                    disabled={retryingId === task.id}
+                    className="flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1 text-[11px] text-zinc-400 hover:border-blue-500/30 hover:text-blue-400 disabled:opacity-50 transition-colors"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    {retryingId === task.id ? "…" : "Retry"}
+                  </button>
+                )}
+              </div>
             </div>
-            {task.status === "failed" && (
-              <button
-                onClick={async () => {
-                  setRetryingId(task.id);
-                  try {
-                    await retryTask(task.id);
-                    await queryClient.invalidateQueries({ queryKey: ["project_tasks", projectId] });
-                  } finally {
-                    setRetryingId(null);
-                  }
-                }}
-                disabled={retryingId === task.id}
-                className="shrink-0 flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1 text-[11px] text-zinc-400 hover:border-blue-500/30 hover:text-blue-400 disabled:opacity-50 transition-colors"
-              >
-                <RotateCcw className="h-3 w-3" />
-                {retryingId === task.id ? "…" : "Retry"}
-              </button>
+            <div className="mt-2">
+              <PhaseTracker status={task.status} mode={task.mode} />
+            </div>
+            <div className="mt-1.5 text-[10px] text-zinc-600">
+              created {fmtDateTime(task.created_at)}
+              {task.attempt > 0 && ` · attempt ${task.attempt}/${task.max_attempts}`}
+            </div>
+            {(isActive && expandedStream === task.id) && (
+              <TaskStreamMini taskId={task.id} />
             )}
           </div>
-          <div className="mt-2">
-            <PhaseTracker status={task.status} mode={task.mode} />
-          </div>
-          <div className="mt-1.5 text-[10px] text-zinc-600">
-            created {fmtDateTime(task.created_at)}
-            {task.attempt > 0 && ` · attempt ${task.attempt}/${task.max_attempts}`}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

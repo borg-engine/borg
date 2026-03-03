@@ -739,6 +739,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/projects/:id/documents/:task_id/export",
             get(routes::export_project_document),
         )
+        .route(
+            "/api/projects/:id/documents/:task_id",
+            delete(routes::delete_project_document),
+        )
         // Modes
         .route("/api/modes", get(routes::get_modes))
         .route("/api/modes/full", get(routes::get_full_modes))

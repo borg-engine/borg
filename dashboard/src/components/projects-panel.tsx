@@ -19,7 +19,9 @@ import { BorgingIndicator } from "./borging";
 import { ChatMarkdown } from "./chat-markdown";
 import { MatterDetail } from "./matter-detail";
 import { MarkdownLegalViewer } from "./viewers/markdown-legal-viewer";
+import { RedlineViewer } from "./viewers/redline-viewer";
 import { LegalTaskCreator } from "./legal-task-creator";
+import { useProjectDocumentVersions } from "@/lib/api";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -33,6 +35,67 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function DocumentViewWrapper({
+  projectId,
+  doc,
+  viewMode,
+  onBack,
+  onToggleMode,
+}: {
+  projectId: number;
+  doc: ProjectDocument;
+  viewMode: "view" | "redline";
+  onBack: () => void;
+  onToggleMode: () => void;
+}) {
+  const { data: versions = [] } = useProjectDocumentVersions(projectId, doc.task_id, doc.file_name);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          <ArrowLeft className="h-3 w-3" />
+          Back to matter
+        </button>
+        <span className="text-[11px] text-zinc-600">·</span>
+        <span className="truncate text-[11px] text-zinc-400">{doc.file_name}</span>
+        {versions.length >= 2 && (
+          <button
+            onClick={onToggleMode}
+            className={cn(
+              "ml-auto rounded border px-2 py-0.5 text-[10px] font-medium transition-colors",
+              viewMode === "redline"
+                ? "border-blue-500/30 bg-blue-500/10 text-blue-400"
+                : "border-white/[0.08] text-zinc-500 hover:border-white/[0.14] hover:text-zinc-300"
+            )}
+          >
+            {viewMode === "redline" ? "Document View" : "Compare Versions"}
+          </button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1">
+        {viewMode === "redline" && versions.length >= 2 ? (
+          <RedlineViewer
+            projectId={projectId}
+            taskId={doc.task_id}
+            path={doc.file_name}
+            versions={versions}
+          />
+        ) : (
+          <MarkdownLegalViewer
+            projectId={projectId}
+            taskId={doc.task_id}
+            path={doc.file_name}
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function ProjectsPanel() {
@@ -55,6 +118,7 @@ export function ProjectsPanel() {
 
   const [previewFile, setPreviewFile] = useState<ProjectFile | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<ProjectDocument | null>(null);
+  const [docViewMode, setDocViewMode] = useState<"view" | "redline">("view");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,6 +145,7 @@ export function ProjectsPanel() {
 
   useEffect(() => {
     setSelectedDoc(null);
+    setDocViewMode("view");
   }, [selectedProjectId]);
 
   useEffect(() => {
@@ -251,26 +316,13 @@ export function ProjectsPanel() {
           </div>
         ) : (selectedProject.mode === "lawborg" || selectedProject.mode === "legal") ? (
           selectedDoc ? (
-            <div className="flex h-full flex-col">
-              <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2">
-                <button
-                  onClick={() => setSelectedDoc(null)}
-                  className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
-                >
-                  <ArrowLeft className="h-3 w-3" />
-                  Back to matter
-                </button>
-                <span className="text-[11px] text-zinc-600">·</span>
-                <span className="truncate text-[11px] text-zinc-400">{selectedDoc.file_name}</span>
-              </div>
-              <div className="min-h-0 flex-1">
-                <MarkdownLegalViewer
-                  projectId={selectedProject.id}
-                  taskId={selectedDoc.task_id}
-                  path={selectedDoc.file_name}
-                />
-              </div>
-            </div>
+            <DocumentViewWrapper
+              projectId={selectedProject.id}
+              doc={selectedDoc}
+              viewMode={docViewMode}
+              onBack={() => { setSelectedDoc(null); setDocViewMode("view"); }}
+              onToggleMode={() => setDocViewMode(docViewMode === "view" ? "redline" : "view")}
+            />
           ) : (
             <div className="flex h-full flex-col">
               <div className="flex shrink-0 items-center justify-end border-b border-white/[0.06] px-4 py-2">
