@@ -611,7 +611,7 @@ impl Db {
                     Some(task.backend.as_str())
                 },
                 project_id,
-                task.task_type.as_str(),
+                &task.task_type,
             ],
         )
         .context("insert_task")?;
