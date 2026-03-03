@@ -88,6 +88,10 @@ pub(crate) struct ExportQuery {
     pub path: Option<String>,
     pub format: Option<String>,
     pub ref_name: Option<String>,
+    pub template_id: Option<i64>,
+    pub toc: Option<bool>,
+    pub number_sections: Option<bool>,
+    pub title_page: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -1452,6 +1456,28 @@ pub(crate) async fn get_project_document_versions(
     Ok(Json(versions))
 }
 
+/// Clean markdown for professional export: strip internal markers, normalize formatting.
+fn preprocess_legal_markdown(md: &str) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for line in md.lines() {
+        // Strip Confidence: markers
+        if line.trim().starts_with("Confidence:") || line.trim().starts_with("**Confidence:") {
+            continue;
+        }
+        // Strip structured.json references
+        if line.contains("structured.json") || line.contains("signal.json") {
+            continue;
+        }
+        // Strip internal metadata markers
+        if line.trim().starts_with("<!-- borg:") || line.trim().starts_with("<!-- internal") {
+            continue;
+        }
+        // Convert > blockquotes to proper indentation for legal citations
+        lines.push(line.to_string());
+    }
+    lines.join("\n")
+}
+
 pub(crate) async fn export_project_document(
     State(state): State<Arc<AppState>>,
     Path((id, task_id)): Path<(i64, i64)>,
@@ -1509,13 +1535,47 @@ pub(crate) async fn export_project_document(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let project = state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
-    let md_bytes = if !project.privilege_level.is_empty() {
-        let header = format!("**PRIVILEGED AND CONFIDENTIAL — {}**\n\n---\n\n", project.privilege_level.to_uppercase());
-        let mut full = header.into_bytes();
-        full.extend_from_slice(&raw_md_bytes);
-        full
+    let add_toc = q.toc.unwrap_or(false);
+    let number_sections = q.number_sections.unwrap_or(false);
+    let title_page = q.title_page.unwrap_or(true);
+
+    // Preprocess markdown: strip internal markers, add title page metadata
+    let raw_md = String::from_utf8_lossy(&raw_md_bytes);
+    let mut md_content = preprocess_legal_markdown(&raw_md);
+
+    // Add privilege header
+    if !project.privilege_level.is_empty() {
+        md_content = format!(
+            "**PRIVILEGED AND CONFIDENTIAL — {}**\n\n---\n\n{}",
+            project.privilege_level.to_uppercase(),
+            md_content
+        );
+    }
+
+    // Prepend YAML front matter for title page
+    if title_page {
+        let title_block = format!(
+            "---\ntitle: \"{}\"\n{}{}{}{}\ndate: \"{}\"\n---\n\n",
+            task.title.replace('"', "'"),
+            if !project.client_name.is_empty() { format!("subtitle: \"Prepared for {}\"\n", project.client_name.replace('"', "'")) } else { String::new() },
+            if !project.case_number.is_empty() { format!("subject: \"Case No. {}\"\n", project.case_number) } else { String::new() },
+            if !project.jurisdiction.is_empty() { format!("keywords: [\"{}\"]\n", project.jurisdiction) } else { String::new() },
+            if !project.privilege_level.is_empty() { format!("header-includes: |\n  \\fancyfoot[C]{{PRIVILEGED AND CONFIDENTIAL — {}}}\n", project.privilege_level.to_uppercase()) } else { String::new() },
+            Utc::now().format("%B %d, %Y"),
+        );
+        md_content = format!("{}{}", title_block, md_content);
+    }
+
+    let md_bytes = md_content.into_bytes();
+
+    // Resolve template reference doc
+    let template_path = if let Some(tid) = q.template_id {
+        let kf = state.db.list_knowledge_files().map_err(internal)?;
+        kf.iter().find(|f| f.id == tid).map(|f| {
+            format!("{}/knowledge/{}", state.config.data_dir, f.file_name)
+        })
     } else {
-        raw_md_bytes
+        None
     };
 
     // Write markdown to a temp file
@@ -1539,11 +1599,22 @@ pub(crate) async fn export_project_document(
         .arg("-o").arg(&out_path)
         .stderr(std::process::Stdio::piped());
 
+    if add_toc {
+        cmd.arg("--toc").arg("--toc-depth=3");
+    }
+    if number_sections {
+        cmd.arg("--number-sections");
+    }
+
     if format == "pdf" {
-        // Try weasyprint-style HTML→PDF first (more commonly available than xelatex)
         cmd.arg("-t").arg("html").arg("--pdf-engine=weasyprint");
     } else {
         cmd.arg("-t").arg(format);
+        if let Some(ref tpl) = template_path {
+            if std::path::Path::new(tpl).exists() {
+                cmd.arg("--reference-doc").arg(tpl);
+            }
+        }
     }
 
     let pandoc_out = tokio::time::timeout(
@@ -1604,6 +1675,125 @@ pub(crate) async fn export_project_document(
             format!("attachment; filename=\"{out_filename}\""),
         )
         .body(axum::body::Body::from(file_bytes))
+        .unwrap())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ExportAllQuery {
+    pub format: Option<String>,
+    pub toc: Option<bool>,
+    pub template_id: Option<i64>,
+}
+
+pub(crate) async fn export_all_project_documents(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Query(q): Query<ExportAllQuery>,
+) -> Result<axum::response::Response, StatusCode> {
+    let project = state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
+    let tasks = state.db.list_project_tasks(id).map_err(internal)?;
+    let format = q.format.as_deref().unwrap_or("docx");
+    if format != "pdf" && format != "docx" {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let tmp_dir = tempfile::tempdir().map_err(internal)?;
+    let mut file_entries: Vec<(String, Vec<u8>)> = Vec::new();
+
+    let template_path = q.template_id.and_then(|tid| {
+        state.db.list_knowledge_files().ok().and_then(|kf| {
+            kf.iter().find(|f| f.id == tid).map(|f| {
+                format!("{}/knowledge/{}", state.config.data_dir, f.file_name)
+            })
+        })
+    });
+
+    for task in &tasks {
+        if task.branch.is_empty() { continue; }
+        let slug = state.config.watched_repos.iter()
+            .find(|r| r.path == task.repo_path)
+            .map(|r| r.repo_slug.as_str()).unwrap_or("");
+
+        for doc_path in &["research.md", "analysis.md", "review_notes.md"] {
+            let raw_bytes = match git_show_file(&task.repo_path, slug, &task.branch, doc_path).await {
+                Some(b) if !b.is_empty() => b,
+                _ => continue,
+            };
+
+            let raw_md = String::from_utf8_lossy(&raw_bytes);
+            let mut md_content = preprocess_legal_markdown(&raw_md);
+            if !project.privilege_level.is_empty() {
+                md_content = format!(
+                    "**PRIVILEGED AND CONFIDENTIAL — {}**\n\n---\n\n{}",
+                    project.privilege_level.to_uppercase(), md_content
+                );
+            }
+
+            let safe_title = task.title.chars()
+                .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
+                .collect::<String>()
+                .trim().to_string();
+            let stem = std::path::Path::new(doc_path).file_stem()
+                .and_then(|s| s.to_str()).unwrap_or("doc");
+            let out_name = format!("{}-{}.{}", safe_title, stem, format);
+            let md_path = tmp_dir.path().join(format!("src-{}-{}.md", task.id, stem));
+            let out_path = tmp_dir.path().join(&out_name);
+
+            tokio::fs::write(&md_path, md_content.as_bytes()).await.map_err(internal)?;
+
+            let mut cmd = tokio::process::Command::new("pandoc");
+            cmd.arg(&md_path).arg("-f").arg("markdown").arg("-o").arg(&out_path)
+                .stderr(std::process::Stdio::piped());
+            if q.toc.unwrap_or(false) {
+                cmd.arg("--toc");
+            }
+            if format == "pdf" {
+                cmd.arg("-t").arg("html").arg("--pdf-engine=weasyprint");
+            } else {
+                cmd.arg("-t").arg("docx");
+                if let Some(ref tpl) = template_path {
+                    if std::path::Path::new(tpl).exists() {
+                        cmd.arg("--reference-doc").arg(tpl);
+                    }
+                }
+            }
+
+            let out = tokio::time::timeout(std::time::Duration::from_secs(60), cmd.output())
+                .await.map_err(internal)?.map_err(internal)?;
+            if out.status.success() {
+                if let Ok(bytes) = tokio::fs::read(&out_path).await {
+                    file_entries.push((out_name, bytes));
+                }
+            }
+        }
+    }
+
+    if file_entries.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Build ZIP archive
+    let zip_path = tmp_dir.path().join("export.zip");
+    let zip_file = std::fs::File::create(&zip_path).map_err(internal)?;
+    let mut zip = zip::ZipWriter::new(zip_file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (name, bytes) in &file_entries {
+        zip.start_file(name, options).map_err(internal)?;
+        use std::io::Write;
+        zip.write_all(bytes).map_err(internal)?;
+    }
+    zip.finish().map_err(internal)?;
+
+    let zip_bytes = tokio::fs::read(&zip_path).await.map_err(internal)?;
+    let filename = format!("{}-export.zip", project.name.chars()
+        .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
+        .collect::<String>().trim().to_string());
+
+    Ok(axum::response::Response::builder()
+        .header("content-type", "application/zip")
+        .header("content-disposition", format!("attachment; filename=\"{filename}\""))
+        .body(axum::body::Body::from(zip_bytes))
         .unwrap())
 }
 

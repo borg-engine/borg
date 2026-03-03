@@ -211,6 +211,35 @@ function formatDuration(secs: number): string {
 
 function MatterHeader({ project, onDelete }: { project: Project; onDelete?: () => void }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [exportingAll, setExportingAll] = useState(false);
+
+  async function exportAll(format: "pdf" | "docx") {
+    setExportingAll(true);
+    try {
+      const { apiBase, authHeaders, tokenReady } = await import("@/lib/api");
+      await tokenReady;
+      const params = new URLSearchParams({ format, toc: "true" });
+      const res = await fetch(`${apiBase()}/api/projects/${project.id}/export-all?${params}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        alert(`Export failed: ${await res.text()}`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.name.replace(/[^a-zA-Z0-9 -]/g, "").trim()}-export.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingAll(false);
+    }
+  }
+
   return (
     <div className="border-b border-white/[0.06] px-5 py-3">
       <div className="flex items-start gap-3">
@@ -248,19 +277,29 @@ function MatterHeader({ project, onDelete }: { project: Project; onDelete?: () =
             )}
           </div>
         </div>
-        {onDelete && (
-          confirmDelete ? (
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-[10px] text-red-400">Delete?</span>
-              <button onClick={onDelete} className="rounded px-1.5 py-0.5 text-[10px] bg-red-500/20 text-red-400 hover:bg-red-500/30">Yes</button>
-              <button onClick={() => setConfirmDelete(false)} className="rounded px-1.5 py-0.5 text-[10px] bg-zinc-700 text-zinc-400 hover:bg-zinc-600">No</button>
-            </div>
-          ) : (
-            <button onClick={() => setConfirmDelete(true)} className="shrink-0 rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-500/10" title="Delete matter">
-              <Trash2 size={14} />
-            </button>
-          )
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={() => exportAll("docx")}
+            disabled={exportingAll}
+            className="rounded border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 hover:border-blue-500/30 hover:text-blue-400 transition-colors disabled:opacity-50"
+            title="Export all documents as DOCX (ZIP)"
+          >
+            {exportingAll ? "Exporting..." : "Export All"}
+          </button>
+          {onDelete && (
+            confirmDelete ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-red-400">Delete?</span>
+                <button onClick={onDelete} className="rounded px-1.5 py-0.5 text-[10px] bg-red-500/20 text-red-400 hover:bg-red-500/30">Yes</button>
+                <button onClick={() => setConfirmDelete(false)} className="rounded px-1.5 py-0.5 text-[10px] bg-zinc-700 text-zinc-400 hover:bg-zinc-600">No</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} className="shrink-0 rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-500/10" title="Delete matter">
+                <Trash2 size={14} />
+              </button>
+            )
+          )}
+        </div>
       </div>
     </div>
   );

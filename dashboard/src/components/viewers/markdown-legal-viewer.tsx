@@ -245,6 +245,8 @@ export function MarkdownLegalViewer({ projectId, taskId, path }: MarkdownLegalVi
   const [activeCitation, setActiveCitation] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportToc, setExportToc] = useState(false);
+  const [exportNumbered, setExportNumbered] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -264,8 +266,14 @@ export function MarkdownLegalViewer({ projectId, taskId, path }: MarkdownLegalVi
     setExporting(true);
     try {
       await tokenReady;
-      let url = `${apiBase()}/api/projects/${projectId}/documents/${taskId}/export?path=${encodeURIComponent(path)}&format=${format}`;
-      if (selectedSha) url += `&ref_name=${encodeURIComponent(selectedSha)}`;
+      const params = new URLSearchParams({
+        path: path,
+        format,
+      });
+      if (selectedSha) params.set("ref_name", selectedSha);
+      if (exportToc) params.set("toc", "true");
+      if (exportNumbered) params.set("number_sections", "true");
+      const url = `${apiBase()}/api/projects/${projectId}/documents/${taskId}/export?${params}`;
       const res = await fetch(url, { headers: authHeaders() });
       if (!res.ok) {
         const text = await res.text();
@@ -427,7 +435,17 @@ export function MarkdownLegalViewer({ projectId, taskId, path }: MarkdownLegalVi
             </svg>
           </button>
           {exportOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-40 overflow-hidden rounded border border-white/[0.1] bg-zinc-900 shadow-xl">
+            <div className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded border border-white/[0.1] bg-zinc-900 shadow-xl">
+              <div className="border-b border-white/[0.06] px-3 py-2 space-y-1.5">
+                <label className="flex items-center gap-2 text-[11px] text-zinc-400 cursor-pointer">
+                  <input type="checkbox" checked={exportToc} onChange={(e) => setExportToc(e.target.checked)} className="rounded" />
+                  Table of Contents
+                </label>
+                <label className="flex items-center gap-2 text-[11px] text-zinc-400 cursor-pointer">
+                  <input type="checkbox" checked={exportNumbered} onChange={(e) => setExportNumbered(e.target.checked)} className="rounded" />
+                  Numbered sections
+                </label>
+              </div>
               <button
                 onClick={() => triggerExport("pdf")}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-zinc-300 transition-colors hover:bg-white/[0.06]"
