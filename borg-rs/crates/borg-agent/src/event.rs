@@ -153,3 +153,156 @@ pub fn parse_stream(data: &str) -> (String, Option<String>) {
 
     (output, session_id)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_stream;
+
+    // session_id from System event
+    #[test]
+    fn test_session_id_from_system_event() {
+        let input = r#"{"type":"system","subtype":"init","session_id":"sys-abc-123"}
+{"type":"result","subtype":"success","result":"done","session_id":null}"#;
+        let (_, sid) = parse_stream(input);
+        assert_eq!(sid.as_deref(), Some("sys-abc-123"));
+    }
+
+    // session_id from Result event (no System event present)
+    #[test]
+    fn test_session_id_from_result_event() {
+        let input = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}
+{"type":"result","subtype":"success","result":"hi","session_id":"res-xyz-999"}"#;
+        let (_, sid) = parse_stream(input);
+        assert_eq!(sid.as_deref(), Some("res-xyz-999"));
+    }
+
+    // Result event session_id takes priority (overwrites System session_id)
+    #[test]
+    fn test_result_session_id_overwrites_system() {
+        let input = r#"{"type":"system","session_id":"from-system"}
+{"type":"result","result":"output","session_id":"from-result"}"#;
+        let (_, sid) = parse_stream(input);
+        assert_eq!(sid.as_deref(), Some("from-result"));
+    }
+
+    // Result event text takes priority over accumulated assistant text
+    #[test]
+    fn test_result_text_beats_assistant_text() {
+        let input = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"assistant said this"}]}}
+{"type":"result","result":"result text wins","session_id":"s1"}"#;
+        let (output, _) = parse_stream(input);
+        assert_eq!(output, "result text wins");
+    }
+
+    // Fallback to assistant text when result field is empty string
+    #[test]
+    fn test_fallback_when_result_is_empty_string() {
+        let input = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"assistant fallback"}]}}
+{"type":"result","result":"","session_id":"s2"}"#;
+        let (output, _) = parse_stream(input);
+        assert_eq!(output, "assistant fallback");
+    }
+
+    // Fallback to assistant text when result field is absent (null)
+    #[test]
+    fn test_fallback_when_result_is_null() {
+        let input = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"only assistant"}]}}
+{"type":"result","result":null,"session_id":"s3"}"#;
+        let (output, _) = parse_stream(input);
+        assert_eq!(output, "only assistant");
+    }
+
+    // Multiple assistant turns concatenated with newlines
+    #[test]
+    fn test_multiple_assistant_turns_concatenated() {
+        let input = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"line one"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"line two"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"line three"}]}}
+{"type":"result","result":"","session_id":null}"#;
+        let (output, _) = parse_stream(input);
+        assert_eq!(output, "line one\nline two\nline three");
+    }
+
+    // Multiple assistant turns: single turn has no separator
+    #[test]
+    fn test_single_assistant_turn_no_newline_prefix() {
+        let input = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"only turn"}]}}
+{"type":"result","result":null}"#;
+        let (output, _) = parse_stream(input);
+        assert_eq!(output, "only turn");
+    }
+
+    // Unknown/malformed lines are silently skipped
+    #[test]
+    fn test_malformed_lines_skipped() {
+        let input = r#"not json at all
+{"type":"assistant","message":{"content":[{"type":"text","text":"valid"}]}}
+{broken json
+{"type":"result","result":"final","session_id":"s4"}"#;
+        let (output, sid) = parse_stream(input);
+        assert_eq!(output, "final");
+        assert_eq!(sid.as_deref(), Some("s4"));
+    }
+
+    // Unknown event types are silently skipped
+    #[test]
+    fn test_unknown_event_type_skipped() {
+        let input = r#"{"type":"ping","data":"something"}
+{"type":"result","result":"ok","session_id":"s5"}"#;
+        let (output, sid) = parse_stream(input);
+        assert_eq!(output, "ok");
+        assert_eq!(sid.as_deref(), Some("s5"));
+    }
+
+    // Blank lines are skipped
+    #[test]
+    fn test_blank_lines_skipped() {
+        let input = "\n\n{\"type\":\"result\",\"result\":\"clean\",\"session_id\":\"s6\"}\n\n";
+        let (output, sid) = parse_stream(input);
+        assert_eq!(output, "clean");
+        assert_eq!(sid.as_deref(), Some("s6"));
+    }
+
+    // Fully empty input
+    #[test]
+    fn test_empty_input() {
+        let (output, sid) = parse_stream("");
+        assert_eq!(output, "");
+        assert!(sid.is_none());
+    }
+
+    // All whitespace / blank lines only
+    #[test]
+    fn test_whitespace_only_input() {
+        let (output, sid) = parse_stream("   \n\n  \n");
+        assert_eq!(output, "");
+        assert!(sid.is_none());
+    }
+
+    // No session_id fields present anywhere
+    #[test]
+    fn test_no_session_id_returns_none() {
+        let input = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}
+{"type":"result","result":"hi"}"#;
+        let (_, sid) = parse_stream(input);
+        assert!(sid.is_none());
+    }
+
+    // Assistant turn with multiple text blocks in one message
+    #[test]
+    fn test_multiple_text_blocks_in_one_assistant_turn() {
+        let input = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"block A"},{"type":"text","text":"block B"}]}}
+{"type":"result","result":null}"#;
+        let (output, _) = parse_stream(input);
+        assert_eq!(output, "block A\nblock B");
+    }
+
+    // Tool-use blocks in assistant turn are ignored (no text)
+    #[test]
+    fn test_tool_use_blocks_produce_no_text() {
+        let input = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+{"type":"result","result":null}"#;
+        let (output, _) = parse_stream(input);
+        assert_eq!(output, "");
+    }
+}
