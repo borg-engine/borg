@@ -34,19 +34,35 @@ export interface MarkdownLegalViewerProps {
 // ── Citation parsing ──────────────────────────────────────────────────────────
 
 const CITATION_PATTERNS = [
-  // Case citations: Smith v. Jones, 123 U.S. 456 (1999)
-  /[A-Z][A-Za-z\s'&,.-]+\s+v\.\s+[A-Z][A-Za-z\s'&,.-]+,\s*\d+\s+[A-Z][A-Z.]+\d*\s+\d+\s*\(\d{4}\)/g,
-  // US Code: 42 U.S.C. § 1983
-  /\d+\s+U\.S\.C\.\s+§+\s*\d+[\w-]*/g,
-  // CFR citations: 29 C.F.R. § 541.100
-  /\d+\s+C\.F\.R\.\s+§+\s*\d+[\d.]*/g,
-  // UK Supreme Court: [2023] UKSC 12
-  /\[\d{4}\]\s+(?:UKSC|EWCA|EWHC|UKHL|UKPC|EWCOP)\s+\d+/g,
-  // Federal Reporter: 123 F.3d 456 (9th Cir. 2001)
-  /\d+\s+F\.(?:\d+d|Supp\.(?:\s*\d+d)?)\s+\d+\s*\([^)]+\d{4}\)/g,
+  // US case: Name v. Name, 123 U.S. 456 (1999)
+  /[A-Z][A-Za-z\s'&,.-]+\s+v\.\s+[A-Z][A-Za-z\s'&,.-]+,\s*\d+\s+[A-Z][A-Z.]+\d*\s+\d+(?:\s*\([^)]+\d{4}\))?/g,
+  // Federal Reporter (F.2d, F.3d, F.4th, F.Supp., F.Supp.2d, F.Supp.3d, F.App'x)
+  /\d+\s+F\.(?:\d+(?:d|th)|Supp\.(?:\s*\d+d)?|App'x)\s+\d+(?:\s*\([^)]+\d{4}\))?/g,
+  // US Reports: 123 U.S. 456
+  /\d+\s+U\.S\.\s+\d+/g,
   // Supreme Court Reporter: 123 S. Ct. 456
   /\d+\s+S\.\s*Ct\.\s+\d+/g,
-  // Statute sections: § 1983
+  // L.Ed: 123 L. Ed. 2d 456
+  /\d+\s+L\.\s*Ed\.\s*(?:2d\s+)?\d+/g,
+  // State reporters (Cal., N.Y., N.Y.S., A.2d/3d, N.E.2d/3d, So.2d/3d, P.2d/3d, S.E.2d, N.W.2d, S.W.3d)
+  /\d+\s+(?:Cal\.(?:\s*\d+th)?|N\.Y\.(?:S\.)?(?:\s*\d+d)?|A\.\d+d|N\.E\.\d+d|So\.\s*\d+d|P\.\d+d|S\.E\.\d+d|N\.W\.\d+d|S\.W\.\d+d)\s+\d+/g,
+  // US Code: 42 U.S.C. § 1983
+  /\d+\s+U\.S\.C\.?\s+§+\s*\d+[\w-]*/g,
+  // CFR: 29 C.F.R. § 541.100
+  /\d+\s+C\.F\.R\.?\s+§+\s*\d+[\d.]*/g,
+  // State statutes: Cal. Civ. Code § 1234, N.Y. Gen. Bus. Law § 349
+  /(?:Cal|N\.Y|Tex|Fla|Ill|Ohio|Pa|Mass|Mich|Ga|N\.J|Va|Wash|Ariz|Md|Minn|Mo|Wis|Colo|Conn|Or|S\.C|Ky|La|Okla|Ala|Ind)\.?\s+[A-Z][A-Za-z.&\s]+§+\s*\d+[\w.-]*/g,
+  // UK neutral citations: [2023] UKSC 12, [2023] EWCA Civ 456
+  /\[\d{4}\]\s+(?:UKSC|EWCA\s+(?:Civ|Crim)|EWHC|UKHL|UKPC|EWCOP|UKUT|UKFTT)\s+\d+/g,
+  // EU Case: Case C-123/45, Case T-123/45
+  /Case\s+[CT]-\d+\/\d+/g,
+  // CELEX numbers: 62019CJ0311
+  /\d{5}[A-Z]{2}\d{4}/g,
+  // Canadian: [2023] SCC 12, 2023 SCC 12, CanLII format
+  /(?:\[\d{4}\]\s+|\d{4}\s+)(?:SCC|SCR|FC|FCA|ONCA|BCCA|ABCA|QCCA|NSCA|NBCA)\s+\d+/g,
+  // CanLII citation
+  /\d{4}\s+CanLII\s+\d+\s+\([A-Z]+\)/g,
+  // Bare section references: § 1983
   /§+\s*\d+[\w.-]*/g,
 ];
 
