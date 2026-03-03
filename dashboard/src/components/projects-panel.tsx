@@ -47,12 +47,14 @@ function DocumentViewWrapper({
   viewMode,
   onBack,
   onToggleMode,
+  defaultTemplateId,
 }: {
   projectId: number;
   doc: ProjectDocument;
   viewMode: "view" | "redline";
   onBack: () => void;
   onToggleMode: () => void;
+  defaultTemplateId?: number | null;
 }) {
   const { data: versions = [] } = useProjectDocumentVersions(projectId, doc.task_id, doc.file_name);
 
@@ -95,6 +97,7 @@ function DocumentViewWrapper({
             projectId={projectId}
             taskId={doc.task_id}
             path={doc.file_name}
+            defaultTemplateId={defaultTemplateId}
           />
         )}
       </div>
@@ -418,6 +421,7 @@ export function ProjectsPanel() {
               viewMode={docViewMode}
               onBack={() => { setSelectedDoc(null); setDocViewMode("view"); }}
               onToggleMode={() => setDocViewMode(docViewMode === "view" ? "redline" : "view")}
+              defaultTemplateId={selectedProject.default_template_id}
             />
           ) : (
             <div className="flex h-full flex-col">

@@ -29,6 +29,7 @@ export interface MarkdownLegalViewerProps {
   projectId: number;
   taskId: number;
   path: string;
+  defaultTemplateId?: number | null;
 }
 
 // ── Citation parsing ──────────────────────────────────────────────────────────
@@ -236,7 +237,7 @@ async function fetchDocumentVersions(
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function MarkdownLegalViewer({ projectId, taskId, path }: MarkdownLegalViewerProps) {
+export function MarkdownLegalViewer({ projectId, taskId, path, defaultTemplateId }: MarkdownLegalViewerProps) {
   const [content, setContent] = useState<string>("");
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [selectedSha, setSelectedSha] = useState<string>("");
@@ -247,7 +248,7 @@ export function MarkdownLegalViewer({ projectId, taskId, path }: MarkdownLegalVi
   const [exporting, setExporting] = useState(false);
   const [exportToc, setExportToc] = useState(false);
   const [exportNumbered, setExportNumbered] = useState(false);
-  const [exportTemplate, setExportTemplate] = useState<number | null>(null);
+  const [exportTemplate, setExportTemplate] = useState<number | null>(defaultTemplateId ?? null);
   const { data: templates = [] } = useTemplates("template");
   const contentRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
