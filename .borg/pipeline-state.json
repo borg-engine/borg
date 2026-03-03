@@ -1,0 +1,10 @@
+{
+  "task_id": 137,
+  "task_title": "Test `push_line()` history cap at `MAX_HISTORY_LINES` in `stream.rs`",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-137",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-03T02:35:37.677477045Z"
+}
