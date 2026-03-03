@@ -13,6 +13,17 @@ use tokio::{
 };
 use tracing::{info, warn};
 
+/// Deletes the cidfile on drop so temp files in /tmp are never leaked.
+struct CidfileGuard(Option<String>);
+
+impl Drop for CidfileGuard {
+    fn drop(&mut self) {
+        if let Some(ref p) = self.0 {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
+
 const BORG_SIGNAL_MARKER: &str = "---BORG_SIGNAL---";
 const BORG_EVENT_MARKER: &str = "---BORG_EVENT---";
 const BORG_TEST_RESULT_MARKER: &str = "---BORG_TEST_RESULT---";
@@ -429,6 +440,8 @@ impl AgentBackend for ClaudeBackend {
         } else {
             None
         };
+        // Guard ensures the cidfile is removed on all exit paths (success, error, timeout).
+        let _cidfile_guard = CidfileGuard(cidfile_path.clone());
 
         let real_home = std::env::var("HOME").unwrap_or_default();
         let rustup_home = std::env::var("RUSTUP_HOME")
@@ -786,5 +799,40 @@ impl AgentBackend for ClaudeBackend {
     async fn interrupt(&self, session_id: &str) -> Result<()> {
         warn!(session_id = %session_id, "interrupt not yet implemented");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CidfileGuard;
+    use std::io::Write;
+
+    fn make_temp_file() -> String {
+        let path = format!("/tmp/borg-cid-guard-test-{}.txt", std::process::id());
+        let mut f = std::fs::File::create(&path).expect("create temp file");
+        f.write_all(b"abc123").expect("write temp file");
+        path
+    }
+
+    #[test]
+    fn guard_deletes_file_on_drop() {
+        let path = make_temp_file();
+        assert!(std::path::Path::new(&path).exists());
+        {
+            let _guard = CidfileGuard(Some(path.clone()));
+        }
+        assert!(!std::path::Path::new(&path).exists(), "cidfile should be deleted after guard drop");
+    }
+
+    #[test]
+    fn guard_none_does_not_panic() {
+        // Must not panic when path is None.
+        let _guard = CidfileGuard(None);
+    }
+
+    #[test]
+    fn guard_missing_file_does_not_panic() {
+        // remove_file on a non-existent path should be silently ignored.
+        let _guard = CidfileGuard(Some("/tmp/borg-cid-guard-nonexistent-99999.txt".to_string()));
     }
 }
