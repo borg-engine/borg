@@ -7,6 +7,7 @@
 
 import { createInterface } from 'readline';
 import { spawn } from 'child_process';
+import { appendChunk, STDOUT_BUF_MAX } from './stream-buf.js';
 
 const ASSISTANT_NAME = (process.argv[2] || process.env.ASSISTANT_NAME || 'Borg').toLowerCase();
 
@@ -285,10 +286,13 @@ function startAgentSession(session_id, cmd) {
   let stdoutBuf = '';
 
   proc.stdout.on('data', (data) => {
-    stdoutBuf += data.toString();
-    const parts = stdoutBuf.split('\n');
-    stdoutBuf = parts.pop();
-    for (const line of parts) {
+    const { buf, lines } = appendChunk(stdoutBuf, data.toString(), STDOUT_BUF_MAX);
+    stdoutBuf = buf;
+    if (lines === null) {
+      emit('agent', { event: 'warn', session_id, message: `stdout buffer exceeded ${STDOUT_BUF_MAX} bytes, dropping` });
+      return;
+    }
+    for (const line of lines) {
       if (!line.trim()) continue;
       emit('agent', { event: 'stream_line', session_id, line });
       try {
