@@ -527,7 +527,7 @@ export function useProjectDeadlines(projectId: number | null) {
 }
 
 export async function createDeadline(projectId: number, label: string, dueDate: string, ruleBasis?: string): Promise<{ id: number }> {
-  const res = await fetch(apiUrl(`/api/projects/${projectId}/deadlines`), {
+  const res = await fetch(`${apiBase()}/api/projects/${projectId}/deadlines`, {
     method: "POST",
     headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ label, due_date: dueDate, rule_basis: ruleBasis || "" }),
@@ -537,7 +537,7 @@ export async function createDeadline(projectId: number, label: string, dueDate: 
 }
 
 export async function updateDeadline(projectId: number, id: number, updates: Partial<{ label: string; due_date: string; rule_basis: string; status: string }>): Promise<void> {
-  const res = await fetch(apiUrl(`/api/projects/${projectId}/deadlines/${id}`), {
+  const res = await fetch(`${apiBase()}/api/projects/${projectId}/deadlines/${id}`, {
     method: "PUT",
     headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(updates),
@@ -546,7 +546,7 @@ export async function updateDeadline(projectId: number, id: number, updates: Par
 }
 
 export async function deleteDeadline(projectId: number, id: number): Promise<void> {
-  const res = await fetch(apiUrl(`/api/projects/${projectId}/deadlines/${id}`), {
+  const res = await fetch(`${apiBase()}/api/projects/${projectId}/deadlines/${id}`, {
     method: "DELETE",
     headers: authHeaders(),
   });
