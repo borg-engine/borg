@@ -191,7 +191,10 @@ impl ClaudeBackend {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        format!("{data_dir}/mirrors/{repo_name}.git")
+        let raw = format!("{data_dir}/mirrors/{repo_name}.git");
+        std::fs::canonicalize(&raw)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or(raw)
     }
 
     fn container_mirror_path(task: &Task) -> String {

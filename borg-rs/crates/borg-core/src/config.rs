@@ -509,10 +509,8 @@ impl Config {
         if let Ok(rows) = db.list_repos() {
             if !rows.is_empty() {
                 let mut repos = Vec::new();
-                let mut has_pipeline_repo = false;
                 for row in rows {
                     let is_self = row.path == c.pipeline_repo;
-                    if is_self { has_pipeline_repo = true; }
                     repos.push(crate::types::RepoConfig {
                         path: row.path,
                         test_cmd: row.test_cmd,
@@ -523,20 +521,6 @@ impl Config {
                         lint_cmd: String::new(),
                         backend: row.backend.unwrap_or_default(),
                         repo_slug: row.repo_slug,
-                    });
-                }
-                // Ensure pipeline_repo is always present
-                if !has_pipeline_repo && !c.pipeline_repo.is_empty() {
-                    repos.insert(0, crate::types::RepoConfig {
-                        path: c.pipeline_repo.clone(),
-                        test_cmd: c.pipeline_test_cmd.clone(),
-                        prompt_file: String::new(),
-                        mode: "sweborg".to_string(),
-                        is_self: true,
-                        auto_merge: true,
-                        lint_cmd: c.pipeline_lint_cmd.clone(),
-                        backend: String::new(),
-                        repo_slug: slug_from_remote(&c.pipeline_repo),
                     });
                 }
                 c.watched_repos = repos;
@@ -590,7 +574,13 @@ impl Config {
             oauth_token,
             assistant_name: get_str("ASSISTANT_NAME", &dotenv, "Borg"),
             trigger_pattern: get_str("TRIGGER_PATTERN", &dotenv, "@Borg"),
-            data_dir: get_str("DATA_DIR", &dotenv, "store"),
+            data_dir: {
+                let raw = get_str("DATA_DIR", &dotenv, "store");
+                std::fs::create_dir_all(&raw).ok();
+                std::fs::canonicalize(&raw)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or(raw)
+            },
             container_image: get_str("CONTAINER_IMAGE", &dotenv, "borg-agent"),
             model: get_str("MODEL", &dotenv, "claude-sonnet-4-6"),
             credentials_path,
