@@ -207,6 +207,8 @@ impl Git {
     /// Rebase the current branch in a worktree onto origin/main.
     pub fn rebase_onto_main(&self, wt_path: &str) -> Result<()> {
         let _ = self.exec(wt_path, &["fetch", "origin", "main"]);
+        // Stash any uncommitted changes before rebase
+        let _ = self.exec(wt_path, &["stash"]);
         let result = self.exec(wt_path, &["rebase", "origin/main"])?;
         if !result.success() {
             // Abort the failed rebase so the branch isn't left in a broken state
