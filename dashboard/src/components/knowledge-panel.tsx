@@ -27,13 +27,15 @@ function FileRow({
   const [editing, setEditing] = useState(false);
   const [desc, setDesc] = useState(file.description);
   const [inline, setInline] = useState(file.inline);
+  const [category, setCategory] = useState(file.category || "general");
+  const [tags, setTags] = useState(file.tags || "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   async function save() {
     setSaving(true);
     try {
-      await updateKnowledgeFile(file.id, { description: desc, inline });
+      await updateKnowledgeFile(file.id, { description: desc, inline, category, tags });
       onUpdated();
       setEditing(false);
     } finally {
@@ -82,7 +84,7 @@ function FileRow({
         <div className="text-sm text-zinc-400">{file.description}</div>
       )}
       {!editing && (
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <span
             className={cn(
               "text-xs px-1.5 py-0.5 rounded",
@@ -93,12 +95,20 @@ function FileRow({
           >
             {file.inline ? "Inline" : "Listed"}
           </span>
-          {file.inline && (
-            <span className="text-xs text-zinc-500">Content injected into agent prompts</span>
+          {file.category && file.category !== "general" && (
+            <span className={cn("text-xs px-1.5 py-0.5 rounded border",
+              file.category === "template" ? "bg-violet-900/50 text-violet-300 border-violet-700"
+                : file.category === "clause" ? "bg-emerald-900/50 text-emerald-300 border-emerald-700"
+                : "bg-zinc-800 text-zinc-400 border-zinc-700"
+            )}>
+              {file.category}
+            </span>
           )}
-          {!file.inline && (
-            <span className="text-xs text-zinc-500">Filename listed in agent prompts</span>
-          )}
+          {file.tags && file.tags.split(",").filter(Boolean).map(t => (
+            <span key={t.trim()} className="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700">
+              {t.trim()}
+            </span>
+          ))}
         </div>
       )}
 
@@ -111,6 +121,30 @@ function FileRow({
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
               placeholder="Brief description of this file"
+              className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-zinc-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Category</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-zinc-400"
+            >
+              <option value="general">General</option>
+              <option value="template">Template</option>
+              <option value="clause">Clause</option>
+              <option value="reference">Reference</option>
+              <option value="policy">Policy</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Tags (comma-separated)</label>
+            <input
+              type="text"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              placeholder="e.g. nda, confidentiality, employment"
               className="w-full bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-zinc-400"
             />
           </div>

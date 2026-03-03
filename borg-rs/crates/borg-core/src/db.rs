@@ -136,6 +136,10 @@ pub struct KnowledgeFile {
     pub description: String,
     pub size_bytes: i64,
     pub inline: bool,
+    pub tags: String,
+    pub category: String,
+    pub jurisdiction: String,
+    pub project_id: Option<i64>,
     pub created_at: String,
 }
 
@@ -193,6 +197,22 @@ fn parse_ts(s: &str) -> DateTime<Utc> {
 
 fn now_str() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+fn row_to_knowledge(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeFile> {
+    let inline_int: i64 = row.get(4)?;
+    Ok(KnowledgeFile {
+        id: row.get(0)?,
+        file_name: row.get(1)?,
+        description: row.get(2)?,
+        size_bytes: row.get(3)?,
+        inline: inline_int != 0,
+        created_at: row.get(5)?,
+        tags: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+        category: row.get::<_, Option<String>>(7)?.unwrap_or_else(|| "general".to_string()),
+        jurisdiction: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
+        project_id: row.get::<_, Option<i64>>(9)?,
+    })
 }
 
 fn normalize_party_name(name: &str) -> String {
@@ -413,6 +433,10 @@ impl Db {
             "ALTER TABLE pipeline_tasks ADD COLUMN structured_data TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE pipeline_events ADD COLUMN project_id INTEGER REFERENCES projects(id)",
             "ALTER TABLE pipeline_events ADD COLUMN actor TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE knowledge_files ADD COLUMN tags TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE knowledge_files ADD COLUMN category TEXT NOT NULL DEFAULT 'general'",
+            "ALTER TABLE knowledge_files ADD COLUMN jurisdiction TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE knowledge_files ADD COLUMN project_id INTEGER",
         ];
         for sql in alters {
             let _ = conn.execute(sql, []);
@@ -1212,47 +1236,42 @@ impl Db {
     pub fn list_knowledge_files(&self) -> Result<Vec<KnowledgeFile>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, description, size_bytes, inline, created_at \
+            "SELECT id, file_name, description, size_bytes, inline, created_at, \
+                    tags, category, jurisdiction, project_id \
              FROM knowledge_files ORDER BY created_at",
         )?;
-        let rows = stmt.query_map([], |row| {
-            let inline_int: i64 = row.get(4)?;
-            Ok(KnowledgeFile {
-                id: row.get(0)?,
-                file_name: row.get(1)?,
-                description: row.get(2)?,
-                size_bytes: row.get(3)?,
-                inline: inline_int != 0,
-                created_at: row.get(5)?,
-            })
-        })?;
+        let rows = stmt.query_map([], row_to_knowledge)?;
         let mut out = Vec::new();
-        for r in rows {
-            out.push(r?);
-        }
+        for r in rows { out.push(r?); }
         Ok(out)
     }
 
     pub fn get_knowledge_file(&self, id: i64) -> Result<Option<KnowledgeFile>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.query_row(
-            "SELECT id, file_name, description, size_bytes, inline, created_at \
+            "SELECT id, file_name, description, size_bytes, inline, created_at, \
+                    tags, category, jurisdiction, project_id \
              FROM knowledge_files WHERE id=?1",
             params![id],
-            |row| {
-                let inline_int: i64 = row.get(4)?;
-                Ok(KnowledgeFile {
-                    id: row.get(0)?,
-                    file_name: row.get(1)?,
-                    description: row.get(2)?,
-                    size_bytes: row.get(3)?,
-                    inline: inline_int != 0,
-                    created_at: row.get(5)?,
-                })
-            },
+            row_to_knowledge,
         )
         .optional()
         .context("get_knowledge_file")
+    }
+
+    pub fn list_templates(&self, category: Option<&str>, jurisdiction: Option<&str>) -> Result<Vec<KnowledgeFile>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, file_name, description, size_bytes, inline, created_at, \
+                    tags, category, jurisdiction, project_id \
+             FROM knowledge_files \
+             WHERE (?1 IS NULL OR category = ?1) AND (?2 IS NULL OR jurisdiction = ?2 OR jurisdiction = '') \
+             ORDER BY category, file_name",
+        )?;
+        let rows = stmt.query_map(params![category, jurisdiction], row_to_knowledge)?;
+        let mut out = Vec::new();
+        for r in rows { out.push(r?); }
+        Ok(out)
     }
 
     pub fn insert_knowledge_file(
@@ -1282,20 +1301,16 @@ impl Db {
         id: i64,
         description: Option<&str>,
         inline: Option<bool>,
+        tags: Option<&str>,
+        category: Option<&str>,
+        jurisdiction: Option<&str>,
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(d) = description {
-            conn.execute(
-                "UPDATE knowledge_files SET description=?1 WHERE id=?2",
-                params![d, id],
-            )?;
-        }
-        if let Some(i) = inline {
-            conn.execute(
-                "UPDATE knowledge_files SET inline=?1 WHERE id=?2",
-                params![i as i64, id],
-            )?;
-        }
+        if let Some(d) = description { conn.execute("UPDATE knowledge_files SET description=?1 WHERE id=?2", params![d, id])?; }
+        if let Some(i) = inline { conn.execute("UPDATE knowledge_files SET inline=?1 WHERE id=?2", params![i as i64, id])?; }
+        if let Some(t) = tags { conn.execute("UPDATE knowledge_files SET tags=?1 WHERE id=?2", params![t, id])?; }
+        if let Some(c) = category { conn.execute("UPDATE knowledge_files SET category=?1 WHERE id=?2", params![c, id])?; }
+        if let Some(j) = jurisdiction { conn.execute("UPDATE knowledge_files SET jurisdiction=?1 WHERE id=?2", params![j, id])?; }
         Ok(())
     }
 

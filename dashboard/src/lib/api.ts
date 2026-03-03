@@ -553,6 +553,18 @@ export async function deleteDeadline(projectId: number, id: number): Promise<voi
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
+export function useTemplates(category?: string) {
+  return useQuery<KnowledgeFile[]>({
+    queryKey: ["templates", category],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (category) params.set("category", category);
+      return fetchJson(`/api/knowledge/templates?${params}`);
+    },
+    refetchInterval: REFETCH_PROJECTS,
+  });
+}
+
 export function useUpcomingDeadlines(limit = 50) {
   return useQuery<Deadline[]>({
     queryKey: ["upcoming_deadlines", limit],
@@ -818,7 +830,7 @@ export async function uploadKnowledgeFile(
 
 export async function updateKnowledgeFile(
   id: number,
-  patch: { description?: string; inline?: boolean },
+  patch: { description?: string; inline?: boolean; tags?: string; category?: string; jurisdiction?: string },
 ): Promise<{ ok: boolean }> {
   const res = await apiFetch(`/api/knowledge/${id}`, {
     method: "PUT",

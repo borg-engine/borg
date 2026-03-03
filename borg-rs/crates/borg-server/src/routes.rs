@@ -172,6 +172,9 @@ pub(crate) struct ConflictQuery {
 pub(crate) struct UpdateKnowledgeBody {
     pub description: Option<String>,
     pub inline: Option<bool>,
+    pub tags: Option<String>,
+    pub category: Option<String>,
+    pub jurisdiction: Option<String>,
 }
 
 // ── Serializable wrappers ─────────────────────────────────────────────────
@@ -2895,7 +2898,7 @@ pub(crate) async fn update_knowledge(
 ) -> Result<Json<Value>, StatusCode> {
     state
         .db
-        .update_knowledge_file(id, body.description.as_deref(), body.inline)
+        .update_knowledge_file(id, body.description.as_deref(), body.inline, body.tags.as_deref(), body.category.as_deref(), body.jurisdiction.as_deref())
         .map_err(internal)?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -2911,6 +2914,20 @@ pub(crate) async fn delete_knowledge(
     }
     state.db.delete_knowledge_file(id).map_err(internal)?;
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct TemplatesQuery {
+    category: Option<String>,
+    jurisdiction: Option<String>,
+}
+
+pub(crate) async fn list_templates(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<TemplatesQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    let templates = state.db.list_templates(q.category.as_deref(), q.jurisdiction.as_deref()).map_err(internal)?;
+    Ok(Json(json!(templates)))
 }
 
 pub(crate) async fn get_knowledge_content(

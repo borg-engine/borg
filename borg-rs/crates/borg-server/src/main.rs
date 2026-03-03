@@ -791,6 +791,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/cache/:name", delete(routes::delete_cache_volume))
         // Knowledge base
         .route("/api/knowledge", get(routes::list_knowledge))
+        .route("/api/knowledge/templates", get(routes::list_templates))
         .route(
             "/api/knowledge/upload",
             post(routes::upload_knowledge).layer(DefaultBodyLimit::max(55 * 1024 * 1024)),

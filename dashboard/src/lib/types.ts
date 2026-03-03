@@ -223,6 +223,10 @@ export interface KnowledgeFile {
   description: string;
   size_bytes: number;
   inline: boolean;
+  tags: string;
+  category: string;
+  jurisdiction: string;
+  project_id: number | null;
   created_at: string;
 }
 
