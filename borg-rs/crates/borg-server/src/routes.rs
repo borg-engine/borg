@@ -1009,6 +1009,90 @@ pub(crate) async fn list_project_tasks(
     Ok(Json(json!(tasks)))
 }
 
+// ── Deadlines ────────────────────────────────────────────────────────────
+
+pub(crate) async fn list_project_deadlines(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.db.get_project(id).map_err(internal)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let deadlines = state.db.list_project_deadlines(id).map_err(internal)?;
+    Ok(Json(json!(deadlines)))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CreateDeadlineBody {
+    label: String,
+    due_date: String,
+    #[serde(default)]
+    rule_basis: String,
+}
+
+pub(crate) async fn create_deadline(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(body): Json<CreateDeadlineBody>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.db.get_project(id).map_err(internal)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let did = state.db.insert_deadline(id, &body.label, &body.due_date, &body.rule_basis).map_err(internal)?;
+    Ok(Json(json!({ "id": did })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UpdateDeadlineBody {
+    label: Option<String>,
+    due_date: Option<String>,
+    rule_basis: Option<String>,
+    status: Option<String>,
+}
+
+pub(crate) async fn update_deadline(
+    State(state): State<Arc<AppState>>,
+    Path((_pid, did)): Path<(i64, i64)>,
+    Json(body): Json<UpdateDeadlineBody>,
+) -> Result<StatusCode, StatusCode> {
+    state.db.update_deadline(did, body.label.as_deref(), body.due_date.as_deref(), body.rule_basis.as_deref(), body.status.as_deref()).map_err(internal)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn delete_deadline(
+    State(state): State<Arc<AppState>>,
+    Path((_pid, did)): Path<(i64, i64)>,
+) -> Result<StatusCode, StatusCode> {
+    state.db.delete_deadline(did).map_err(internal)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UpcomingDeadlinesQuery {
+    #[serde(default = "default_deadline_limit")]
+    limit: i64,
+}
+fn default_deadline_limit() -> i64 { 50 }
+
+pub(crate) async fn list_upcoming_deadlines(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<UpcomingDeadlinesQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    let rows = state.db.list_upcoming_deadlines(q.limit).map_err(internal)?;
+    let items: Vec<Value> = rows.into_iter().map(|(d, project_name)| {
+        json!({
+            "id": d.id,
+            "project_id": d.project_id,
+            "project_name": project_name,
+            "label": d.label,
+            "due_date": d.due_date,
+            "rule_basis": d.rule_basis,
+            "status": d.status,
+        })
+    }).collect();
+    Ok(Json(json!(items)))
+}
+
 /// Read a file from git: tries local `git show ref:path` first, falls back to `gh api`.
 async fn git_show_file(repo_path: &str, slug: &str, ref_name: &str, path: &str) -> Option<Vec<u8>> {
     // Try local git first

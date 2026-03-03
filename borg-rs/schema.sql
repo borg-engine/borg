@@ -191,6 +191,20 @@ CREATE TABLE IF NOT EXISTS parties (
 CREATE INDEX IF NOT EXISTS idx_parties_project ON parties(project_id);
 CREATE INDEX IF NOT EXISTS idx_parties_normalized ON parties(normalized_name);
 
+-- ── Deadlines ────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS deadlines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  due_date TEXT NOT NULL,
+  rule_basis TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_deadlines_project ON deadlines(project_id);
+CREATE INDEX IF NOT EXISTS idx_deadlines_due ON deadlines(due_date);
+
 -- ── Unified event log ─────────────────────────────────────────────────────
 -- Append-only. Never UPDATE or DELETE rows.
 -- kind taxonomy and payload shapes are documented in schema_notes.md.

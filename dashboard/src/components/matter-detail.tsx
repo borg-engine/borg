@@ -3,6 +3,7 @@ import {
   useProjectDetail,
   useProjectTasks,
   useProjectDocuments,
+  useProjectDeadlines,
   useUpdateProject,
   useDeleteProject,
   useTaskStream,
@@ -10,10 +11,13 @@ import {
   sendProjectChat,
   checkConflicts,
   getTaskStructuredData,
+  createDeadline,
+  updateDeadline,
+  deleteDeadline,
   sseUrl,
   tokenReady,
 } from "@/lib/api";
-import type { ConflictHit } from "@/lib/api";
+import type { ConflictHit, Deadline } from "@/lib/api";
 import type { Project, ProjectTask, ProjectDocument } from "@/lib/types";
 import { StatusBadge } from "./status-badge";
 import { PhaseTracker } from "./phase-tracker";
@@ -316,6 +320,141 @@ function MetadataPanel({ project, projectId }: { project: Project; projectId: nu
             />
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ── Deadlines panel ──────────────────────────────────────────────────────────
+
+function deadlineUrgency(dueDate: string): "overdue" | "urgent" | "normal" {
+  const due = new Date(dueDate + "T23:59:59");
+  const now = new Date();
+  if (due < now) return "overdue";
+  const diff = due.getTime() - now.getTime();
+  if (diff < 7 * 24 * 60 * 60 * 1000) return "urgent";
+  return "normal";
+}
+
+const urgencyStyle: Record<string, string> = {
+  overdue: "border-red-500/30 bg-red-500/10 text-red-400",
+  urgent: "border-amber-500/30 bg-amber-500/10 text-amber-400",
+  normal: "border-white/[0.06] bg-white/[0.02] text-zinc-300",
+};
+
+function DeadlinesPanel({ projectId }: { projectId: number }) {
+  const { data: deadlines = [], refetch } = useProjectDeadlines(projectId);
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newDate, setNewDate] = useState("");
+  const [newBasis, setNewBasis] = useState("");
+
+  const pending = deadlines.filter(d => d.status === "pending");
+  const completed = deadlines.filter(d => d.status !== "pending");
+  const hasOverdue = pending.some(d => deadlineUrgency(d.due_date) === "overdue");
+
+  async function handleAdd() {
+    if (!newLabel.trim() || !newDate.trim()) return;
+    await createDeadline(projectId, newLabel.trim(), newDate.trim(), newBasis.trim());
+    setNewLabel(""); setNewDate(""); setNewBasis(""); setAdding(false);
+    refetch();
+  }
+
+  async function handleComplete(d: Deadline) {
+    await updateDeadline(projectId, d.id, { status: "completed" });
+    refetch();
+  }
+
+  async function handleDelete(d: Deadline) {
+    await deleteDeadline(projectId, d.id);
+    refetch();
+  }
+
+  return (
+    <div className="border-b border-white/[0.06]">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex w-full items-center gap-2 px-5 py-2 text-left hover:bg-white/[0.02] transition-colors"
+      >
+        <span className="text-[11px] font-medium text-zinc-500">Deadlines</span>
+        {pending.length > 0 && (
+          <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-medium", hasOverdue ? "bg-red-500/20 text-red-400" : "bg-zinc-700 text-zinc-400")}>
+            {pending.length}
+          </span>
+        )}
+        <span className="ml-auto text-zinc-600">
+          {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </span>
+      </button>
+      {open && (
+        <div className="px-5 pb-4 space-y-1.5">
+          {pending.map(d => {
+            const urg = deadlineUrgency(d.due_date);
+            return (
+              <div key={d.id} className={cn("flex items-center gap-2 rounded border px-2.5 py-1.5 text-[11px]", urgencyStyle[urg])}>
+                <button onClick={() => handleComplete(d)} className="shrink-0 opacity-60 hover:opacity-100" title="Mark complete">
+                  <Check className="h-3 w-3" />
+                </button>
+                <span className="font-medium">{d.label}</span>
+                <span className="font-mono text-[10px] opacity-70">{d.due_date}</span>
+                {d.rule_basis && <span className="text-[10px] opacity-60 truncate">{d.rule_basis}</span>}
+                <button onClick={() => handleDelete(d)} className="ml-auto shrink-0 opacity-40 hover:opacity-100 text-zinc-500 hover:text-red-400" title="Delete">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })}
+          {completed.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {completed.map(d => (
+                <div key={d.id} className="flex items-center gap-2 rounded border border-white/[0.04] px-2.5 py-1 text-[10px] text-zinc-600 line-through">
+                  <span>{d.label}</span>
+                  <span className="font-mono">{d.due_date}</span>
+                  <button onClick={() => handleDelete(d)} className="ml-auto shrink-0 opacity-40 hover:opacity-100 hover:text-red-400" title="Delete">
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {adding ? (
+            <div className="mt-2 space-y-1.5 rounded border border-white/[0.08] bg-white/[0.02] p-2">
+              <input
+                autoFocus
+                value={newLabel}
+                onChange={e => setNewLabel(e.target.value)}
+                placeholder="Label (e.g. Motion to Dismiss)"
+                className="w-full rounded border border-white/[0.08] bg-black/30 px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-blue-500/40"
+              />
+              <div className="flex gap-1.5">
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={e => setNewDate(e.target.value)}
+                  className="flex-1 rounded border border-white/[0.08] bg-black/30 px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-blue-500/40"
+                />
+                <input
+                  value={newBasis}
+                  onChange={e => setNewBasis(e.target.value)}
+                  placeholder="Rule basis (optional)"
+                  className="flex-1 rounded border border-white/[0.08] bg-black/30 px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-blue-500/40"
+                />
+              </div>
+              <div className="flex gap-1.5">
+                <button onClick={handleAdd} className="rounded bg-blue-500/20 px-2 py-0.5 text-[10px] text-blue-300 hover:bg-blue-500/30">Add</button>
+                <button onClick={() => setAdding(false)} className="rounded bg-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400 hover:bg-zinc-600">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setAdding(true)}
+              className="mt-1 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+            >
+              + Add deadline
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -950,6 +1089,7 @@ export function MatterDetail({ projectId, onDocumentSelect, onDelete }: MatterDe
     <div className="flex h-full min-h-0 flex-col">
       <MatterHeader project={project} onDelete={handleDelete} />
       <MetadataPanel project={project} projectId={projectId} />
+      <DeadlinesPanel projectId={projectId} />
 
       <div className="shrink-0 flex gap-0 border-b border-white/[0.06] px-5">
         {TABS.map((tab) => (

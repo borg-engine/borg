@@ -148,6 +148,17 @@ pub struct ConflictHit {
     pub matched_field: String,
 }
 
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct DeadlineRow {
+    pub id: i64,
+    pub project_id: i64,
+    pub label: String,
+    pub due_date: String,
+    pub rule_basis: String,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+}
+
 // ── Timestamp helpers ─────────────────────────────────────────────────────
 
 fn parse_ts(s: &str) -> DateTime<Utc> {
@@ -382,6 +393,29 @@ impl Db {
         ];
         for sql in alters {
             let _ = conn.execute(sql, []);
+        }
+
+        // Backfill deadlines from legacy projects.deadline column
+        let needs_deadline_backfill: bool = conn
+            .query_row("SELECT COUNT(*) = 0 FROM deadlines", [], |r| r.get(0))
+            .unwrap_or(true);
+        if needs_deadline_backfill {
+            let rows: Vec<(i64, String)> = conn
+                .prepare("SELECT id, deadline FROM projects WHERE deadline IS NOT NULL AND deadline != ''")
+                .ok()
+                .and_then(|mut s| {
+                    s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                        .ok()
+                        .map(|iter| iter.filter_map(|r| r.ok()).collect())
+                })
+                .unwrap_or_default();
+            let ts = now_str();
+            for (pid, due) in rows {
+                let _ = conn.execute(
+                    "INSERT INTO deadlines (project_id, label, due_date, created_at) VALUES (?1, 'Primary Deadline', ?2, ?3)",
+                    params![pid, due, ts],
+                );
+            }
         }
 
         // Backfill parties table from existing projects (idempotent)
@@ -934,6 +968,75 @@ impl Db {
             }
         }
         Ok(hits)
+    }
+
+    // ── Deadlines ──────────────────────────────────────────────────────────
+
+    pub fn list_project_deadlines(&self, project_id: i64) -> Result<Vec<DeadlineRow>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, label, due_date, rule_basis, status, created_at \
+             FROM deadlines WHERE project_id = ?1 ORDER BY due_date ASC"
+        )?;
+        let rows = stmt.query_map(params![project_id], |r| {
+            let ts: String = r.get(6)?;
+            Ok(DeadlineRow {
+                id: r.get(0)?,
+                project_id: r.get(1)?,
+                label: r.get(2)?,
+                due_date: r.get(3)?,
+                rule_basis: r.get(4)?,
+                status: r.get(5)?,
+                created_at: parse_ts(&ts),
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>().context("list_project_deadlines")?;
+        Ok(rows)
+    }
+
+    pub fn list_upcoming_deadlines(&self, limit: i64) -> Result<Vec<(DeadlineRow, String)>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT d.id, d.project_id, d.label, d.due_date, d.rule_basis, d.status, d.created_at, p.name \
+             FROM deadlines d JOIN projects p ON d.project_id = p.id \
+             WHERE d.status = 'pending' ORDER BY d.due_date ASC LIMIT ?1"
+        )?;
+        let rows = stmt.query_map(params![limit], |r| {
+            let ts: String = r.get(6)?;
+            Ok((DeadlineRow {
+                id: r.get(0)?,
+                project_id: r.get(1)?,
+                label: r.get(2)?,
+                due_date: r.get(3)?,
+                rule_basis: r.get(4)?,
+                status: r.get(5)?,
+                created_at: parse_ts(&ts),
+            }, r.get::<_, String>(7)?))
+        })?.collect::<rusqlite::Result<Vec<_>>>().context("list_upcoming_deadlines")?;
+        Ok(rows)
+    }
+
+    pub fn insert_deadline(&self, project_id: i64, label: &str, due_date: &str, rule_basis: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "INSERT INTO deadlines (project_id, label, due_date, rule_basis, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![project_id, label, due_date, rule_basis, now_str()],
+        ).context("insert_deadline")?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn update_deadline(&self, id: i64, label: Option<&str>, due_date: Option<&str>, rule_basis: Option<&str>, status: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(v) = label { conn.execute("UPDATE deadlines SET label = ?1 WHERE id = ?2", params![v, id])?; }
+        if let Some(v) = due_date { conn.execute("UPDATE deadlines SET due_date = ?1 WHERE id = ?2", params![v, id])?; }
+        if let Some(v) = rule_basis { conn.execute("UPDATE deadlines SET rule_basis = ?1 WHERE id = ?2", params![v, id])?; }
+        if let Some(v) = status { conn.execute("UPDATE deadlines SET status = ?1 WHERE id = ?2", params![v, id])?; }
+        Ok(())
+    }
+
+    pub fn delete_deadline(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute("DELETE FROM deadlines WHERE id = ?1", params![id]).context("delete_deadline")?;
+        Ok(())
     }
 
     pub fn list_project_tasks(&self, project_id: i64) -> Result<Vec<Task>> {

@@ -441,6 +441,14 @@ For each major conclusion, rate:
 [What was NOT covered, gaps in research, databases not available]
 ```
 
+## Step 6: Extract deadlines
+
+If you identify any deadlines, filing dates, or limitation periods, write `deadlines.json`:
+```json
+[{\"label\":\"...\",\"due_date\":\"YYYY-MM-DD\",\"rule_basis\":\"e.g. FRCP 12(a)(1)\"}]
+```
+Only include dates you can determine or calculate from source material. Do not invent dates.
+
 ## Signals
 
 If the task is unclear or you need human input: write {\"status\":\"blocked\",\"reason\":\"...\"} to .borg/signal.json

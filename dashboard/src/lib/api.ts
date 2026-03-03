@@ -504,6 +504,63 @@ export async function uploadProjectFiles(
   return res.json();
 }
 
+// ── Deadlines ──────────────────────────────────────────────────────────
+
+export interface Deadline {
+  id: number;
+  project_id: number;
+  label: string;
+  due_date: string;
+  rule_basis: string;
+  status: string;
+  created_at?: string;
+  project_name?: string;
+}
+
+export function useProjectDeadlines(projectId: number | null) {
+  return useQuery<Deadline[]>({
+    queryKey: ["project_deadlines", projectId],
+    queryFn: () => fetchJson(`/api/projects/${projectId}/deadlines`),
+    enabled: projectId !== null,
+    refetchInterval: REFETCH_PROJECTS,
+  });
+}
+
+export async function createDeadline(projectId: number, label: string, dueDate: string, ruleBasis?: string): Promise<{ id: number }> {
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/deadlines`), {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ label, due_date: dueDate, rule_basis: ruleBasis || "" }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function updateDeadline(projectId: number, id: number, updates: Partial<{ label: string; due_date: string; rule_basis: string; status: string }>): Promise<void> {
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/deadlines/${id}`), {
+    method: "PUT",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+export async function deleteDeadline(projectId: number, id: number): Promise<void> {
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/deadlines/${id}`), {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+export function useUpcomingDeadlines(limit = 50) {
+  return useQuery<Deadline[]>({
+    queryKey: ["upcoming_deadlines", limit],
+    queryFn: () => fetchJson(`/api/deadlines?limit=${limit}`),
+    refetchInterval: REFETCH_PROJECTS,
+  });
+}
+
 export function useProjectTasks(projectId: number | null) {
   return useQuery<ProjectTask[]>({
     queryKey: ["project_tasks", projectId],
