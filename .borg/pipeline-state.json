@@ -1,10 +1,10 @@
 {
-  "task_id": 185,
-  "task_title": "Propagate create_dir_all failure instead of silencing it in pipeline.rs",
+  "task_id": 188,
+  "task_title": "JSON-escape dynamic values interpolated into log_event calls in entrypoint.sh",
   "phase": "implement",
-  "worktree_path": "/home/shulgin/borg/.worktrees/task-185",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-188",
   "pr_url": null,
   "pending_approvals": [],
   "phase_history": [],
-  "generated_at": "2026-03-03T05:10:27.817710712Z"
+  "generated_at": "2026-03-03T05:15:59.084910742Z"
 }
