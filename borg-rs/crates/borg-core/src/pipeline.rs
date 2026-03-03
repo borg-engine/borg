@@ -3249,3 +3249,164 @@ fn looks_like_field_key(line: &str) -> bool {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    fn open_db() -> Arc<Db> {
+        let mut db = Db::open(":memory:").expect("open db");
+        db.migrate().expect("migrate");
+        Arc::new(db)
+    }
+
+    fn make_config() -> Arc<Config> {
+        Arc::new(Config {
+            telegram_token: String::new(),
+            oauth_token: String::new(),
+            assistant_name: String::new(),
+            trigger_pattern: String::new(),
+            data_dir: String::new(),
+            container_image: String::new(),
+            model: String::new(),
+            credentials_path: String::new(),
+            session_max_age_hours: 0,
+            max_consecutive_errors: 0,
+            pipeline_repo: String::new(),
+            pipeline_test_cmd: String::new(),
+            pipeline_lint_cmd: String::new(),
+            backend: String::new(),
+            pipeline_admin_chat: String::new(),
+            release_interval_mins: 0,
+            continuous_mode: false,
+            chat_collection_window_ms: 0,
+            chat_cooldown_ms: 0,
+            agent_timeout_s: 300,
+            max_chat_agents: 0,
+            chat_rate_limit: 0,
+            pipeline_max_agents: 0,
+            web_bind: String::new(),
+            web_port: 0,
+            dashboard_dist_dir: String::new(),
+            container_setup: String::new(),
+            container_memory_mb: 0,
+            container_cpus: 0.0,
+            sandbox_backend: String::new(),
+            pipeline_max_backlog: 0,
+            pipeline_seed_cooldown_s: 0,
+            proposal_promote_threshold: 0,
+            pipeline_tick_s: 0,
+            remote_check_interval_s: 0,
+            mirror_refresh_interval_s: 0,
+            pipeline_agent_cooldown_s: 0,
+            git_author_name: String::new(),
+            git_author_email: String::new(),
+            git_committer_name: String::new(),
+            git_committer_email: String::new(),
+            git_via_borg: false,
+            git_claude_coauthor: false,
+            git_user_coauthor: String::new(),
+            watched_repos: vec![],
+            build_cmd: String::new(),
+            self_update_enabled: false,
+            codex_api_key: String::new(),
+            codex_credentials_path: String::new(),
+            discord_token: String::new(),
+            wa_auth_dir: String::new(),
+            wa_disabled: false,
+            observer_config: String::new(),
+        })
+    }
+
+    fn make_pipeline(db: Arc<Db>) -> Pipeline {
+        let (pipeline, _rx) = Pipeline::new(
+            db,
+            HashMap::new(),
+            make_config(),
+            SandboxMode::Docker, // avoids cleanup_worktree running git commands
+            Arc::new(AtomicBool::new(false)),
+            false,
+        );
+        pipeline
+    }
+
+    fn insert_task(db: &Db, attempt: i64, max_attempts: i64, session_id: &str) -> Task {
+        let task = Task {
+            id: 0,
+            title: "test".into(),
+            description: "desc".into(),
+            repo_path: "/nonexistent".into(),
+            branch: "task-test".into(),
+            status: "impl".into(),
+            attempt,
+            max_attempts,
+            last_error: String::new(),
+            created_by: "test".into(),
+            notify_chat: String::new(),
+            created_at: chrono::Utc::now(),
+            session_id: session_id.into(),
+            mode: "sweborg".into(),
+            backend: String::new(),
+        };
+        let id = db.insert_task(&task).expect("insert_task");
+        Task { id, ..task }
+    }
+
+    // attempt < 3: session_id untouched, status set to retry_status
+    #[test]
+    fn test_fail_or_retry_early_attempt_preserves_session() {
+        let db = open_db();
+        let task = insert_task(&db, 1, 5, "session-abc");
+        let pipeline = make_pipeline(Arc::clone(&db));
+
+        pipeline.fail_or_retry(&task, "retry", "some error").unwrap();
+
+        let updated = db.get_task(task.id).unwrap().unwrap();
+        assert_eq!(updated.attempt, 2);
+        assert_eq!(updated.status, "retry");
+        assert_eq!(updated.session_id, "session-abc", "session must be preserved for attempt < 3");
+        assert_eq!(updated.last_error, "some error");
+    }
+
+    // attempt reaches 3: session_id cleared, error contains retry summary header
+    #[test]
+    fn test_fail_or_retry_clears_session_at_attempt_3() {
+        let db = open_db();
+        // DB stores attempt=2; after increment it becomes 3 → triggers session clear
+        let task = insert_task(&db, 2, 5, "session-xyz");
+        let pipeline = make_pipeline(Arc::clone(&db));
+
+        pipeline.fail_or_retry(&task, "retry", "latest error").unwrap();
+
+        let updated = db.get_task(task.id).unwrap().unwrap();
+        assert_eq!(updated.attempt, 3);
+        assert_eq!(updated.status, "retry");
+        assert!(updated.session_id.is_empty(), "session_id must be cleared at attempt >= 3");
+        assert!(
+            updated.last_error.contains("FRESH RETRY"),
+            "error must contain retry summary header"
+        );
+        assert!(
+            updated.last_error.contains("latest error"),
+            "latest error must appear in summary"
+        );
+    }
+
+    // attempt >= max_attempts: status set to "failed" with exact error message
+    #[test]
+    fn test_fail_or_retry_marks_failed_when_exhausted() {
+        let db = open_db();
+        // DB stores attempt=4, max_attempts=5; after increment → 5 == max_attempts
+        let task = insert_task(&db, 4, 5, "session-123");
+        let pipeline = make_pipeline(Arc::clone(&db));
+
+        pipeline.fail_or_retry(&task, "retry", "fatal error message").unwrap();
+
+        let updated = db.get_task(task.id).unwrap().unwrap();
+        assert_eq!(updated.attempt, 5);
+        assert_eq!(updated.status, "failed");
+        assert_eq!(updated.last_error, "fatal error message");
+    }
+}
