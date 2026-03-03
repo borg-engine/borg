@@ -760,7 +760,13 @@ impl Config {
             oauth_token,
             assistant_name: get_str("ASSISTANT_NAME", &dotenv, "Borg"),
             trigger_pattern: get_str("TRIGGER_PATTERN", &dotenv, "@Borg"),
-            data_dir: get_str("DATA_DIR", &dotenv, "store"),
+            data_dir: {
+                let raw = get_str("DATA_DIR", &dotenv, "store");
+                std::fs::create_dir_all(&raw).ok();
+                std::fs::canonicalize(&raw)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or(raw)
+            },
             container_image: get_str("CONTAINER_IMAGE", &dotenv, "borg-agent"),
             model: get_str("MODEL", &dotenv, "claude-sonnet-4-6"),
             credentials_path,

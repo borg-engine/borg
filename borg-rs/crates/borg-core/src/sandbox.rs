@@ -44,20 +44,20 @@ impl Sandbox {
     /// Detect the best available sandbox mode given a preference string.
     ///
     /// Preference order when `preferred` is `"auto"` or empty:
-    /// bwrap → docker → direct.
+    /// docker → bwrap → direct.
     pub async fn detect(preferred: &str) -> SandboxMode {
         if let Some(forced) = SandboxMode::from_str_or_auto(preferred) {
             return forced;
         }
-        // auto
-        if Self::bwrap_available().await {
-            info!("sandbox: bwrap detected, using namespace sandbox");
-            SandboxMode::Bwrap
-        } else if Self::docker_available().await {
-            info!("sandbox: bwrap not found, falling back to docker");
+        // auto — prefer Docker (containerised agents get their own clone)
+        if Self::docker_available().await {
+            info!("sandbox: docker detected, using container sandbox");
             SandboxMode::Docker
+        } else if Self::bwrap_available().await {
+            info!("sandbox: docker not found, falling back to bwrap");
+            SandboxMode::Bwrap
         } else {
-            warn!("sandbox: neither bwrap nor docker available, running agents directly (no isolation)");
+            warn!("sandbox: neither docker nor bwrap available, running agents directly (no isolation)");
             SandboxMode::Direct
         }
     }
@@ -95,7 +95,7 @@ impl Sandbox {
     /// Mount order (mirrors OpenAI Codex linux-sandbox/bwrap.rs):
     /// 1. `--ro-bind / /`    — read-only root filesystem
     /// 2. `--dev /dev`       — minimal device tree (null, random, urandom, tty)
-    /// 3. `--bind X X`       — per writable_dir (worktree, session dir)
+    /// 3. `--bind X X`       — per writable_dir (repo, session dir)
     /// 4. `--bind /tmp /tmp` — shared /tmp (needed by compilers, git, etc.)
     /// 5. `--unshare-pid`    — isolated PID namespace
     /// 6. `--new-session`    — setsid (detach terminal)
@@ -666,4 +666,44 @@ fn parse_docker_size(s: &str) -> Option<u64> {
         return None;
     };
     Some((num * unit as f64) as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_docker_size;
+
+    #[test]
+    fn fractional_gb() {
+        assert_eq!(parse_docker_size("1.5GB"), Some(1_500_000_000));
+    }
+
+    #[test]
+    fn integer_mb() {
+        assert_eq!(parse_docker_size("512MB"), Some(512_000_000));
+    }
+
+    #[test]
+    fn kilobytes() {
+        assert_eq!(parse_docker_size("100kB"), Some(100_000));
+    }
+
+    #[test]
+    fn bare_bytes() {
+        assert_eq!(parse_docker_size("256B"), Some(256));
+    }
+
+    #[test]
+    fn unknown_suffix_returns_none() {
+        assert_eq!(parse_docker_size("1TB"), None);
+    }
+
+    #[test]
+    fn whitespace_padded() {
+        assert_eq!(parse_docker_size("  2.0GB  "), Some(2_000_000_000));
+    }
+
+    #[test]
+    fn empty_string_returns_none() {
+        assert_eq!(parse_docker_size(""), None);
+    }
 }

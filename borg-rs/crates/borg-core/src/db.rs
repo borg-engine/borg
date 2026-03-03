@@ -78,6 +78,19 @@ pub struct ApiKeyEntry {
     pub created_at: String,
 }
 
+#[derive(serde::Serialize)]
+pub struct CitationVerification {
+    pub id: i64,
+    pub task_id: i64,
+    pub citation_text: String,
+    pub citation_type: String,
+    pub status: String,
+    pub source: String,
+    pub treatment: String,
+    pub checked_at: String,
+    pub created_at: String,
+}
+
 pub struct RegisteredGroup {
     pub jid: String,
     pub name: String,
@@ -115,6 +128,7 @@ pub struct ProjectRow {
     pub deadline: Option<String>,
     pub privilege_level: String,
     pub status: String,
+    pub default_template_id: Option<i64>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -126,6 +140,7 @@ pub struct ProjectFileRow {
     pub stored_path: String,
     pub mime_type: String,
     pub size_bytes: i64,
+    pub extracted_text: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -136,6 +151,10 @@ pub struct KnowledgeFile {
     pub description: String,
     pub size_bytes: i64,
     pub inline: bool,
+    pub tags: String,
+    pub category: String,
+    pub jurisdiction: String,
+    pub project_id: Option<i64>,
     pub created_at: String,
 }
 
@@ -146,6 +165,17 @@ pub struct ConflictHit {
     pub party_name: String,
     pub party_role: String,
     pub matched_field: String,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct AuditEvent {
+    pub id: i64,
+    pub task_id: Option<i64>,
+    pub project_id: Option<i64>,
+    pub actor: String,
+    pub kind: String,
+    pub payload: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, serde::Serialize, Clone)]
@@ -184,6 +214,22 @@ fn now_str() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
+fn row_to_knowledge(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeFile> {
+    let inline_int: i64 = row.get(4)?;
+    Ok(KnowledgeFile {
+        id: row.get(0)?,
+        file_name: row.get(1)?,
+        description: row.get(2)?,
+        size_bytes: row.get(3)?,
+        inline: inline_int != 0,
+        created_at: row.get(5)?,
+        tags: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+        category: row.get::<_, Option<String>>(7)?.unwrap_or_else(|| "general".to_string()),
+        jurisdiction: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
+        project_id: row.get::<_, Option<i64>>(9)?,
+    })
+}
+
 fn normalize_party_name(name: &str) -> String {
     let lower = name.to_lowercase();
     let stripped: String = lower
@@ -200,10 +246,13 @@ fn normalize_party_name(name: &str) -> String {
 
 const TASK_COLS: &str = "id, title, description, repo_path, branch, status, attempt, \
     max_attempts, last_error, created_by, notify_chat, created_at, \
-    session_id, mode, backend, project_id, task_type";
+    session_id, mode, backend, project_id, task_type, started_at, completed_at, duration_secs, \
+    review_status, revision_count";
 
 fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let created_at_str: String = row.get(11)?;
+    let started_at: Option<String> = row.get(17)?;
+    let completed_at: Option<String> = row.get(18)?;
     Ok(Task {
         id: row.get(0)?,
         title: row.get(1)?,
@@ -222,6 +271,11 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         backend: row.get::<_, Option<String>>(14)?.unwrap_or_default(),
         project_id: row.get::<_, Option<i64>>(15)?.unwrap_or(0),
         task_type: row.get::<_, Option<String>>(16)?.unwrap_or_default(),
+        started_at: started_at.map(|s| parse_ts(&s)),
+        completed_at: completed_at.map(|s| parse_ts(&s)),
+        duration_secs: row.get(19)?,
+        review_status: row.get(20)?,
+        revision_count: row.get::<_, Option<i64>>(21)?.unwrap_or(0),
     })
 }
 
@@ -326,10 +380,10 @@ fn row_to_legacy_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<LegacyEvent>
 }
 
 const PROJECT_COLS: &str = "id, name, mode, repo_path, client_name, case_number, jurisdiction, \
-    matter_type, opposing_counsel, deadline, privilege_level, status, created_at";
+    matter_type, opposing_counsel, deadline, privilege_level, status, default_template_id, created_at";
 
 fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectRow> {
-    let created_at_str: String = row.get(12)?;
+    let created_at_str: String = row.get(13)?;
     Ok(ProjectRow {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -343,12 +397,13 @@ fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectRow> {
         deadline: row.get(9)?,
         privilege_level: row.get(10)?,
         status: row.get(11)?,
+        default_template_id: row.get(12)?,
         created_at: parse_ts(&created_at_str),
     })
 }
 
 fn row_to_project_file(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectFileRow> {
-    let created_at_str: String = row.get(6)?;
+    let created_at_str: String = row.get(7)?;
     Ok(ProjectFileRow {
         id: row.get(0)?,
         project_id: row.get(1)?,
@@ -356,6 +411,7 @@ fn row_to_project_file(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectFileR
         stored_path: row.get(3)?,
         mime_type: row.get(4)?,
         size_bytes: row.get(5)?,
+        extracted_text: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
         created_at: parse_ts(&created_at_str),
     })
 }
@@ -400,8 +456,32 @@ impl Db {
             "ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
             "ALTER TABLE pipeline_tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE pipeline_tasks ADD COLUMN structured_data TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE pipeline_events ADD COLUMN project_id INTEGER REFERENCES projects(id)",
+            "ALTER TABLE pipeline_events ADD COLUMN actor TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE knowledge_files ADD COLUMN tags TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE knowledge_files ADD COLUMN category TEXT NOT NULL DEFAULT 'general'",
+            "ALTER TABLE knowledge_files ADD COLUMN jurisdiction TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE knowledge_files ADD COLUMN project_id INTEGER",
+            "ALTER TABLE pipeline_tasks ADD COLUMN started_at TEXT",
+            "ALTER TABLE pipeline_tasks ADD COLUMN completed_at TEXT",
+            "ALTER TABLE pipeline_tasks ADD COLUMN duration_secs INTEGER",
+            "ALTER TABLE pipeline_tasks ADD COLUMN review_status TEXT",
+            "ALTER TABLE pipeline_tasks ADD COLUMN revision_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE project_files ADD COLUMN extracted_text TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN default_template_id INTEGER",
         ];
         for sql in alters {
+            let _ = conn.execute(sql, []);
+        }
+
+        // Indexes on columns added via ALTER TABLE (can't be in SCHEMA_SQL because
+        // the column may not exist when CREATE TABLE IF NOT EXISTS is a no-op).
+        let post_alter_indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_pipeline_project ON pipeline_tasks(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_pipeline_repo_status ON pipeline_tasks(repo_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_pipeline_events_project ON pipeline_events(project_id)",
+        ];
+        for sql in post_alter_indexes {
             let _ = conn.execute(sql, []);
         }
 
@@ -548,6 +628,62 @@ impl Db {
         )
         .context("update_task_status")?;
         Ok(())
+    }
+
+    pub fn mark_task_started(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let now = now_str();
+        conn.execute(
+            "UPDATE pipeline_tasks SET started_at = COALESCE(started_at, ?1) WHERE id = ?2",
+            params![now, id],
+        )
+        .context("mark_task_started")?;
+        Ok(())
+    }
+
+    pub fn mark_task_completed(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let now = now_str();
+        conn.execute(
+            "UPDATE pipeline_tasks SET completed_at = ?1, \
+             duration_secs = CASE WHEN started_at IS NOT NULL \
+               THEN CAST((julianday(?1) - julianday(started_at)) * 86400 AS INTEGER) \
+               ELSE NULL END \
+             WHERE id = ?2",
+            params![now, id],
+        )
+        .context("mark_task_completed")?;
+        Ok(())
+    }
+
+    pub fn set_review_status(&self, id: i64, status: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "UPDATE pipeline_tasks SET review_status = ?1, updated_at = ?2 WHERE id = ?3",
+            params![status, now_str(), id],
+        )
+        .context("set_review_status")?;
+        Ok(())
+    }
+
+    pub fn increment_revision_count(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "UPDATE pipeline_tasks SET revision_count = revision_count + 1, updated_at = ?1 WHERE id = ?2",
+            params![now_str(), id],
+        )
+        .context("increment_revision_count")?;
+        Ok(())
+    }
+
+    pub fn get_task_revision_count(&self, id: i64) -> i64 {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.query_row(
+            "SELECT revision_count FROM pipeline_tasks WHERE id = ?1",
+            params![id],
+            |r: &rusqlite::Row| r.get(0),
+        )
+        .unwrap_or(0)
     }
 
     pub fn update_task_branch(&self, id: i64, branch: &str) -> Result<()> {
@@ -852,6 +988,7 @@ impl Db {
         privilege_level: Option<&str>,
         status: Option<&str>,
         repo_path: Option<&str>,
+        default_template_id: Option<Option<i64>>,
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut sets = Vec::new();
@@ -880,6 +1017,12 @@ impl Db {
         if let Some(dl) = deadline {
             sets.push(format!("deadline = ?{}", idx));
             vals.push(Box::new(dl.map(|s| s.to_string())));
+            idx += 1;
+        }
+
+        if let Some(tid) = default_template_id {
+            sets.push(format!("default_template_id = ?{}", idx));
+            vals.push(Box::new(tid));
             idx += 1;
         }
 
@@ -1125,7 +1268,7 @@ impl Db {
     pub fn list_project_files(&self, project_id: i64) -> Result<Vec<ProjectFileRow>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare(
-            "SELECT id, project_id, file_name, stored_path, mime_type, size_bytes, created_at \
+            "SELECT id, project_id, file_name, stored_path, mime_type, size_bytes, extracted_text, created_at \
              FROM project_files WHERE project_id=?1 ORDER BY id ASC",
         )?;
         let files = stmt
@@ -1142,7 +1285,7 @@ impl Db {
     ) -> Result<Option<ProjectFileRow>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.query_row(
-            "SELECT id, project_id, file_name, stored_path, mime_type, size_bytes, created_at \
+            "SELECT id, project_id, file_name, stored_path, mime_type, size_bytes, extracted_text, created_at \
              FROM project_files WHERE id=?1 AND project_id=?2",
             params![file_id, project_id],
             row_to_project_file,
@@ -1178,6 +1321,15 @@ impl Db {
         Ok(conn.last_insert_rowid())
     }
 
+    pub fn update_project_file_text(&self, file_id: i64, text: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "UPDATE project_files SET extracted_text = ?1 WHERE id = ?2",
+            params![text, file_id],
+        )?;
+        Ok(())
+    }
+
     pub fn total_project_file_bytes(&self, project_id: i64) -> Result<i64> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let total = conn
@@ -1192,50 +1344,57 @@ impl Db {
 
     // ── Knowledge files ───────────────────────────────────────────────────
 
+    pub fn total_knowledge_file_bytes(&self) -> Result<i64> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let total = conn
+            .query_row(
+                "SELECT COALESCE(SUM(size_bytes), 0) FROM knowledge_files",
+                [],
+                |r| r.get(0),
+            )
+            .context("total_knowledge_file_bytes")?;
+        Ok(total)
+    }
+
     pub fn list_knowledge_files(&self) -> Result<Vec<KnowledgeFile>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, description, size_bytes, inline, created_at \
+            "SELECT id, file_name, description, size_bytes, inline, created_at, \
+                    tags, category, jurisdiction, project_id \
              FROM knowledge_files ORDER BY created_at",
         )?;
-        let rows = stmt.query_map([], |row| {
-            let inline_int: i64 = row.get(4)?;
-            Ok(KnowledgeFile {
-                id: row.get(0)?,
-                file_name: row.get(1)?,
-                description: row.get(2)?,
-                size_bytes: row.get(3)?,
-                inline: inline_int != 0,
-                created_at: row.get(5)?,
-            })
-        })?;
+        let rows = stmt.query_map([], row_to_knowledge)?;
         let mut out = Vec::new();
-        for r in rows {
-            out.push(r?);
-        }
+        for r in rows { out.push(r?); }
         Ok(out)
     }
 
     pub fn get_knowledge_file(&self, id: i64) -> Result<Option<KnowledgeFile>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.query_row(
-            "SELECT id, file_name, description, size_bytes, inline, created_at \
+            "SELECT id, file_name, description, size_bytes, inline, created_at, \
+                    tags, category, jurisdiction, project_id \
              FROM knowledge_files WHERE id=?1",
             params![id],
-            |row| {
-                let inline_int: i64 = row.get(4)?;
-                Ok(KnowledgeFile {
-                    id: row.get(0)?,
-                    file_name: row.get(1)?,
-                    description: row.get(2)?,
-                    size_bytes: row.get(3)?,
-                    inline: inline_int != 0,
-                    created_at: row.get(5)?,
-                })
-            },
+            row_to_knowledge,
         )
         .optional()
         .context("get_knowledge_file")
+    }
+
+    pub fn list_templates(&self, category: Option<&str>, jurisdiction: Option<&str>) -> Result<Vec<KnowledgeFile>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, file_name, description, size_bytes, inline, created_at, \
+                    tags, category, jurisdiction, project_id \
+             FROM knowledge_files \
+             WHERE (?1 IS NULL OR category = ?1) AND (?2 IS NULL OR jurisdiction = ?2 OR jurisdiction = '') \
+             ORDER BY category, file_name",
+        )?;
+        let rows = stmt.query_map(params![category, jurisdiction], row_to_knowledge)?;
+        let mut out = Vec::new();
+        for r in rows { out.push(r?); }
+        Ok(out)
     }
 
     pub fn insert_knowledge_file(
@@ -1265,20 +1424,166 @@ impl Db {
         id: i64,
         description: Option<&str>,
         inline: Option<bool>,
+        tags: Option<&str>,
+        category: Option<&str>,
+        jurisdiction: Option<&str>,
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(d) = description {
-            conn.execute(
-                "UPDATE knowledge_files SET description=?1 WHERE id=?2",
-                params![d, id],
-            )?;
-        }
-        if let Some(i) = inline {
-            conn.execute(
-                "UPDATE knowledge_files SET inline=?1 WHERE id=?2",
-                params![i as i64, id],
-            )?;
-        }
+        if let Some(d) = description { conn.execute("UPDATE knowledge_files SET description=?1 WHERE id=?2", params![d, id])?; }
+        if let Some(i) = inline { conn.execute("UPDATE knowledge_files SET inline=?1 WHERE id=?2", params![i as i64, id])?; }
+        if let Some(t) = tags { conn.execute("UPDATE knowledge_files SET tags=?1 WHERE id=?2", params![t, id])?; }
+        if let Some(c) = category { conn.execute("UPDATE knowledge_files SET category=?1 WHERE id=?2", params![c, id])?; }
+        if let Some(j) = jurisdiction { conn.execute("UPDATE knowledge_files SET jurisdiction=?1 WHERE id=?2", params![j, id])?; }
+        Ok(())
+    }
+
+    // ── Embeddings ────────────────────────────────────────────────────────
+
+    pub fn upsert_embedding(
+        &self,
+        project_id: Option<i64>,
+        task_id: Option<i64>,
+        chunk_text: &str,
+        file_path: &str,
+        embedding: &[f32],
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let hash = crate::knowledge::hash_chunk(chunk_text);
+        let blob = crate::knowledge::embedding_to_bytes(embedding);
+        conn.execute(
+            "INSERT INTO embeddings (project_id, task_id, chunk_text, chunk_hash, file_path, embedding, dims) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+             ON CONFLICT(chunk_hash) DO UPDATE SET embedding = excluded.embedding",
+            params![project_id, task_id, chunk_text, hash, file_path, blob, embedding.len() as i64],
+        )
+        .context("upsert_embedding")?;
+        Ok(())
+    }
+
+    pub fn remove_task_embeddings(&self, task_id: i64) -> Result<usize> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let n = conn
+            .execute(
+                "DELETE FROM embeddings WHERE task_id = ?1",
+                params![task_id],
+            )
+            .context("remove_task_embeddings")?;
+        Ok(n)
+    }
+
+    pub fn search_embeddings(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        project_id: Option<i64>,
+    ) -> Result<Vec<crate::knowledge::EmbeddingSearchResult>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        // Cap full-table scan: fetch at most 2000 rows ordered by rowid desc (most recent first)
+        // to avoid loading the entire embedding table into RAM.
+        let cap = (limit * 20).max(2000) as i64;
+        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match project_id {
+            Some(pid) => (
+                format!("SELECT id, project_id, task_id, chunk_text, file_path, embedding FROM embeddings WHERE project_id = ?1 ORDER BY rowid DESC LIMIT {cap}"),
+                vec![Box::new(pid) as Box<dyn rusqlite::types::ToSql>],
+            ),
+            None => (
+                format!("SELECT id, project_id, task_id, chunk_text, file_path, embedding FROM embeddings ORDER BY rowid DESC LIMIT {cap}"),
+                vec![],
+            ),
+        };
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt
+            .query_map(params_refs.as_slice(), |row: &rusqlite::Row| {
+                Ok((
+                    row.get::<_, Option<i64>>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Vec<u8>>(5)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("search_embeddings query")?;
+
+        let mut results: Vec<crate::knowledge::EmbeddingSearchResult> = rows
+            .into_iter()
+            .map(|(pid, tid, text, path, blob)| {
+                let emb = crate::knowledge::bytes_to_embedding(&blob);
+                let score = crate::knowledge::cosine_similarity(query_embedding, &emb);
+                crate::knowledge::EmbeddingSearchResult {
+                    chunk_text: text,
+                    file_path: path,
+                    project_id: pid,
+                    task_id: tid,
+                    score,
+                }
+            })
+            .collect();
+
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(limit);
+        Ok(results)
+    }
+
+    pub fn embedding_count(&self) -> i64 {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.query_row("SELECT COUNT(*) FROM embeddings", [], |r: &rusqlite::Row| r.get(0))
+            .unwrap_or(0)
+    }
+
+    // ── Citation verifications ──────────────────────────────────────────
+
+    pub fn insert_citation_verification(
+        &self,
+        task_id: i64,
+        citation_text: &str,
+        citation_type: &str,
+        status: &str,
+        source: &str,
+        treatment: &str,
+        checked_at: &str,
+    ) -> Result<i64> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "INSERT INTO citation_verifications (task_id, citation_text, citation_type, status, source, treatment, checked_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![task_id, citation_text, citation_type, status, source, treatment, checked_at],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_task_citations(&self, task_id: i64) -> Result<Vec<CitationVerification>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, task_id, citation_text, citation_type, status, source, treatment, checked_at, created_at \
+             FROM citation_verifications WHERE task_id = ?1 ORDER BY id"
+        )?;
+        let rows = stmt
+            .query_map(params![task_id], |r: &rusqlite::Row| {
+                Ok(CitationVerification {
+                    id: r.get(0)?,
+                    task_id: r.get(1)?,
+                    citation_text: r.get(2)?,
+                    citation_type: r.get(3)?,
+                    status: r.get(4)?,
+                    source: r.get(5)?,
+                    treatment: r.get(6)?,
+                    checked_at: r.get::<_, Option<String>>(7)?.unwrap_or_default(),
+                    created_at: r.get::<_, String>(8)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn delete_task_citations(&self, task_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "DELETE FROM citation_verifications WHERE task_id = ?1",
+            params![task_id],
+        )?;
         Ok(())
     }
 
@@ -1305,7 +1610,7 @@ impl Db {
             [],
             |r| r.get(0),
         )
-        .unwrap_or_else(|e| { tracing::warn!("count_unscored_proposals: {e}"); 0 })
+        .unwrap_or(0)
     }
 
     pub fn list_untriaged_proposals(&self) -> Result<Vec<Proposal>> {
@@ -1617,16 +1922,50 @@ impl Db {
         kind: &str,
         payload: &serde_json::Value,
     ) -> Result<i64> {
+        self.log_event_full(task_id, repo_id, None, "", kind, payload)
+    }
+
+    pub fn log_event_full(
+        &self,
+        task_id: Option<i64>,
+        repo_id: Option<i64>,
+        project_id: Option<i64>,
+        actor: &str,
+        kind: &str,
+        payload: &serde_json::Value,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let payload_str = payload.to_string();
         let created_at = now_str();
         conn.execute(
-            "INSERT INTO pipeline_events (task_id, repo_id, kind, payload, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![task_id, repo_id, kind, payload_str, created_at],
+            "INSERT INTO pipeline_events (task_id, repo_id, project_id, actor, kind, payload, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![task_id, repo_id, project_id, actor, kind, payload_str, created_at],
         )
         .context("log_event")?;
         Ok(conn.last_insert_rowid())
+    }
+
+    pub fn list_project_events(&self, project_id: i64, limit: i64) -> Result<Vec<AuditEvent>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, task_id, project_id, actor, kind, payload, created_at \
+             FROM pipeline_events WHERE project_id = ?1 \
+             ORDER BY created_at DESC, id DESC LIMIT ?2"
+        )?;
+        let rows = stmt.query_map(params![project_id, limit], |r| {
+            let ts: String = r.get(6)?;
+            Ok(AuditEvent {
+                id: r.get(0)?,
+                task_id: r.get::<_, Option<i64>>(1)?,
+                project_id: r.get::<_, Option<i64>>(2)?,
+                actor: r.get(3)?,
+                kind: r.get(4)?,
+                payload: r.get(5)?,
+                created_at: parse_ts(&ts),
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>().context("list_project_events")?;
+        Ok(rows)
     }
 
     // ── Config ────────────────────────────────────────────────────────────
@@ -1757,7 +2096,7 @@ impl Db {
             [],
             |r| r.get(0),
         )
-        .unwrap_or_else(|e| { tracing::warn!("active_task_count: {e}"); 0 })
+        .unwrap_or(0)
     }
 
     pub fn get_recent_merged_tasks(&self, limit: i64) -> Result<Vec<Task>> {

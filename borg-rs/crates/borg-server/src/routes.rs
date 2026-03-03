@@ -13,7 +13,7 @@ use borg_core::{
     db::{Db, LegacyEvent, ProjectFileRow, ProjectRow, TaskMessage, TaskOutput},
     modes::all_modes,
     pipeline::PipelineEvent,
-    types::{PhaseConfig, PhaseContext, PipelineMode, RepoConfig, Task},
+    types::{PhaseConfig, PhaseContext, PhaseType, PipelineMode, RepoConfig, Task},
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,19 @@ use crate::AppState;
 pub(crate) fn internal(e: impl std::fmt::Display) -> StatusCode {
     tracing::error!("internal error: {e}");
     StatusCode::INTERNAL_SERVER_ERROR
+}
+
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'?' | b'&' | b'#' | b' ' | b'%' | b'+' => {
+                out.push_str(&format!("%{b:02X}"));
+            }
+            _ => out.push(b as char),
+        }
+    }
+    out
 }
 
 fn base64_decode(input: &str) -> anyhow::Result<Vec<u8>> {
@@ -88,6 +101,10 @@ pub(crate) struct ExportQuery {
     pub path: Option<String>,
     pub format: Option<String>,
     pub ref_name: Option<String>,
+    pub template_id: Option<i64>,
+    pub toc: Option<bool>,
+    pub number_sections: Option<bool>,
+    pub title_page: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -154,6 +171,7 @@ pub(crate) struct UpdateProjectBody {
     pub deadline: Option<Option<String>>,
     pub privilege_level: Option<String>,
     pub status: Option<String>,
+    pub default_template_id: Option<Option<i64>>,
 }
 
 #[derive(Deserialize)]
@@ -172,6 +190,9 @@ pub(crate) struct ConflictQuery {
 pub(crate) struct UpdateKnowledgeBody {
     pub description: Option<String>,
     pub inline: Option<bool>,
+    pub tags: Option<String>,
+    pub category: Option<String>,
+    pub jurisdiction: Option<String>,
 }
 
 // ── Serializable wrappers ─────────────────────────────────────────────────
@@ -236,6 +257,7 @@ pub(crate) struct ProjectJson {
     pub deadline: Option<String>,
     pub privilege_level: String,
     pub status: String,
+    pub default_template_id: Option<i64>,
     pub created_at: String,
 }
 
@@ -254,6 +276,7 @@ impl From<ProjectRow> for ProjectJson {
             deadline: p.deadline,
             privilege_level: p.privilege_level,
             status: p.status,
+            default_template_id: p.default_template_id,
             created_at: p.created_at.to_rfc3339(),
         }
     }
@@ -266,17 +289,22 @@ pub(crate) struct ProjectFileJson {
     pub file_name: String,
     pub mime_type: String,
     pub size_bytes: i64,
+    pub has_text: bool,
+    pub text_chars: usize,
     pub created_at: String,
 }
 
 impl From<ProjectFileRow> for ProjectFileJson {
     fn from(f: ProjectFileRow) -> Self {
+        let text_chars = f.extracted_text.len();
         Self {
             id: f.id,
             project_id: f.project_id,
             file_name: f.file_name,
             mime_type: f.mime_type,
             size_bytes: f.size_bytes,
+            has_text: text_chars > 0,
+            text_chars,
             created_at: f.created_at.to_rfc3339(),
         }
     }
@@ -430,7 +458,7 @@ fn stage_project_files(session_dir: &str, files: &[ProjectFileRow]) {
     let dest_dir = format!("{session_dir}/project_files");
     let _ = std::fs::create_dir_all(&dest_dir);
     for file in files {
-        let safe_name = std::path::Path::new(&file.file_name)
+        let safe_name = std::path::Path::new(&file.stored_path)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unnamed");
@@ -473,7 +501,11 @@ fn build_project_context(project: &ProjectRow, files: &[ProjectFileRow], session
             break;
         }
 
-        let file_path = format!("{files_dir}/{}", file.file_name);
+        let staged_name = std::path::Path::new(&file.stored_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unnamed");
+        let file_path = format!("{files_dir}/{staged_name}");
 
         if is_binary_mime(&file.mime_type) {
             let note = format!(
@@ -896,9 +928,11 @@ pub(crate) async fn create_project(
             .await;
         state
             .db
-            .update_project(id, None, None, None, None, None, None, None, None, None, Some(&repo_dir))
+            .update_project(id, None, None, None, None, None, None, None, None, None, Some(&repo_dir), None)
             .map_err(internal)?;
     }
+
+    let _ = state.db.log_event_full(None, None, Some(id), "api", "matter.created", &json!({ "name": name, "mode": mode }));
 
     let mut resp = json!({ "id": id });
     if !conflicts.is_empty() {
@@ -941,6 +975,7 @@ pub(crate) async fn update_project(
             body.privilege_level.as_deref(),
             body.status.as_deref(),
             None,
+            body.default_template_id,
         )
         .map_err(internal)?;
     let updated = state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
@@ -994,6 +1029,7 @@ pub(crate) async fn delete_project(
     if !project.repo_path.is_empty() {
         let _ = tokio::fs::remove_dir_all(&project.repo_path).await;
     }
+    let _ = state.db.log_event_full(None, None, Some(id), "api", "matter.deleted", &json!({ "name": project.name }));
     state.db.delete_project(id).map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1039,6 +1075,7 @@ pub(crate) async fn create_deadline(
         return Err(StatusCode::NOT_FOUND);
     }
     let did = state.db.insert_deadline(id, &body.label, &body.due_date, &body.rule_basis).map_err(internal)?;
+    let _ = state.db.log_event_full(None, None, Some(id), "api", "deadline.created", &json!({ "label": body.label, "due_date": body.due_date }));
     Ok(Json(json!({ "id": did })))
 }
 
@@ -1102,8 +1139,31 @@ pub(crate) struct FtsSearchQuery {
     project_id: Option<i64>,
     #[serde(default = "default_search_limit")]
     limit: i64,
+    #[serde(default)]
+    semantic: bool,
 }
 fn default_search_limit() -> i64 { 50 }
+
+// ── Audit ────────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub(crate) struct AuditQuery {
+    #[serde(default = "default_audit_limit")]
+    limit: i64,
+}
+fn default_audit_limit() -> i64 { 100 }
+
+pub(crate) async fn list_project_audit(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Query(q): Query<AuditQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.db.get_project(id).map_err(internal)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let events = state.db.list_project_events(id, q.limit).map_err(internal)?;
+    Ok(Json(json!(events)))
+}
 
 pub(crate) async fn search_documents(
     State(state): State<Arc<AppState>>,
@@ -1112,10 +1172,11 @@ pub(crate) async fn search_documents(
     if query.q.trim().is_empty() {
         return Ok(Json(json!([])));
     }
-    let results = state.db.fts_search(&query.q, query.project_id, query.limit).map_err(internal)?;
-    // Enrich with project names
+
+    // FTS5 keyword search
+    let fts_results = state.db.fts_search(&query.q, query.project_id, query.limit).map_err(internal)?;
     let mut items: Vec<Value> = Vec::new();
-    for r in results {
+    for r in &fts_results {
         let project_name = state.db.get_project(r.project_id)
             .ok()
             .flatten()
@@ -1129,8 +1190,28 @@ pub(crate) async fn search_documents(
             "title_snippet": r.title_snippet,
             "content_snippet": r.content_snippet,
             "rank": r.rank,
+            "source": "keyword",
         }));
     }
+
+    // Semantic search (when requested and embeddings exist)
+    if query.semantic && state.db.embedding_count() > 0 {
+        if let Ok(query_emb) = state.embed_client.embed_single(&query.q).await {
+            if let Ok(sem_results) = state.db.search_embeddings(&query_emb, query.limit as usize, query.project_id) {
+                for r in sem_results.iter().filter(|r| r.score > 0.5) {
+                    items.push(json!({
+                        "project_id": r.project_id,
+                        "task_id": r.task_id,
+                        "file_path": r.file_path,
+                        "content_snippet": if r.chunk_text.len() > 200 { &r.chunk_text[..200] } else { &r.chunk_text },
+                        "score": r.score,
+                        "source": "semantic",
+                    }));
+                }
+            }
+        }
+    }
+
     Ok(Json(json!(items)))
 }
 
@@ -1159,7 +1240,7 @@ async fn git_show_file(repo_path: &str, slug: &str, ref_name: &str, path: &str) 
             tokio::process::Command::new("gh")
                 .args([
                     "api",
-                    &format!("repos/{slug}/contents/{path}?ref={ref_name}"),
+                    &format!("repos/{slug}/contents/{}?ref={}", percent_encode(path), percent_encode(ref_name)),
                     "--jq",
                     ".content",
                 ])
@@ -1396,6 +1477,28 @@ pub(crate) async fn get_project_document_versions(
     Ok(Json(versions))
 }
 
+/// Clean markdown for professional export: strip internal markers, normalize formatting.
+fn preprocess_legal_markdown(md: &str) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for line in md.lines() {
+        // Strip Confidence: markers
+        if line.trim().starts_with("Confidence:") || line.trim().starts_with("**Confidence:") {
+            continue;
+        }
+        // Strip structured.json references
+        if line.contains("structured.json") || line.contains("signal.json") {
+            continue;
+        }
+        // Strip internal metadata markers
+        if line.trim().starts_with("<!-- borg:") || line.trim().starts_with("<!-- internal") {
+            continue;
+        }
+        // Convert > blockquotes to proper indentation for legal citations
+        lines.push(line.to_string());
+    }
+    lines.join("\n")
+}
+
 pub(crate) async fn export_project_document(
     State(state): State<Arc<AppState>>,
     Path((id, task_id)): Path<(i64, i64)>,
@@ -1453,69 +1556,170 @@ pub(crate) async fn export_project_document(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let project = state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
-    let md_bytes = if !project.privilege_level.is_empty() {
-        let header = format!("**PRIVILEGED AND CONFIDENTIAL — {}**\n\n---\n\n", project.privilege_level.to_uppercase());
-        let mut full = header.into_bytes();
-        full.extend_from_slice(&raw_md_bytes);
-        full
-    } else {
-        raw_md_bytes
-    };
+    let add_toc = q.toc.unwrap_or(false);
+    let number_sections = q.number_sections.unwrap_or(false);
+    let title_page = q.title_page.unwrap_or(true);
 
-    // Write markdown to a temp file
-    let tmp_dir = tempfile::tempdir().map_err(internal)?;
-    let md_path = tmp_dir.path().join("document.md");
-    let out_filename = format!(
-        "{}.{}",
-        std::path::Path::new(path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("document"),
-        format
-    );
-    let out_path = tmp_dir.path().join(&out_filename);
+    // Preprocess markdown: strip internal markers, add title page metadata
+    let raw_md = String::from_utf8_lossy(&raw_md_bytes);
+    let mut md_content = preprocess_legal_markdown(&raw_md);
 
-    tokio::fs::write(&md_path, &md_bytes).await.map_err(internal)?;
-
-    let mut cmd = tokio::process::Command::new("pandoc");
-    cmd.arg(&md_path)
-        .arg("-f").arg("markdown")
-        .arg("-o").arg(&out_path)
-        .stderr(std::process::Stdio::piped());
-
-    if format == "pdf" {
-        // Try weasyprint-style HTML→PDF first (more commonly available than xelatex)
-        cmd.arg("-t").arg("html").arg("--pdf-engine=weasyprint");
-    } else {
-        cmd.arg("-t").arg(format);
+    // Add privilege header
+    if !project.privilege_level.is_empty() {
+        md_content = format!(
+            "**PRIVILEGED AND CONFIDENTIAL — {}**\n\n---\n\n{}",
+            project.privilege_level.to_uppercase(),
+            md_content
+        );
     }
 
-    let pandoc_out = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
-        cmd.output(),
-    )
-    .await
-    .map_err(internal)?
-    .map_err(internal)?;
+    // Prepend YAML front matter for title page
+    if title_page {
+        let title_block = format!(
+            "---\ntitle: \"{}\"\n{}{}{}{}\ndate: \"{}\"\n---\n\n",
+            task.title.replace('"', "'"),
+            if !project.client_name.is_empty() { format!("subtitle: \"Prepared for {}\"\n", project.client_name.replace('"', "'")) } else { String::new() },
+            if !project.case_number.is_empty() { format!("subject: \"Case No. {}\"\n", project.case_number) } else { String::new() },
+            if !project.jurisdiction.is_empty() { format!("keywords: [\"{}\"]\n", project.jurisdiction) } else { String::new() },
+            if !project.privilege_level.is_empty() { format!("header-includes: |\n  \\fancyfoot[C]{{PRIVILEGED AND CONFIDENTIAL — {}}}\n", project.privilege_level.to_uppercase()) } else { String::new() },
+            Utc::now().format("%B %d, %Y"),
+        );
+        md_content = format!("{}{}", title_block, md_content);
+    }
 
-    // If weasyprint failed for PDF, retry with xelatex
-    if !pandoc_out.status.success() && format == "pdf" {
-        let retry = tokio::time::timeout(
+    let md_bytes = md_content.into_bytes();
+
+    // Resolve template: explicit template_id takes priority, then project default
+    let effective_template_id = q.template_id.or(project.default_template_id);
+    let template_info = if let Some(tid) = effective_template_id {
+        let kf = state.db.list_knowledge_files().map_err(internal)?;
+        kf.iter().find(|f| f.id == tid).map(|f| {
+            let p = format!("{}/knowledge/{}", state.config.data_dir, f.file_name);
+            let is_docx = f.file_name.to_lowercase().ends_with(".docx");
+            (p, is_docx)
+        })
+    } else {
+        None
+    };
+    let use_docxtemplater = format == "docx"
+        && template_info.as_ref().is_some_and(|(p, is_docx)| *is_docx && std::path::Path::new(p).exists());
+
+    let tmp_dir = tempfile::tempdir().map_err(internal)?;
+    let stem = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document");
+    let out_filename = format!("{}.{}", stem, format);
+    let out_path = tmp_dir.path().join(&out_filename);
+
+    if use_docxtemplater {
+        // Use docxtemplater to fill the .docx template
+        let (tpl_path, _) = template_info.as_ref().unwrap();
+        let fill_data = json!({
+            "title": task.title,
+            "client_name": project.client_name,
+            "case_number": project.case_number,
+            "jurisdiction": project.jurisdiction,
+            "matter_type": project.matter_type,
+            "date": Utc::now().format("%B %d, %Y").to_string(),
+            "privilege_header": if project.privilege_level.is_empty() { String::new() }
+                else { format!("PRIVILEGED AND CONFIDENTIAL — {}", project.privilege_level.to_uppercase()) },
+            "body": String::from_utf8_lossy(&md_bytes).to_string(),
+        });
+        let fill_input = json!({
+            "templatePath": tpl_path,
+            "outputPath": out_path.to_string_lossy(),
+            "data": fill_data,
+        });
+        let fill_script = format!("{}/sidecar/docx-template/fill.ts",
+            std::env::current_dir().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| ".".into()));
+        if let Ok(mut child) = tokio::process::Command::new("bun")
+            .arg("run").arg(&fill_script)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            if let Some(stdin) = child.stdin.as_mut() {
+                use tokio::io::AsyncWriteExt;
+                let _ = stdin.write_all(fill_input.to_string().as_bytes()).await;
+            }
+            match child.wait_with_output().await {
+                Ok(out) if !out.status.success() => {
+                    tracing::warn!("docxtemplater fill failed: {}", String::from_utf8_lossy(&out.stderr));
+                }
+                Err(e) => {
+                    tracing::warn!("docxtemplater process error: {e}");
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Fall back to pandoc if docxtemplater didn't produce output
+    if !out_path.exists() {
+        let md_path = tmp_dir.path().join("document.md");
+        tokio::fs::write(&md_path, &md_bytes).await.map_err(internal)?;
+
+        let mut cmd = tokio::process::Command::new("pandoc");
+        cmd.arg(&md_path)
+            .arg("-f").arg("markdown")
+            .arg("-o").arg(&out_path)
+            .stderr(std::process::Stdio::piped());
+
+        if add_toc {
+            cmd.arg("--toc").arg("--toc-depth=3");
+        }
+        if number_sections {
+            cmd.arg("--number-sections");
+        }
+
+        if format == "pdf" {
+            cmd.arg("-t").arg("html").arg("--pdf-engine=weasyprint");
+        } else {
+            cmd.arg("-t").arg(format);
+            if let Some((ref tpl, _)) = template_info {
+                if std::path::Path::new(tpl).exists() {
+                    cmd.arg("--reference-doc").arg(tpl);
+                }
+            }
+        }
+
+        let pandoc_out = tokio::time::timeout(
             std::time::Duration::from_secs(60),
-            tokio::process::Command::new("pandoc")
-                .arg(&md_path)
-                .arg("-f").arg("markdown")
-                .arg("-o").arg(&out_path)
-                .arg("--pdf-engine=xelatex")
-                .stderr(std::process::Stdio::piped())
-                .output(),
+            cmd.output(),
         )
         .await
         .map_err(internal)?
         .map_err(internal)?;
 
-        if !retry.status.success() {
-            let stderr = String::from_utf8_lossy(&retry.stderr);
+        // If weasyprint failed for PDF, retry with xelatex
+        if !pandoc_out.status.success() && format == "pdf" {
+            let retry = tokio::time::timeout(
+                std::time::Duration::from_secs(60),
+                tokio::process::Command::new("pandoc")
+                    .arg(&md_path)
+                    .arg("-f").arg("markdown")
+                    .arg("-o").arg(&out_path)
+                    .arg("--pdf-engine=xelatex")
+                    .stderr(std::process::Stdio::piped())
+                    .output(),
+            )
+            .await
+            .map_err(internal)?
+            .map_err(internal)?;
+
+            if !retry.status.success() {
+                let stderr = String::from_utf8_lossy(&retry.stderr);
+                tracing::warn!("pandoc export failed: {stderr}");
+                return Ok(axum::response::Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .header("content-type", "text/plain")
+                    .body(axum::body::Body::from(format!("pandoc failed: {stderr}")))
+                    .unwrap());
+            }
+        } else if !pandoc_out.status.success() {
+            let stderr = String::from_utf8_lossy(&pandoc_out.stderr);
             tracing::warn!("pandoc export failed: {stderr}");
             return Ok(axum::response::Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1523,15 +1727,7 @@ pub(crate) async fn export_project_document(
                 .body(axum::body::Body::from(format!("pandoc failed: {stderr}")))
                 .unwrap());
         }
-    } else if !pandoc_out.status.success() {
-        let stderr = String::from_utf8_lossy(&pandoc_out.stderr);
-        tracing::warn!("pandoc export failed: {stderr}");
-        return Ok(axum::response::Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .header("content-type", "text/plain")
-            .body(axum::body::Body::from(format!("pandoc failed: {stderr}")))
-            .unwrap());
-    }
+    } // end pandoc fallback
 
     let file_bytes = tokio::fs::read(&out_path).await.map_err(internal)?;
 
@@ -1548,6 +1744,169 @@ pub(crate) async fn export_project_document(
             format!("attachment; filename=\"{out_filename}\""),
         )
         .body(axum::body::Body::from(file_bytes))
+        .unwrap())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ExportAllQuery {
+    pub format: Option<String>,
+    pub toc: Option<bool>,
+    pub template_id: Option<i64>,
+}
+
+pub(crate) async fn export_all_project_documents(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Query(q): Query<ExportAllQuery>,
+) -> Result<axum::response::Response, StatusCode> {
+    let project = state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
+    let tasks = state.db.list_project_tasks(id).map_err(internal)?;
+    let format = q.format.as_deref().unwrap_or("docx");
+    if format != "pdf" && format != "docx" {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let tmp_dir = tempfile::tempdir().map_err(internal)?;
+    let mut file_entries: Vec<(String, Vec<u8>)> = Vec::new();
+
+    let effective_tid = q.template_id.or(project.default_template_id);
+    let template_info = effective_tid.and_then(|tid| {
+        state.db.list_knowledge_files().ok().and_then(|kf| {
+            kf.iter().find(|f| f.id == tid).map(|f| {
+                let p = format!("{}/knowledge/{}", state.config.data_dir, f.file_name);
+                let is_docx = f.file_name.to_lowercase().ends_with(".docx");
+                (p, is_docx)
+            })
+        })
+    });
+    let use_docxtemplater = format == "docx"
+        && template_info.as_ref().is_some_and(|(p, is_docx)| *is_docx && std::path::Path::new(p).exists());
+    let fill_script = format!("{}/sidecar/docx-template/fill.ts",
+        std::env::current_dir().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| ".".into()));
+
+    for task in &tasks {
+        if task.branch.is_empty() { continue; }
+        let slug = state.config.watched_repos.iter()
+            .find(|r| r.path == task.repo_path)
+            .map(|r| r.repo_slug.as_str()).unwrap_or("");
+
+        for doc_path in &["research.md", "analysis.md", "review_notes.md"] {
+            let raw_bytes = match git_show_file(&task.repo_path, slug, &task.branch, doc_path).await {
+                Some(b) if !b.is_empty() => b,
+                _ => continue,
+            };
+
+            let raw_md = String::from_utf8_lossy(&raw_bytes);
+            let mut md_content = preprocess_legal_markdown(&raw_md);
+            if !project.privilege_level.is_empty() {
+                md_content = format!(
+                    "**PRIVILEGED AND CONFIDENTIAL — {}**\n\n---\n\n{}",
+                    project.privilege_level.to_uppercase(), md_content
+                );
+            }
+
+            let safe_title = task.title.chars()
+                .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
+                .collect::<String>()
+                .trim().to_string();
+            let stem = std::path::Path::new(doc_path).file_stem()
+                .and_then(|s| s.to_str()).unwrap_or("doc");
+            let out_name = format!("{}-{}.{}", safe_title, stem, format);
+            let md_path = tmp_dir.path().join(format!("src-{}-{}.md", task.id, stem));
+            let out_path = tmp_dir.path().join(&out_name);
+
+            let mut produced = false;
+
+            if use_docxtemplater {
+                let (tpl_path, _) = template_info.as_ref().unwrap();
+                let fill_input = json!({
+                    "templatePath": tpl_path,
+                    "outputPath": out_path.to_string_lossy(),
+                    "data": {
+                        "title": task.title,
+                        "client_name": project.client_name,
+                        "case_number": project.case_number,
+                        "jurisdiction": project.jurisdiction,
+                        "date": Utc::now().format("%B %d, %Y").to_string(),
+                        "body": md_content,
+                    },
+                });
+                if let Ok(mut child) = tokio::process::Command::new("bun")
+                    .arg("run").arg(&fill_script)
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        use tokio::io::AsyncWriteExt;
+                        let _ = stdin.write_all(fill_input.to_string().as_bytes()).await;
+                    }
+                    if let Ok(out) = child.wait_with_output().await {
+                        if out.status.success() && out_path.exists() {
+                            produced = true;
+                        }
+                    }
+                }
+            }
+
+            if !produced {
+                tokio::fs::write(&md_path, md_content.as_bytes()).await.map_err(internal)?;
+                let mut cmd = tokio::process::Command::new("pandoc");
+                cmd.arg(&md_path).arg("-f").arg("markdown").arg("-o").arg(&out_path)
+                    .stderr(std::process::Stdio::piped());
+                if q.toc.unwrap_or(false) {
+                    cmd.arg("--toc").arg("--toc-depth=3");
+                }
+                if format == "pdf" {
+                    cmd.arg("-t").arg("html").arg("--pdf-engine=weasyprint");
+                } else {
+                    cmd.arg("-t").arg("docx");
+                    if let Some((ref tpl, _)) = template_info {
+                        if std::path::Path::new(tpl).exists() {
+                            cmd.arg("--reference-doc").arg(tpl);
+                        }
+                    }
+                }
+                let out = tokio::time::timeout(std::time::Duration::from_secs(60), cmd.output())
+                    .await.map_err(internal)?.map_err(internal)?;
+                produced = out.status.success();
+            }
+
+            if produced {
+                if let Ok(bytes) = tokio::fs::read(&out_path).await {
+                    file_entries.push((out_name, bytes));
+                }
+            }
+        }
+    }
+
+    if file_entries.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Build ZIP archive
+    let zip_path = tmp_dir.path().join("export.zip");
+    let zip_file = std::fs::File::create(&zip_path).map_err(internal)?;
+    let mut zip = zip::ZipWriter::new(zip_file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (name, bytes) in &file_entries {
+        zip.start_file(name, options).map_err(internal)?;
+        use std::io::Write;
+        zip.write_all(bytes).map_err(internal)?;
+    }
+    zip.finish().map_err(internal)?;
+
+    let zip_bytes = tokio::fs::read(&zip_path).await.map_err(internal)?;
+    let filename = format!("{}-export.zip", project.name.chars()
+        .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
+        .collect::<String>().trim().to_string());
+
+    Ok(axum::response::Response::builder()
+        .header("content-type", "application/zip")
+        .header("content-disposition", format!("attachment; filename=\"{filename}\""))
+        .body(axum::body::Body::from(zip_bytes))
         .unwrap())
 }
 
@@ -1679,7 +2038,87 @@ pub(crate) async fn upload_project_files(
         }
     }
 
+    // Extract text from uploaded files in background
+    let db = state.db.clone();
+    let project_id = id;
+    tokio::spawn(async move {
+        for file in db.list_project_files(project_id).unwrap_or_default() {
+            if !file.extracted_text.is_empty() { continue; }
+            if let Ok(text) = extract_text(&file.stored_path, &file.mime_type).await {
+                if !text.is_empty() {
+                    let _ = db.update_project_file_text(file.id, &text);
+                    let _ = db.fts_index_document(project_id, 0, &file.file_name, &file.file_name, &text);
+                    tracing::info!("extracted {} chars from {}", text.len(), file.file_name);
+                }
+            }
+        }
+    });
+
     Ok(Json(json!({ "uploaded": uploaded })))
+}
+
+async fn extract_text(path: &str, mime: &str) -> Result<String, StatusCode> {
+    let path = path.to_string();
+    let mime = mime.to_string();
+    let text = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+        let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+        let is_pdf = mime.contains("pdf") || ext == "pdf";
+        let is_docx = mime.contains("wordprocessingml") || mime.contains("msword")
+            || ext == "docx" || ext == "doc";
+        let is_text = mime.starts_with("text/") || ext == "txt" || ext == "md"
+            || ext == "csv" || ext == "json" || ext == "xml";
+
+        if is_pdf {
+            let out = std::process::Command::new("pdftotext")
+                .args(["-layout", &path, "-"])
+                .output()?;
+            Ok(String::from_utf8_lossy(&out.stdout).to_string())
+        } else if is_docx {
+            let out = std::process::Command::new("pandoc")
+                .args([&path, "-t", "plain", "--wrap=none"])
+                .output()?;
+            Ok(String::from_utf8_lossy(&out.stdout).to_string())
+        } else if is_text {
+            let content = std::fs::read_to_string(&path)?;
+            Ok(content)
+        } else {
+            Ok(String::new())
+        }
+    }).await.map_err(internal)?.map_err(internal)?;
+    Ok(text)
+}
+
+pub(crate) async fn get_project_file_text(
+    State(state): State<Arc<AppState>>,
+    Path((project_id, file_id)): Path<(i64, i64)>,
+) -> Result<Json<Value>, StatusCode> {
+    let file = state.db.get_project_file(project_id, file_id).map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(json!({
+        "id": file.id,
+        "file_name": file.file_name,
+        "extracted_text": file.extracted_text,
+        "has_text": !file.extracted_text.is_empty(),
+    })))
+}
+
+pub(crate) async fn reextract_project_file(
+    State(state): State<Arc<AppState>>,
+    Path((project_id, file_id)): Path<(i64, i64)>,
+) -> Result<Json<Value>, StatusCode> {
+    let file = state.db.get_project_file(project_id, file_id).map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let text = extract_text(&file.stored_path, &file.mime_type).await?;
+    if !text.is_empty() {
+        state.db.update_project_file_text(file_id, &text).map_err(internal)?;
+        state.db.fts_index_document(project_id, 0, &file.file_name, &file.file_name, &text)
+            .map_err(internal)?;
+    }
+    Ok(Json(json!({
+        "id": file_id,
+        "extracted_text_chars": text.len(),
+        "has_text": !text.is_empty(),
+    })))
 }
 
 // Tasks
@@ -1758,254 +2197,11 @@ pub(crate) async fn create_task(
         backend: String::new(),
         project_id: body.project_id.unwrap_or(0),
         task_type: body.task_type.unwrap_or_default(),
-    };
-    let id = state.db.insert_task(&task).map_err(internal)?;
-    Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
-}
-
-pub(crate) async fn patch_task(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<i64>,
-    Json(body): Json<PatchTaskBody>,
-) -> Result<StatusCode, StatusCode> {
-    let task = state.db.get_task(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
-    let title = body.title.as_deref().unwrap_or(&task.title);
-    let desc = body.description.as_deref().unwrap_or(&task.description);
-    state.db.update_task_description(id, title, desc).map_err(internal)?;
-    Ok(StatusCode::OK)
-}
-
-pub(crate) async fn retry_task(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<i64>,
-) -> Result<StatusCode, StatusCode> {
-    match state.db.get_task(id).map_err(internal)? {
-        None => Err(StatusCode::NOT_FOUND),
-        Some(_) => {
-            state.db.requeue_task(id).map_err(internal)?;
-            Ok(StatusCode::OK)
-        },
-    }
-}
-
-pub(crate) async fn retry_all_failed(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, StatusCode> {
-    const MAX_RETRY_BATCH: usize = 20;
-    let tasks = state.db.list_all_tasks(None).map_err(internal)?;
-    let mut count = 0;
-    for task in &tasks {
-        if task.status == "failed" {
-            if count >= MAX_RETRY_BATCH {
-                break;
-            }
-            state.db.requeue_task(task.id).map_err(internal)?;
-            count += 1;
-        }
-    }
-    Ok(Json(json!({ "requeued": count })))
-}
-
-// Unblock a blocked task
-
-#[derive(Deserialize)]
-pub(crate) struct UnblockBody {
-    pub response: String,
-}
-
-pub(crate) async fn unblock_task(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<i64>,
-    Json(body): Json<UnblockBody>,
-) -> Result<StatusCode, StatusCode> {
-    match state.db.get_task(id).map_err(internal)? {
-        None => Err(StatusCode::NOT_FOUND),
-        Some(task) if task.status != "blocked" => Err(StatusCode::CONFLICT),
-        Some(task) => {
-            state
-                .db
-                .insert_task_message(id, "user", &body.response)
-                .map_err(internal)?;
-            let next_phase = borg_core::modes::get_mode(&task.mode)
-                .map(|m| {
-                    m.phases.iter()
-                        .find(|p| p.phase_type == borg_core::types::PhaseType::Agent)
-                        .map(|p| p.name.clone())
-                        .unwrap_or_else(|| "implement".to_string())
-                })
-                .unwrap_or_else(|| "implement".to_string());
-            state
-                .db
-                .update_task_status(id, &next_phase, None)
-                .map_err(internal)?;
-            Ok(StatusCode::OK)
-        },
-    }
-}
-
-// Task messages
-
-pub(crate) async fn get_task_messages(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<i64>,
-) -> Result<Json<Value>, StatusCode> {
-    match state.db.get_task(id).map_err(internal)? {
-        None => Err(StatusCode::NOT_FOUND),
-        Some(_) => {
-            let messages = state.db.get_task_messages(id).map_err(internal)?;
-            let messages_json: Vec<TaskMessageJson> =
-                messages.into_iter().map(TaskMessageJson::from).collect();
-            Ok(Json(json!({ "messages": messages_json })))
-        },
-    }
-}
-
-pub(crate) async fn post_task_message(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<i64>,
-    Json(body): Json<CreateMessageBody>,
-) -> Result<StatusCode, StatusCode> {
-    match state.db.get_task(id).map_err(internal)? {
-        None => Err(StatusCode::NOT_FOUND),
-        Some(_) => {
-            if body.role != "user" && body.role != "system" {
-                return Err(StatusCode::BAD_REQUEST);
-            }
-            state
-                .db
-                .insert_task_message(id, &body.role, &body.content)
-                .map_err(internal)?;
-            let _ = state.pipeline_event_tx.send(PipelineEvent::Output {
-                task_id: Some(id),
-                message: body.content.clone(),
-            });
-            Ok(StatusCode::CREATED)
-        },
-    }
-}
-
-// Queue
-
-pub(crate) async fn list_queue(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, StatusCode> {
-    let entries = state.db.list_queue().map_err(internal)?;
-    Ok(Json(json!(entries)))
-}
-
-// Status
-
-pub(crate) async fn get_status(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, StatusCode> {
-    let uptime_s = state.start_time.elapsed().as_secs();
-
-    let watched_repos: Vec<Value> = state.config.watched_repos
-        .iter()
-        .map(|r| {
-            json!({
-                "path": r.path,
-                "test_cmd": r.test_cmd,
-                "is_self": r.is_self,
-                "auto_merge": r.auto_merge,
-                "mode": r.mode,
-            })
-        })
-        .collect();
-
-    let (active, merged, failed, total) = state.db.task_stats().map_err(internal)?;
-
-    let model = state
-        .db
-        .get_config("model")
-        .map_err(internal)?
-        .unwrap_or_else(|| "claude-sonnet-4-6".into());
-
-    let release_interval_mins: i64 = state
-        .db
-        .get_config("release_interval_mins")
-        .map_err(internal)?
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(180);
-
-    let continuous_mode: bool = state
-        .db
-        .get_config("continuous_mode")
-        .map_err(internal)?
-        .map(|v| v == "true")
-        .unwrap_or(false);
-
-    let assistant_name = state
-        .db
-        .get_config("assistant_name")
-        .map_err(internal)?
-        .unwrap_or_else(|| "Borg".into());
-
-    Ok(Json(json!({
-        "version": env!("CARGO_PKG_VERSION"),
-        "uptime_s": uptime_s,
-        "model": model,
-        "watched_repos": watched_repos,
-        "release_interval_mins": release_interval_mins,
-        "continuous_mode": continuous_mode,
-        "assistant_name": assistant_name,
-        "active_tasks": active,
-        "merged_tasks": merged,
-        "failed_tasks": failed,
-        "total_tasks": total,
-        "dispatched_agents": 0,
-    })))
-}
-
-// Proposals
-
-pub(crate) async fn list_proposals(
-    State(state): State<Arc<AppState>>,
-    Query(q): Query<RepoQuery>,
-) -> Result<Json<Value>, StatusCode> {
-    let proposals = state
-        .db
-        .list_all_proposals(q.repo.as_deref())
-        .map_err(internal)?;
-    Ok(Json(json!(proposals)))
-}
-
-pub(crate) async fn approve_proposal(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<i64>,
-) -> Result<Json<Value>, StatusCode> {
-    let proposal = state
-        .db
-        .get_proposal(id)
-        .map_err(internal)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    state
-        .db
-        .update_proposal_status(id, "approved")
-        .map_err(internal)?;
-
-    let task = Task {
-        id: 0,
-        title: proposal.title.clone(),
-        description: proposal.description.clone(),
-        repo_path: proposal.repo_path.clone(),
-        branch: String::new(),
-        status: "backlog".into(),
-        attempt: 0,
-        max_attempts: 5,
-        last_error: String::new(),
-        created_by: "proposal".into(),
-        notify_chat: String::new(),
-        created_at: Utc::now(),
-        session_id: String::new(),
-        mode: state.config.watched_repos.iter()
-            .find(|r| r.path == proposal.repo_path)
-            .map(|r| r.mode.clone())
-            .unwrap_or_else(|| "sweborg".into()),
-        backend: String::new(),
-        project_id: 0,
-        task_type: String::new(),
+        started_at: None,
+        completed_at: None,
+        duration_secs: None,
+        review_status: None,
+        revision_count: 0,
     };
     let task_id = state.db.insert_task(&task).map_err(internal)?;
     Ok(Json(json!({ "task_id": task_id })))
@@ -2099,6 +2295,11 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 backend: String::new(),
                 project_id: 0,
                 task_type: String::new(),
+                started_at: None,
+                completed_at: None,
+                duration_secs: None,
+        review_status: None,
+        revision_count: 0,
             };
 
             let phase = PhaseConfig {
@@ -2125,7 +2326,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 },
                 data_dir: state.config.data_dir.clone(),
                 session_dir: format!("{}/sessions/triage-{}", state.config.data_dir, proposal.id),
-                worktree_path: proposal.repo_path.clone(),
+                work_dir: proposal.repo_path.clone(),
                 oauth_token: oauth.clone(),
                 model: model.clone(),
                 pending_messages: Vec::new(),
@@ -2138,6 +2339,8 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 knowledge_files: Vec::new(),
                 knowledge_dir: String::new(),
                 agent_network: None,
+                prior_research: Vec::new(),
+                revision_count: 0,
             };
 
             tokio::fs::create_dir_all(&ctx.session_dir).await.ok();
@@ -2820,12 +3023,16 @@ pub(crate) async fn upload_knowledge(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> Result<Json<Value>, StatusCode> {
+    const MAX_KNOWLEDGE_FILE_BYTES: i64 = 50 * 1024 * 1024;
+    const MAX_KNOWLEDGE_TOTAL_BYTES: i64 = 1024 * 1024 * 1024;
+
     let knowledge_dir = format!("{}/knowledge", state.config.data_dir);
     std::fs::create_dir_all(&knowledge_dir).map_err(internal)?;
 
     let mut file_name = String::new();
     let mut description = String::new();
     let mut inline = false;
+    let mut category = String::new();
     let mut file_bytes: Vec<u8> = Vec::new();
 
     while let Some(field) = multipart.next_field().await.map_err(|_| StatusCode::BAD_REQUEST)? {
@@ -2843,6 +3050,9 @@ pub(crate) async fn upload_knowledge(
                 let v = field.text().await.unwrap_or_default();
                 inline = v == "true" || v == "1";
             },
+            Some("category") => {
+                category = field.text().await.unwrap_or_default();
+            },
             _ => {},
         }
     }
@@ -2851,13 +3061,29 @@ pub(crate) async fn upload_knowledge(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    let file_size = file_bytes.len() as i64;
+    if file_size > MAX_KNOWLEDGE_FILE_BYTES {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    let total_bytes = state.db.total_knowledge_file_bytes().map_err(internal)?;
+    if total_bytes + file_size > MAX_KNOWLEDGE_TOTAL_BYTES {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
     let dest = format!("{knowledge_dir}/{file_name}");
+    if std::path::Path::new(&dest).exists() {
+        return Err(StatusCode::CONFLICT);
+    }
     std::fs::write(&dest, &file_bytes).map_err(internal)?;
 
     let id = state
         .db
         .insert_knowledge_file(&file_name, &description, file_bytes.len() as i64, inline)
         .map_err(internal)?;
+    if !category.is_empty() {
+        let _ = state.db.update_knowledge_file(id, None, None, None, Some(&category), None);
+    }
 
     Ok(Json(json!({ "id": id, "file_name": file_name })))
 }
@@ -2869,7 +3095,7 @@ pub(crate) async fn update_knowledge(
 ) -> Result<Json<Value>, StatusCode> {
     state
         .db
-        .update_knowledge_file(id, body.description.as_deref(), body.inline)
+        .update_knowledge_file(id, body.description.as_deref(), body.inline, body.tags.as_deref(), body.category.as_deref(), body.jurisdiction.as_deref())
         .map_err(internal)?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -2885,6 +3111,20 @@ pub(crate) async fn delete_knowledge(
     }
     state.db.delete_knowledge_file(id).map_err(internal)?;
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct TemplatesQuery {
+    category: Option<String>,
+    jurisdiction: Option<String>,
+}
+
+pub(crate) async fn list_templates(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<TemplatesQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    let templates = state.db.list_templates(q.category.as_deref(), q.jurisdiction.as_deref()).map_err(internal)?;
+    Ok(Json(json!(templates)))
 }
 
 pub(crate) async fn get_knowledge_content(
@@ -2934,6 +3174,63 @@ async fn container_id_from_stream(state: &AppState, task_id: i64) -> Option<Stri
     None
 }
 
+#[cfg(test)]
+mod tests {
+    use super::percent_encode;
+
+    #[test]
+    fn percent_encode_safe_chars_unchanged() {
+        assert_eq!(percent_encode("src/main.rs"), "src/main.rs");
+        assert_eq!(percent_encode("refs/heads/my-branch"), "refs/heads/my-branch");
+        assert_eq!(percent_encode("abc123_.-~"), "abc123_.-~");
+    }
+
+    #[test]
+    fn percent_encode_question_mark() {
+        assert_eq!(percent_encode("file?raw=1"), "file%3Fraw=1");
+    }
+
+    #[test]
+    fn percent_encode_ampersand() {
+        assert_eq!(percent_encode("a&b"), "a%26b");
+    }
+
+    #[test]
+    fn percent_encode_hash() {
+        assert_eq!(percent_encode("file#section"), "file%23section");
+    }
+
+    #[test]
+    fn percent_encode_space() {
+        assert_eq!(percent_encode("my file.txt"), "my%20file.txt");
+    }
+
+    #[test]
+    fn percent_encode_percent() {
+        assert_eq!(percent_encode("50%off"), "50%25off");
+    }
+
+    #[test]
+    fn percent_encode_plus() {
+        assert_eq!(percent_encode("a+b"), "a%2Bb");
+    }
+
+    #[test]
+    fn percent_encode_url_construction() {
+        let path = "file?raw=1";
+        let ref_name = "branch&extra=1";
+        let url = format!("repos/owner/repo/contents/{}?ref={}", percent_encode(path), percent_encode(ref_name));
+        assert_eq!(url, "repos/owner/repo/contents/file%3Fraw=1?ref=branch%26extra=1");
+    }
+
+    #[test]
+    fn percent_encode_ref_with_hash() {
+        let ref_name = "sha#abc";
+        let url = format!("repos/owner/repo/contents/file?ref={}", percent_encode(ref_name));
+        assert_eq!(url, "repos/owner/repo/contents/file?ref=sha%23abc");
+    }
+}
+
 pub(crate) async fn get_task_container(
     State(state): State<Arc<AppState>>,
     Path(task_id): Path<i64>,
@@ -2954,6 +3251,142 @@ pub(crate) async fn get_task_container(
             Ok(Json(json!({ "task_id": task_id, "container_id": id, "status": status })))
         },
         None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_upload_name_basic() {
+        assert_eq!(sanitize_upload_name("hello.txt"), "hello.txt");
+        assert_eq!(sanitize_upload_name("my file.pdf"), "my_file.pdf");
+        assert_eq!(sanitize_upload_name("../../../etc/passwd"), "passwd");
+        assert_eq!(sanitize_upload_name(""), "upload.bin");
+    }
+
+    #[test]
+    fn test_sanitize_upload_name_strips_leading_dots() {
+        assert_eq!(sanitize_upload_name("..."), "upload.bin");
+        assert_eq!(sanitize_upload_name(".hidden"), "hidden");
+    }
+
+    #[test]
+    fn test_duplicate_upload_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest = dir.path().join("report.pdf");
+
+        // First upload: file does not exist yet
+        assert!(!dest.exists());
+
+        // Write to simulate first upload succeeding
+        std::fs::write(&dest, b"first content").expect("write");
+        assert!(dest.exists());
+
+        // Second upload: file already exists — should be rejected
+        assert!(dest.exists(), "conflict check: file exists, 409 must fire");
+    }
+
+    #[test]
+    fn test_different_name_no_conflict() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest_a = dir.path().join("report_a.pdf");
+        let dest_b = dir.path().join("report_b.pdf");
+
+        std::fs::write(&dest_a, b"content a").expect("write a");
+
+        // Different name — no conflict
+        assert!(!dest_b.exists());
+    }
+
+    #[test]
+    fn test_safe_knowledge_path_traversal_contained() {
+        let data_dir = "/tmp/borg-test-data";
+        // Even with .. in path, file_name() strips components and result stays inside knowledge/
+        let p = safe_knowledge_path(data_dir, "../secrets.txt").expect("some");
+        assert!(p.starts_with("/tmp/borg-test-data/knowledge"));
+        let p2 = safe_knowledge_path(data_dir, "../../etc/passwd").expect("some");
+        assert!(p2.starts_with("/tmp/borg-test-data/knowledge"));
+    }
+
+    #[test]
+    fn test_safe_knowledge_path_pure_dotdot_is_none() {
+        let data_dir = "/tmp/borg-test-data";
+        // Path ending in ".." has no file_name component → None
+        assert!(safe_knowledge_path(data_dir, "subdir/..").is_none());
+    }
+
+    #[test]
+    fn test_safe_knowledge_path_valid() {
+        let data_dir = "/tmp/borg-test-data";
+        let path = safe_knowledge_path(data_dir, "report.pdf");
+        assert!(path.is_some());
+        let p = path.unwrap();
+        assert!(p.to_string_lossy().ends_with("knowledge/report.pdf"));
+    use chrono::Utc;
+
+    fn make_file(file_name: &str, stored_path: &str) -> ProjectFileRow {
+        ProjectFileRow {
+            id: 1,
+            project_id: 1,
+            file_name: file_name.to_string(),
+            stored_path: stored_path.to_string(),
+            mime_type: "text/plain".to_string(),
+            size_bytes: 0,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn stage_project_files_uses_stored_path_basename() {
+        let dir = tempfile::tempdir().unwrap();
+        let session_dir = dir.path().to_str().unwrap();
+
+        // Two source files with different content but same display file_name
+        let src1 = dir.path().join("1700000001_aaa_report.pdf");
+        let src2 = dir.path().join("1700000002_bbb_report.pdf");
+        std::fs::write(&src1, b"content-one").unwrap();
+        std::fs::write(&src2, b"content-two").unwrap();
+
+        let files = vec![
+            make_file("report.pdf", src1.to_str().unwrap()),
+            make_file("report.pdf", src2.to_str().unwrap()),
+        ];
+
+        stage_project_files(session_dir, &files);
+
+        let dest_dir = dir.path().join("project_files");
+        let staged1 = std::fs::read(dest_dir.join("1700000001_aaa_report.pdf")).unwrap();
+        let staged2 = std::fs::read(dest_dir.join("1700000002_bbb_report.pdf")).unwrap();
+        assert_eq!(staged1, b"content-one");
+        assert_eq!(staged2, b"content-two");
+    }
+
+    #[test]
+    fn stage_project_files_unique_names_no_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let session_dir = dir.path().to_str().unwrap();
+
+        let src1 = dir.path().join("1700000001_aaa_doc.txt");
+        let src2 = dir.path().join("1700000002_bbb_doc.txt");
+        std::fs::write(&src1, b"first").unwrap();
+        std::fs::write(&src2, b"second").unwrap();
+
+        let files = vec![
+            make_file("doc.txt", src1.to_str().unwrap()),
+            make_file("doc.txt", src2.to_str().unwrap()),
+        ];
+
+        stage_project_files(session_dir, &files);
+
+        let dest_dir = dir.path().join("project_files");
+        let entries: Vec<_> = std::fs::read_dir(&dest_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        // Both files must be present — no collision
+        assert_eq!(entries.len(), 2);
     }
 }
 

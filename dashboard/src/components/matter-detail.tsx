@@ -4,6 +4,7 @@ import {
   useProjectTasks,
   useProjectDocuments,
   useProjectDeadlines,
+  useProjectAudit,
   useUpdateProject,
   useDeleteProject,
   useTaskStream,
@@ -25,7 +26,8 @@ import { BorgingIndicator } from "./borging";
 import { ChatMarkdown } from "./chat-markdown";
 import { useDictation } from "@/lib/dictation";
 import { cn } from "@/lib/utils";
-import { retryTask, patchTask } from "@/lib/api";
+import { retryTask, patchTask, approveTask, rejectTask, requestRevision, getRevisionHistory, useFullModes, useTemplates } from "@/lib/api";
+import type { RevisionHistory } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ChevronDown, ChevronUp, Edit2, Check, X, FileText, RotateCcw, Mic, MicOff, Trash2 } from "lucide-react";
 
@@ -196,10 +198,53 @@ function fmtDateTime(ts: string): string {
   }
 }
 
+function formatDuration(secs: number): string {
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
+}
+
 // ── Matter header ─────────────────────────────────────────────────────────────
 
 function MatterHeader({ project, onDelete }: { project: Project; onDelete?: () => void }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [exportingAll, setExportingAll] = useState(false);
+  const [exportMenu, setExportMenu] = useState(false);
+  const [exportTemplateId, setExportTemplateId] = useState<number | null>(project.default_template_id ?? null);
+  const { data: templates = [] } = useTemplates("template");
+
+  async function exportAll(format: "pdf" | "docx") {
+    setExportMenu(false);
+    setExportingAll(true);
+    try {
+      const { apiBase, authHeaders, tokenReady } = await import("@/lib/api");
+      await tokenReady;
+      const params = new URLSearchParams({ format, toc: "true" });
+      if (exportTemplateId) params.set("template_id", String(exportTemplateId));
+      const res = await fetch(`${apiBase()}/api/projects/${project.id}/export-all?${params}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        alert(`Export failed: ${await res.text()}`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.name.replace(/[^a-zA-Z0-9 -]/g, "").trim()}-export.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingAll(false);
+    }
+  }
+
   return (
     <div className="border-b border-white/[0.06] px-5 py-3">
       <div className="flex items-start gap-3">
@@ -237,19 +282,56 @@ function MatterHeader({ project, onDelete }: { project: Project; onDelete?: () =
             )}
           </div>
         </div>
-        {onDelete && (
-          confirmDelete ? (
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-[10px] text-red-400">Delete?</span>
-              <button onClick={onDelete} className="rounded px-1.5 py-0.5 text-[10px] bg-red-500/20 text-red-400 hover:bg-red-500/30">Yes</button>
-              <button onClick={() => setConfirmDelete(false)} className="rounded px-1.5 py-0.5 text-[10px] bg-zinc-700 text-zinc-400 hover:bg-zinc-600">No</button>
-            </div>
-          ) : (
-            <button onClick={() => setConfirmDelete(true)} className="shrink-0 rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-500/10" title="Delete matter">
-              <Trash2 size={14} />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="relative">
+            <button
+              onClick={() => setExportMenu(v => !v)}
+              disabled={exportingAll}
+              className="rounded border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 hover:border-blue-500/30 hover:text-blue-400 transition-colors disabled:opacity-50"
+              title="Export all documents"
+            >
+              {exportingAll ? "Exporting..." : "Export All"}
             </button>
-          )
-        )}
+            {exportMenu && (
+              <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded border border-white/[0.1] bg-zinc-900 shadow-xl">
+                {templates.length > 0 && (
+                  <div className="border-b border-white/[0.06] px-3 py-2">
+                    <label className="text-[9px] text-zinc-500 block mb-0.5">Template</label>
+                    <select
+                      value={exportTemplateId ?? ""}
+                      onChange={(e) => setExportTemplateId(e.target.value ? Number(e.target.value) : null)}
+                      className="w-full rounded border border-white/[0.08] bg-zinc-800 px-1.5 py-1 text-[10px] text-zinc-300 outline-none"
+                    >
+                      <option value="">None (default)</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>{t.file_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <button onClick={() => exportAll("docx")} className="flex w-full items-center px-3 py-2 text-left text-[11px] text-zinc-300 hover:bg-white/[0.06]">
+                  Export as DOCX (ZIP)
+                </button>
+                <button onClick={() => exportAll("pdf")} className="flex w-full items-center px-3 py-2 text-left text-[11px] text-zinc-300 hover:bg-white/[0.06]">
+                  Export as PDF (ZIP)
+                </button>
+              </div>
+            )}
+          </div>
+          {onDelete && (
+            confirmDelete ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-red-400">Delete?</span>
+                <button onClick={onDelete} className="rounded px-1.5 py-0.5 text-[10px] bg-red-500/20 text-red-400 hover:bg-red-500/30">Yes</button>
+                <button onClick={() => setConfirmDelete(false)} className="rounded px-1.5 py-0.5 text-[10px] bg-zinc-700 text-zinc-400 hover:bg-zinc-600">No</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} className="shrink-0 rounded p-1 text-zinc-600 hover:text-red-400 hover:bg-red-500/10" title="Delete matter">
+                <Trash2 size={14} />
+              </button>
+            )
+          )}
+        </div>
       </div>
     </div>
   );
@@ -261,6 +343,7 @@ function MetadataPanel({ project, projectId }: { project: Project; projectId: nu
   const [open, setOpen] = useState(false);
   const [conflicts, setConflicts] = useState<ConflictHit[]>([]);
   const { mutate: update } = useUpdateProject(projectId);
+  const { data: templates = [] } = useTemplates("template");
 
   useEffect(() => {
     if (!project.client_name && !project.opposing_counsel) return;
@@ -318,6 +401,24 @@ function MetadataPanel({ project, projectId }: { project: Project; projectId: nu
               options={["active", "pending", "on_hold", "closed", "archived"]}
               onSave={save("status")}
             />
+            {templates.length > 0 && (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] text-zinc-600">Default Template</span>
+                <select
+                  value={project.default_template_id ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value ? Number(e.target.value) : null;
+                    update({ default_template_id: v });
+                  }}
+                  className="rounded border border-white/[0.12] bg-white/[0.04] px-2 py-0.5 text-[12px] text-zinc-200 outline-none focus:border-blue-500/40"
+                >
+                  <option value="">none</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.file_name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -755,12 +856,17 @@ const ACTIVE_STATUSES = new Set(["implement", "review", "validate", "lint_fix", 
 
 function TasksTab({ projectId }: { projectId: number }) {
   const { data: tasks = [], isLoading } = useProjectTasks(projectId);
+  const { data: fullModes = [] } = useFullModes();
   const queryClient = useQueryClient();
   const [retryingId, setRetryingId] = useState<number | null>(null);
   const [expandedStream, setExpandedStream] = useState<number | null>(null);
   const [expandedResults, setExpandedResults] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [reviewingId, setReviewingId] = useState<number | null>(null);
+  const [revisionFeedback, setRevisionFeedback] = useState("");
+  const [citationsId, setCitationsId] = useState<number | null>(null);
+  const [revisionsId, setRevisionsId] = useState<number | null>(null);
   const [editDesc, setEditDesc] = useState("");
 
   if (isLoading) {
@@ -775,22 +881,51 @@ function TasksTab({ projectId }: { projectId: number }) {
     );
   }
 
+  const totalSecs = tasks.reduce((sum, t) => sum + (t.duration_secs ?? 0), 0);
+
   return (
     <div className="space-y-2 p-4">
+      {totalSecs > 0 && (
+        <div className="text-[11px] text-zinc-500 pb-1">
+          Total time: <span className="text-zinc-300">{formatDuration(totalSecs)}</span>
+          {" · "}{tasks.filter(t => t.duration_secs != null).length} tracked
+        </div>
+      )}
       {tasks.map((task) => {
         const isActive = ACTIVE_STATUSES.has(task.status);
+        const isHumanReview = fullModes.some((m) =>
+          m.name === task.mode &&
+          m.phases.some((p) => p.name === task.status && p.phase_type === "human_review")
+        );
+        const reviewPhaseInstruction = isHumanReview
+          ? fullModes.find((m) => m.name === task.mode)
+              ?.phases.find((p) => p.name === task.status)?.instruction
+          : undefined;
         return (
           <div
             key={task.id}
-            className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3"
+            className={cn(
+              "rounded-lg border p-3",
+              isHumanReview
+                ? "border-emerald-500/20 bg-emerald-500/[0.03]"
+                : "border-white/[0.06] bg-white/[0.02]"
+            )}
           >
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-[10px] text-zinc-600">#{task.id}</span>
                   <StatusBadge status={task.status} />
-                  {isActive && (
+                  {isHumanReview && (
+                    <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">
+                      awaiting review
+                    </span>
+                  )}
+                  {isActive && !isHumanReview && (
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" title="Running" />
+                  )}
+                  {task.revision_count != null && task.revision_count > 0 && (
+                    <span className="text-[9px] text-amber-500/80">rev {task.revision_count}</span>
                   )}
                   {task.mode && task.mode !== "lawborg" && task.mode !== "legal" && (
                     <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-medium text-violet-400">
@@ -810,6 +945,22 @@ function TasksTab({ projectId }: { projectId: number }) {
                     className="flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 hover:border-emerald-500/30 hover:text-emerald-400 transition-colors"
                   >
                     {expandedResults === task.id ? "Hide" : "Results"}
+                  </button>
+                )}
+                {(task.status === "done" || task.status === "merged" || isHumanReview) && (
+                  <button
+                    onClick={() => setCitationsId(citationsId === task.id ? null : task.id)}
+                    className="flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 hover:border-blue-500/30 hover:text-blue-400 transition-colors"
+                  >
+                    {citationsId === task.id ? "Hide" : "Citations"}
+                  </button>
+                )}
+                {(task.revision_count ?? 0) > 0 && (
+                  <button
+                    onClick={() => setRevisionsId(revisionsId === task.id ? null : task.id)}
+                    className="flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1 text-[10px] text-amber-500/60 hover:border-amber-500/30 hover:text-amber-400 transition-colors"
+                  >
+                    {revisionsId === task.id ? "Hide" : `Revisions (${task.revision_count})`}
                   </button>
                 )}
                 {isActive && (
@@ -876,12 +1027,83 @@ function TasksTab({ projectId }: { projectId: number }) {
                 />
               </div>
             )}
+            {/* Human review panel */}
+            {isHumanReview && (
+              <div className="mt-2 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] p-3 space-y-2">
+                {reviewPhaseInstruction && (
+                  <div className="text-[11px] text-emerald-400/70 leading-relaxed">
+                    {reviewPhaseInstruction}
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      await approveTask(task.id);
+                      queryClient.invalidateQueries({ queryKey: ["project_tasks", projectId] });
+                    }}
+                    className="rounded-md bg-emerald-500/15 px-3 py-1.5 text-[11px] font-medium text-emerald-400 hover:bg-emerald-500/25 transition-colors"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => setReviewingId(reviewingId === task.id ? null : task.id)}
+                    className="rounded-md bg-amber-500/10 px-3 py-1.5 text-[11px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors"
+                  >
+                    Request Revision
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (confirm("Reject this task? It will be marked as failed.")) {
+                        await rejectTask(task.id, "Rejected by reviewer");
+                        queryClient.invalidateQueries({ queryKey: ["project_tasks", projectId] });
+                      }
+                    }}
+                    className="rounded-md bg-red-500/10 px-3 py-1.5 text-[11px] font-medium text-red-400 hover:bg-red-500/20 transition-colors"
+                  >
+                    Reject
+                  </button>
+                </div>
+                {reviewingId === task.id && (
+                  <div className="space-y-1.5">
+                    <textarea
+                      value={revisionFeedback}
+                      onChange={(e) => setRevisionFeedback(e.target.value)}
+                      rows={3}
+                      className="w-full rounded-md border border-amber-500/20 bg-black/30 px-2.5 py-1.5 text-[11px] text-zinc-200 outline-none focus:border-amber-500/40 resize-y placeholder:text-zinc-600"
+                      placeholder="Describe what needs to change..."
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          if (!revisionFeedback.trim()) return;
+                          await requestRevision(task.id, revisionFeedback.trim());
+                          setRevisionFeedback("");
+                          setReviewingId(null);
+                          queryClient.invalidateQueries({ queryKey: ["project_tasks", projectId] });
+                        }}
+                        disabled={!revisionFeedback.trim()}
+                        className="rounded-md bg-amber-500/15 px-3 py-1 text-[11px] font-medium text-amber-400 hover:bg-amber-500/25 disabled:opacity-40 transition-colors"
+                      >
+                        Send Revision Request
+                      </button>
+                      <button
+                        onClick={() => { setReviewingId(null); setRevisionFeedback(""); }}
+                        className="text-[11px] text-zinc-600 hover:text-zinc-400"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="mt-2">
               <PhaseTracker status={task.status} mode={task.mode} />
             </div>
             <div className="mt-1.5 text-[10px] text-zinc-600">
               created {fmtDateTime(task.created_at)}
               {task.attempt > 0 && ` · attempt ${task.attempt}/${task.max_attempts}`}
+              {task.duration_secs != null && ` · ${formatDuration(task.duration_secs)}`}
             </div>
             {(isActive && expandedStream === task.id) && (
               <TaskStreamMini taskId={task.id} />
@@ -889,6 +1111,215 @@ function TasksTab({ projectId }: { projectId: number }) {
             {expandedResults === task.id && (
               <StructuredDataPanel taskId={task.id} />
             )}
+            {citationsId === task.id && (
+              <CitationPanel taskId={task.id} />
+            )}
+            {revisionsId === task.id && (
+              <RevisionHistoryPanel taskId={task.id} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Citation panel ───────────────────────────────────────────────────────────
+
+function CitationPanel({ taskId }: { taskId: number }) {
+  const [citations, setCitations] = useState<import("@/lib/api").CitationVerification[]>([]);
+  const [verifying, setVerifying] = useState(false);
+
+  useEffect(() => {
+    import("@/lib/api").then(({ getTaskCitations }) => {
+      getTaskCitations(taskId).then(setCitations).catch(() => {});
+    });
+  }, [taskId]);
+
+  const statusColor = (s: string) => {
+    if (s === "verified") return "text-emerald-400 bg-emerald-500/10";
+    if (s === "flagged" || s === "error") return "text-red-400 bg-red-500/10";
+    if (s === "format_valid") return "text-blue-400 bg-blue-500/10";
+    return "text-zinc-400 bg-zinc-500/10";
+  };
+
+  return (
+    <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-medium text-zinc-400">
+          Citations {citations.length > 0 && `(${citations.length})`}
+        </span>
+        <button
+          onClick={async () => {
+            setVerifying(true);
+            try {
+              const { verifyTaskCitations } = await import("@/lib/api");
+              const result = await verifyTaskCitations(taskId);
+              setCitations(result.citations);
+            } finally {
+              setVerifying(false);
+            }
+          }}
+          disabled={verifying}
+          className="rounded-md bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-400 hover:bg-blue-500/20 disabled:opacity-50 transition-colors"
+        >
+          {verifying ? "Verifying..." : citations.length > 0 ? "Re-verify" : "Verify All"}
+        </button>
+      </div>
+      {citations.length > 0 && (
+        <div className="space-y-1">
+          {citations.map((c) => (
+            <div key={c.id} className="flex items-start gap-2 text-[10px]">
+              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-medium", statusColor(c.status))}>
+                {c.status}
+              </span>
+              <span className="font-mono text-zinc-300 min-w-0 break-all">{c.citation_text}</span>
+              {c.source && (
+                <span className="shrink-0 text-zinc-600">{c.source}</span>
+              )}
+            </div>
+          ))}
+          <div className="text-[9px] text-zinc-600 pt-1">
+            {citations.filter(c => c.status === "verified").length} verified
+            {" · "}{citations.filter(c => c.status === "unverified").length} unverified
+            {citations.some(c => c.status === "error") && ` · ${citations.filter(c => c.status === "error").length} errors`}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Revision history panel ───────────────────────────────────────────────────
+
+function RevisionHistoryPanel({ taskId }: { taskId: number }) {
+  const [history, setHistory] = useState<RevisionHistory | null>(null);
+
+  useEffect(() => {
+    getRevisionHistory(taskId).then(setHistory).catch(() => {});
+  }, [taskId]);
+
+  if (!history || history.rounds.length === 0) {
+    return (
+      <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+        <span className="text-[11px] text-zinc-600">No revision history</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-medium text-zinc-400">
+          Revision History
+        </span>
+        <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
+          {history.revision_count} revision{history.revision_count !== 1 ? "s" : ""}
+        </span>
+        {history.review_status && (
+          <span className={cn(
+            "rounded px-1.5 py-0.5 text-[9px] font-medium",
+            history.review_status === "approved" ? "bg-emerald-500/10 text-emerald-400" :
+            history.review_status === "rejected" ? "bg-red-500/10 text-red-400" :
+            "bg-amber-500/10 text-amber-400"
+          )}>
+            {history.review_status.replace("_", " ")}
+          </span>
+        )}
+      </div>
+      <div className="relative space-y-0">
+        {history.rounds.map((round, i) => (
+          <div key={round.round} className="relative pl-5">
+            {i < history.rounds.length - 1 && (
+              <div className="absolute left-[7px] top-4 bottom-0 w-px bg-white/[0.06]" />
+            )}
+            <div className="absolute left-0 top-1 h-3.5 w-3.5 rounded-full border border-white/10 bg-zinc-900 flex items-center justify-center">
+              <span className="text-[7px] text-zinc-500">{round.round}</span>
+            </div>
+            <div className="pb-3">
+              <div className="text-[10px] font-medium text-zinc-300">
+                {round.round === 0 ? "Initial Draft" : `Draft ${round.round + 1}`}
+              </div>
+              {round.feedback && (
+                <div className="mt-1 rounded border border-amber-500/10 bg-amber-500/[0.03] px-2 py-1.5">
+                  <div className="text-[9px] text-amber-500/60 mb-0.5">Reviewer feedback</div>
+                  <div className="text-[11px] text-zinc-300 whitespace-pre-wrap">{round.feedback}</div>
+                  {round.feedback_at && (
+                    <div className="text-[9px] text-zinc-600 mt-1">{new Date(round.feedback_at).toLocaleString()}</div>
+                  )}
+                </div>
+              )}
+              {round.phases.length > 0 && (
+                <div className="mt-1 space-y-1">
+                  {round.phases.map((p, j) => (
+                    <div key={j} className="flex items-center gap-2 text-[10px]">
+                      <span className={cn(
+                        "shrink-0 rounded px-1.5 py-0.5 font-medium",
+                        p.exit_code === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+                      )}>
+                        {p.phase}
+                      </span>
+                      <span className="text-zinc-600 truncate">{p.output_preview.slice(0, 100)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Activity tab ──────────────────────────────────────────────────────────────
+
+const AUDIT_KIND_LABELS: Record<string, string> = {
+  "matter.created": "Matter created",
+  "matter.updated": "Matter updated",
+  "matter.deleted": "Matter deleted",
+  "task.created": "Task created",
+  "task.completed": "Task completed",
+  "task.failed": "Task failed",
+  "deadline.created": "Deadline added",
+  "document.exported": "Document exported",
+  "file.uploaded": "File uploaded",
+  "conflict.acknowledged": "Conflict acknowledged",
+};
+
+function ActivityTab({ projectId }: { projectId: number }) {
+  const { data: events = [], isLoading } = useProjectAudit(projectId);
+
+  if (isLoading) return <div className="flex h-32 items-center justify-center text-[12px] text-zinc-600">Loading...</div>;
+  if (events.length === 0) return <div className="flex h-32 items-center justify-center text-[12px] text-zinc-600">No activity logged yet.</div>;
+
+  return (
+    <div className="space-y-0 overflow-y-auto p-4">
+      {events.map((ev, idx) => {
+        let detail = "";
+        try {
+          const p = JSON.parse(ev.payload);
+          if (p.title) detail = p.title;
+          else if (p.name) detail = p.name;
+          else if (p.label) detail = p.label;
+        } catch { /* ignore */ }
+        return (
+          <div key={ev.id} className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-zinc-500/60" />
+              {idx < events.length - 1 && <div className="mt-1 w-px flex-1 bg-white/[0.06]" style={{ minHeight: "24px" }} />}
+            </div>
+            <div className="pb-3 min-w-0">
+              <div className="text-[11px] font-medium text-zinc-300">
+                {AUDIT_KIND_LABELS[ev.kind] || ev.kind}
+              </div>
+              {detail && <div className="text-[11px] text-zinc-500 truncate">{detail}</div>}
+              <div className="mt-0.5 text-[10px] text-zinc-600">
+                {ev.actor && <span>{ev.actor} · </span>}
+                {fmtDateTime(ev.created_at)}
+                {ev.task_id && <span className="ml-1 font-mono">#{ev.task_id}</span>}
+              </div>
+            </div>
           </div>
         );
       })}
@@ -1057,12 +1488,13 @@ function ChatTab({ projectId }: { projectId: number }) {
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-type TabKey = "timeline" | "documents" | "tasks" | "chat";
+type TabKey = "timeline" | "documents" | "tasks" | "activity" | "chat";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "timeline", label: "Timeline" },
   { key: "documents", label: "Documents" },
   { key: "tasks", label: "Tasks" },
+  { key: "activity", label: "Activity" },
   { key: "chat", label: "Chat" },
 ];
 
@@ -1122,6 +1554,11 @@ export function MatterDetail({ projectId, onDocumentSelect, onDelete }: MatterDe
         {activeTab === "tasks" && (
           <div className="h-full overflow-y-auto">
             <TasksTab projectId={projectId} />
+          </div>
+        )}
+        {activeTab === "activity" && (
+          <div className="h-full overflow-y-auto">
+            <ActivityTab projectId={projectId} />
           </div>
         )}
         {activeTab === "chat" && (

@@ -53,6 +53,7 @@ pub struct AppState {
     pub force_restart: Arc<std::sync::atomic::AtomicBool>,
     pub chat_rate: Arc<std::sync::Mutex<HashMap<String, std::time::Instant>>>,
     pub triage_running: Arc<std::sync::atomic::AtomicBool>,
+    pub embed_client: borg_core::knowledge::EmbeddingClient,
 }
 
 impl AppState {
@@ -342,6 +343,11 @@ async fn main() -> anyhow::Result<()> {
                                     backend: String::new(),
                                     project_id: 0,
                                     task_type: String::new(),
+                                    started_at: None,
+                                    completed_at: None,
+                                    duration_secs: None,
+                                    review_status: None,
+                                    revision_count: 0,
                                 };
                                 let task_title = task.title.clone();
                                 let tg2 = Arc::clone(&tg);
@@ -670,6 +676,7 @@ async fn main() -> anyhow::Result<()> {
         force_restart,
         chat_rate: Arc::new(std::sync::Mutex::new(HashMap::new())),
         triage_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        embed_client: borg_core::knowledge::EmbeddingClient::from_env(),
     });
 
     let dashboard_dir = config.dashboard_dist_dir.clone();
@@ -686,6 +693,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/tasks", get(routes::list_tasks))
         .route("/api/tasks/create", post(routes::create_task))
         .route("/api/tasks/:id", get(routes::get_task).patch(routes::patch_task))
+        .route("/api/tasks/:id/approve", post(routes::approve_task))
+        .route("/api/tasks/:id/reject", post(routes::reject_task))
+        .route("/api/tasks/:id/request-revision", post(routes::request_revision))
+        .route("/api/tasks/:id/revisions", get(routes::get_revision_history))
+        .route("/api/tasks/:id/citations", get(routes::get_task_citations))
+        .route("/api/tasks/:id/verify-citations", post(routes::verify_task_citations))
         .route("/api/tasks/:id/retry", post(routes::retry_task))
         .route("/api/tasks/:id/unblock", post(routes::unblock_task))
         .route("/api/tasks/retry-all-failed", post(routes::retry_all_failed))
@@ -719,6 +732,14 @@ async fn main() -> anyhow::Result<()> {
             get(routes::get_project_file_content),
         )
         .route(
+            "/api/projects/:id/files/:file_id/text",
+            get(routes::get_project_file_text),
+        )
+        .route(
+            "/api/projects/:id/files/:file_id/reextract",
+            post(routes::reextract_project_file),
+        )
+        .route(
             "/api/projects/:id/files/upload",
             post(routes::upload_project_files).layer(DefaultBodyLimit::max(110 * 1024 * 1024)),
         )
@@ -733,6 +754,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/projects/:id/deadlines/:did", put(routes::update_deadline).delete(routes::delete_deadline))
         .route("/api/deadlines", get(routes::list_upcoming_deadlines))
         .route("/api/search", get(routes::search_documents))
+        .route("/api/projects/:id/audit", get(routes::list_project_audit))
         .route("/api/projects/:id/documents", get(routes::list_project_documents))
         .route(
             "/api/projects/:id/documents/:task_id/content",
@@ -745,6 +767,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/projects/:id/documents/:task_id/export",
             get(routes::export_project_document),
+        )
+        .route(
+            "/api/projects/:id/export-all",
+            get(routes::export_all_project_documents),
         )
         .route(
             "/api/projects/:id/documents/:task_id",
@@ -790,6 +816,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/cache/:name", delete(routes::delete_cache_volume))
         // Knowledge base
         .route("/api/knowledge", get(routes::list_knowledge))
+        .route("/api/knowledge/templates", get(routes::list_templates))
         .route(
             "/api/knowledge/upload",
             post(routes::upload_knowledge).layer(DefaultBodyLimit::max(55 * 1024 * 1024)),

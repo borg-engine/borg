@@ -12,6 +12,11 @@ export interface Task {
   last_error?: string;
   mode?: string;
   backend?: string;
+  started_at?: string;
+  completed_at?: string;
+  duration_secs?: number;
+  review_status?: string;
+  revision_count?: number;
 }
 
 export interface TaskDetail extends Task {
@@ -122,8 +127,8 @@ export interface PipelineMode {
   phases: PhaseInfo[];
 }
 
-export type PhaseType = "setup" | "agent" | "rebase" | "lint_fix";
-export type IntegrationType = "git_pr" | "none";
+export type PhaseType = "setup" | "agent" | "rebase" | "lint_fix" | "human_review" | "validate";
+export type IntegrationType = "git_pr" | "git_branch" | "none";
 export type SeedOutputType = "task" | "proposal";
 
 export interface PhaseConfigFull {
@@ -145,6 +150,7 @@ export interface PhaseConfigFull {
   next: string;
   fresh_session: boolean;
   fix_instruction: string;
+  retry_phase: string;
 }
 
 export interface SeedConfigFull {
@@ -183,6 +189,7 @@ export interface Project {
   deadline?: string;
   privilege_level?: string;
   status?: string;
+  default_template_id?: number | null;
 }
 
 export interface ProjectTask {
@@ -196,6 +203,11 @@ export interface ProjectTask {
   created_at: string;
   attempt: number;
   max_attempts: number;
+  started_at?: string;
+  completed_at?: string;
+  duration_secs?: number;
+  review_status?: string;
+  revision_count?: number;
 }
 
 export interface ProjectDocument {
@@ -214,6 +226,8 @@ export interface ProjectFile {
   file_name: string;
   mime_type: string;
   size_bytes: number;
+  has_text: boolean;
+  text_chars: number;
   created_at: string;
 }
 
@@ -223,6 +237,10 @@ export interface KnowledgeFile {
   description: string;
   size_bytes: number;
   inline: boolean;
+  tags: string;
+  category: string;
+  jurisdiction: string;
+  project_id: number | null;
   created_at: string;
 }
 
@@ -241,7 +259,13 @@ const LEGAL_PHASE_LABELS: Record<string, string> = {
 
 const LEGAL_TASK_TYPE_LABELS: Record<string, Record<string, string>> = {
   contract_analysis: { backlog: "Backlog", implement: "Extract & Analyze", review: "Review", done: "Complete" },
+  contract_review: { backlog: "Backlog", implement: "Review & Redline", review: "Review", done: "Complete" },
+  nda_triage: { backlog: "Backlog", implement: "Screen & Classify", review: "Review", done: "Complete" },
   regulatory_analysis: { backlog: "Backlog", implement: "Monitor & Analyze", review: "Review", done: "Complete" },
+  compliance: { backlog: "Backlog", implement: "Audit & Assess", review: "Review", done: "Complete" },
+  risk_assessment: { backlog: "Backlog", implement: "Assess & Score", review: "Review", done: "Complete" },
+  vendor_check: { backlog: "Backlog", implement: "Search & Compile", review: "Review", done: "Complete" },
+  meeting_briefing: { backlog: "Backlog", implement: "Gather & Brief", review: "Review", done: "Complete" },
   demand_letter: { backlog: "Backlog", implement: "Research & Draft", review: "Review", done: "Complete" },
   motion_brief: { backlog: "Backlog", implement: "Research & Draft", review: "Review", done: "Complete" },
 };

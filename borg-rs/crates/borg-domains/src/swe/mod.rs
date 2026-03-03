@@ -129,7 +129,7 @@ pub const SWE_REBASE_ERROR: &str = "\n\nPrevious error context:\n```\n{ERROR}\n`
 
 pub const SWE_REBASE_FIX: &str = "\
 The git rebase onto origin/main failed with conflicts:\n\n{ERROR}\n\n\
-You are in the worktree where the rebase is paused. Resolve all conflicts:\n\
+You are in the repo where the rebase is paused. Resolve all conflicts:\n\
 - For 'deleted by us' files (files removed from main): run `git rm <file>` for each one\n\
 - For content conflicts (<<<< markers): edit the file to resolve, then `git add <file>`\n\
 After resolving all conflicts, run `git rebase --continue`.\n\

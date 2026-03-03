@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createProject,
+  fetchProjectFileText,
   getProjectChatMessages,
+  reextractProjectFile,
   sendProjectChat,
   uploadProjectFiles,
   useModes,
@@ -12,7 +14,7 @@ import {
   tokenReady,
 } from "@/lib/api";
 import type { FtsSearchResult } from "@/lib/api";
-import { Eye, Mic, MicOff, ArrowLeft, Search } from "lucide-react";
+import { Eye, FileText, Mic, MicOff, ArrowLeft, Search, RotateCw } from "lucide-react";
 import { FilePreviewModal, isPreviewable } from "./file-preview-modal";
 import type { ProjectFile, ProjectDocument } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -45,12 +47,14 @@ function DocumentViewWrapper({
   viewMode,
   onBack,
   onToggleMode,
+  defaultTemplateId,
 }: {
   projectId: number;
   doc: ProjectDocument;
   viewMode: "view" | "redline";
   onBack: () => void;
   onToggleMode: () => void;
+  defaultTemplateId?: number | null;
 }) {
   const { data: versions = [] } = useProjectDocumentVersions(projectId, doc.task_id, doc.file_name);
 
@@ -93,6 +97,7 @@ function DocumentViewWrapper({
             projectId={projectId}
             taskId={doc.task_id}
             path={doc.file_name}
+            defaultTemplateId={defaultTemplateId}
           />
         )}
       </div>
@@ -140,6 +145,8 @@ export function ProjectsPanel() {
   const [docViewMode, setDocViewMode] = useState<"view" | "redline">("view");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [textViewFile, setTextViewFile] = useState<{ id: number; name: string; text: string } | null>(null);
+  const [extracting, setExtracting] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -309,8 +316,11 @@ export function ProjectsPanel() {
                 onClick={() => { setSelectedProjectId(r.project_id); setFtsQuery(""); setFtsResults([]); }}
                 className="w-full rounded-md border border-white/[0.04] bg-white/[0.02] px-2 py-1.5 text-left hover:bg-white/[0.06] transition-colors"
               >
-                <div className="text-[10px] text-zinc-500 truncate">{r.project_name}</div>
-                <div className="text-[11px] text-zinc-300 truncate" dangerouslySetInnerHTML={{ __html: r.title_snippet }} />
+                <div className="text-[10px] text-zinc-500 truncate flex items-center gap-1">
+                  {r.project_name}
+                  {r.source === "semantic" && <span className="px-1 py-0 rounded bg-violet-900/50 text-violet-300 text-[9px]">semantic</span>}
+                </div>
+                {r.title_snippet && <div className="text-[11px] text-zinc-300 truncate" dangerouslySetInnerHTML={{ __html: r.title_snippet }} />}
                 <div className="text-[10px] text-zinc-500 line-clamp-2" dangerouslySetInnerHTML={{ __html: r.content_snippet }} />
               </button>
             ))}
@@ -411,6 +421,7 @@ export function ProjectsPanel() {
               viewMode={docViewMode}
               onBack={() => { setSelectedDoc(null); setDocViewMode("view"); }}
               onToggleMode={() => setDocViewMode(docViewMode === "view" ? "redline" : "view")}
+              defaultTemplateId={selectedProject.default_template_id}
             />
           ) : (
             <div className="flex h-full flex-col">
@@ -454,6 +465,36 @@ export function ProjectsPanel() {
                   <div key={f.id} className="flex items-center justify-between border-b border-white/[0.04] px-2 py-1 text-[11px] text-zinc-400 last:border-0">
                     <span className="truncate pr-2">{f.file_name}</span>
                     <div className="flex shrink-0 items-center gap-2">
+                      {f.has_text && (
+                        <button
+                          onClick={async () => {
+                            if (!activeProjectId) return;
+                            const data = await fetchProjectFileText(activeProjectId, f.id);
+                            setTextViewFile({ id: f.id, name: data.file_name, text: data.extracted_text });
+                          }}
+                          className="text-emerald-600 transition-colors hover:text-emerald-400"
+                          title={`View extracted text (${(f.text_chars / 1000).toFixed(1)}k chars)`}
+                        >
+                          <FileText className="h-3 w-3" />
+                        </button>
+                      )}
+                      {!f.has_text && (
+                        <button
+                          onClick={async () => {
+                            if (!activeProjectId) return;
+                            setExtracting(f.id);
+                            try {
+                              await reextractProjectFile(activeProjectId, f.id);
+                              refetchFiles();
+                            } finally { setExtracting(null); }
+                          }}
+                          disabled={extracting === f.id}
+                          className="text-zinc-600 transition-colors hover:text-zinc-300 disabled:animate-spin"
+                          title="Extract text"
+                        >
+                          <RotateCw className="h-3 w-3" />
+                        </button>
+                      )}
                       {isPreviewable(f) && (
                         <button
                           onClick={() => setPreviewFile(f)}
@@ -548,6 +589,17 @@ export function ProjectsPanel() {
           projectId={activeProjectId}
           onClose={() => setPreviewFile(null)}
         />
+      )}
+      {textViewFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setTextViewFile(null)}>
+          <div className="mx-4 flex max-h-[80vh] w-full max-w-3xl flex-col rounded-lg border border-white/10 bg-zinc-900 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <span className="text-sm font-medium text-zinc-200">{textViewFile.name} — Extracted Text</span>
+              <button onClick={() => setTextViewFile(null)} className="text-zinc-500 hover:text-zinc-300">✕</button>
+            </div>
+            <pre className="flex-1 overflow-auto whitespace-pre-wrap p-4 font-mono text-[12px] leading-relaxed text-zinc-300">{textViewFile.text}</pre>
+          </div>
+        </div>
       )}
     </div>
   );

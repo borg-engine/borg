@@ -37,6 +37,8 @@ pub enum PhaseType {
     Rebase,
     /// Runs a lint command; spawns an agent to fix errors if any.
     LintFix,
+    /// Halts the pipeline until a human approves, rejects, or requests revision.
+    HumanReview,
 }
 
 impl Default for PhaseType {
@@ -97,6 +99,16 @@ pub struct Task {
     /// Legal task type (research_memo, contract_analysis, etc.). Empty = unspecified.
     #[serde(default)]
     pub task_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_secs: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_status: Option<String>,
+    #[serde(default)]
+    pub revision_count: i64,
 }
 
 /// A user-facing proposal that can be promoted to a Task.
@@ -404,7 +416,7 @@ pub struct PhaseContext {
     pub repo_config: RepoConfig,
     pub data_dir: String,
     pub session_dir: String,
-    pub worktree_path: String,
+    pub work_dir: String,
     pub oauth_token: String,
     pub model: String,
     /// Pending messages (role, content) to inject into this phase's instruction.
@@ -427,6 +439,10 @@ pub struct PhaseContext {
     pub knowledge_dir: String,
     /// Docker bridge network name for agent containers. None = use --network host.
     pub agent_network: Option<String>,
+    /// Prior research chunks from the knowledge graph (injected for lawborg tasks).
+    pub prior_research: Vec<String>,
+    /// How many revision rounds this task has been through. 0 = first draft.
+    pub revision_count: i64,
 }
 
 /// A single in-container test/lint/compile result emitted by the entrypoint.

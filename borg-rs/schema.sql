@@ -93,13 +93,18 @@ CREATE TABLE IF NOT EXISTS pipeline_tasks (
   project_id INTEGER REFERENCES projects(id),
   task_type TEXT NOT NULL DEFAULT '',
   structured_data TEXT NOT NULL DEFAULT '',
+  review_status TEXT,
+  revision_count INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT,
+  completed_at TEXT,
+  duration_secs INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_pipeline_project ON pipeline_tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_status ON pipeline_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_pipeline_repo ON pipeline_tasks(repo_path);
-CREATE INDEX IF NOT EXISTS idx_pipeline_repo_status ON pipeline_tasks(repo_id, status);
+-- idx_pipeline_project and idx_pipeline_repo_status created in migrate()
+-- after ALTER TABLE adds the columns for older databases.
 
 -- Statuses: backlog → implement → validate → lint_fix → rebase → done → merged
 --           review, pending_review (mode-specific)
@@ -164,6 +169,7 @@ CREATE TABLE IF NOT EXISTS projects (
   deadline TEXT,
   privilege_level TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'active',
+  default_template_id INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -174,6 +180,7 @@ CREATE TABLE IF NOT EXISTS project_files (
   stored_path TEXT NOT NULL,
   mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
   size_bytes INTEGER NOT NULL DEFAULT 0,
+  extracted_text TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_project_files_project_id ON project_files(project_id);
@@ -213,6 +220,8 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
   id INTEGER PRIMARY KEY,
   task_id INTEGER REFERENCES pipeline_tasks(id),
   repo_id INTEGER REFERENCES repos(id),
+  project_id INTEGER REFERENCES projects(id),
+  actor TEXT NOT NULL DEFAULT '',
   kind TEXT NOT NULL,
   payload TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -220,6 +229,7 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
 CREATE INDEX IF NOT EXISTS idx_pipeline_events_task_id ON pipeline_events(task_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_events_kind ON pipeline_events(kind);
 CREATE INDEX IF NOT EXISTS idx_pipeline_events_created_at ON pipeline_events(created_at);
+-- idx_pipeline_events_project created in migrate() after ALTER TABLE.
 
 -- ── Per-task chat ─────────────────────────────────────────────────────────
 
@@ -291,5 +301,40 @@ CREATE TABLE IF NOT EXISTS knowledge_files (
   description TEXT NOT NULL DEFAULT '',
   size_bytes INTEGER NOT NULL DEFAULT 0,
   inline BOOLEAN NOT NULL DEFAULT 0,
+  tags TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT 'general',
+  jurisdiction TEXT NOT NULL DEFAULT '',
+  project_id INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ── Vector embeddings (knowledge graph) ────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS embeddings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER REFERENCES projects(id),
+  task_id INTEGER REFERENCES pipeline_tasks(id),
+  chunk_text TEXT NOT NULL,
+  chunk_hash TEXT NOT NULL UNIQUE,
+  file_path TEXT NOT NULL DEFAULT '',
+  embedding BLOB NOT NULL,
+  dims INTEGER NOT NULL DEFAULT 768,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_embeddings_project ON embeddings(project_id);
+CREATE INDEX IF NOT EXISTS idx_embeddings_task ON embeddings(task_id);
+
+-- ── Citation verifications ────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS citation_verifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES pipeline_tasks(id),
+  citation_text TEXT NOT NULL,
+  citation_type TEXT NOT NULL DEFAULT 'case',
+  status TEXT NOT NULL DEFAULT 'pending',
+  source TEXT NOT NULL DEFAULT '',
+  treatment TEXT NOT NULL DEFAULT '',
+  checked_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_citations_task ON citation_verifications(task_id);

@@ -16,6 +16,7 @@ use crate::{
     config::Config,
     db::Db,
     git::Git,
+    knowledge::EmbeddingClient,
     modes::get_mode,
     sandbox::{Sandbox, SandboxMode},
     stream::TaskStreamManager,
@@ -25,6 +26,17 @@ use crate::{
         SeedOutputType, Task,
     },
 };
+
+/// Derive a compile-only check command from a test command, if possible.
+/// For `cargo test` commands, returns the same command with `--no-run` appended.
+pub fn derive_compile_check(test_cmd: &str) -> Option<String> {
+    let trimmed = test_cmd.trim();
+    if trimmed.contains("cargo test") {
+        Some(format!("{trimmed} --no-run"))
+    } else {
+        None
+    }
+}
 
 pub struct Pipeline {
     pub db: Arc<Db>,
@@ -39,6 +51,7 @@ pub struct Pipeline {
     seed_cooldowns: Mutex<HashMap<(String, String), i64>>,
     last_self_update_secs: std::sync::atomic::AtomicI64,
     last_cache_prune_secs: std::sync::atomic::AtomicI64,
+    last_session_prune_secs: std::sync::atomic::AtomicI64,
     startup_heads: HashMap<String, String>,
     in_flight: Mutex<HashSet<i64>>,
     /// Per-task last agent dispatch timestamp (epoch seconds) for rate limiting.
@@ -47,6 +60,7 @@ pub struct Pipeline {
     seeding_active: std::sync::atomic::AtomicBool,
     /// Whether the borg-agent-net Docker bridge network was successfully created at startup.
     pub agent_network_available: bool,
+    pub embed_client: EmbeddingClient,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,11 +132,13 @@ impl Pipeline {
             seed_cooldowns: Mutex::new(seed_cooldowns),
             last_self_update_secs: std::sync::atomic::AtomicI64::new(0),
             last_cache_prune_secs: std::sync::atomic::AtomicI64::new(0),
+            last_session_prune_secs: std::sync::atomic::AtomicI64::new(0),
             startup_heads,
             in_flight: Mutex::new(HashSet::new()),
             last_agent_dispatch: Mutex::new(HashMap::new()),
             seeding_active: std::sync::atomic::AtomicBool::new(false),
             agent_network_available,
+            embed_client: EmbeddingClient::from_env(),
         };
         (p, rx)
     }
@@ -184,7 +200,7 @@ impl Pipeline {
     fn make_context(
         &self,
         task: &Task,
-        worktree_path: String,
+        work_dir: String,
         session_dir: String,
         pending_messages: Vec<(String, String)>,
     ) -> PhaseContext {
@@ -223,7 +239,7 @@ impl Pipeline {
             repo_config: self.repo_config(task),
             data_dir: self.config.data_dir.clone(),
             session_dir,
-            worktree_path,
+            work_dir,
             oauth_token: self.config.oauth_token.clone(),
             model: self.config.model.clone(),
             pending_messages,
@@ -240,6 +256,8 @@ impl Pipeline {
             } else {
                 None
             },
+            prior_research: Vec::new(),
+            revision_count: task.revision_count,
         }
     }
 
@@ -248,7 +266,12 @@ impl Pipeline {
     /// builds a summary of previous attempts so the new session has context.
     fn fail_or_retry(&self, task: &Task, retry_status: &str, error: &str) -> Result<()> {
         self.db.increment_attempt(task.id)?;
-        let current = self.db.get_task(task.id)?.unwrap_or_else(|| task.clone());
+        let current = self.db.get_task(task.id)?.unwrap_or_else(|| {
+            // Fallback: use stale snapshot but with incremented attempt so check is correct
+            let mut t = task.clone();
+            t.attempt += 1;
+            t
+        });
         if current.attempt >= current.max_attempts {
             self.db.update_task_status(task.id, "failed", Some(error))?;
         } else {
@@ -440,6 +463,7 @@ impl Pipeline {
         self.maybe_apply_self_update();
         self.refresh_mirrors().await;
         self.maybe_prune_cache_volumes().await;
+        self.maybe_prune_session_dirs().await;
 
         // Check if main loop should exit for self-update restart
         if self
@@ -503,12 +527,29 @@ impl Pipeline {
             task.id, task.status, task.repo_path, task.title
         );
 
+        if phase.phase_type == PhaseType::Agent {
+            let _ = self.db.mark_task_started(task.id);
+        }
+
         match phase.phase_type {
             PhaseType::Setup => self.setup_branch(&task, &mode).await?,
             PhaseType::Agent => self.run_agent_phase(&task, &phase, &mode).await?,
             PhaseType::Validate => self.run_validate_phase(&task, &phase, &mode).await?,
             PhaseType::Rebase => self.run_rebase_phase(&task, &phase, &mode).await?,
             PhaseType::LintFix => self.run_lint_fix_phase(&task, &phase, &mode).await?,
+            PhaseType::HumanReview => {
+                // Task sits in this status until a human acts via the API.
+                // Do not dispatch to any backend — just return.
+                return Ok(());
+            }
+        }
+
+        // Async embedding indexing for completed tasks
+        if phase.next == "done" && !task.repo_path.is_empty() {
+            let db = Arc::clone(&self.db);
+            let embed = &self.embed_client;
+            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
+            crate::knowledge::index_task_embeddings(&db, embed, task.id, pid, &task.repo_path).await;
         }
 
         Ok(())
@@ -556,18 +597,10 @@ impl Pipeline {
         format!("{message}\n\nCo-Authored-By: {user_coauthor}")
     }
 
-    fn derive_compile_check(test_cmd: &str) -> Option<String> {
-        let trimmed = test_cmd.trim();
-        if trimmed.contains("cargo test") {
-            Some(format!("{trimmed} --no-run"))
-        } else {
-            None
-        }
-    }
-
     // ── Phase handlers ────────────────────────────────────────────────────
 
     /// Setup phase: record branch name and advance to first agent phase.
+    /// In non-Docker mode, also creates the git branch so the agent works on it.
     async fn setup_branch(&self, task: &Task, mode: &PipelineMode) -> Result<()> {
         let next = mode
             .phases
@@ -578,6 +611,7 @@ impl Pipeline {
 
         let branch = format!("task-{}", task.id);
         self.db.update_task_branch(task.id, &branch)?;
+
         self.db.update_task_status(task.id, next, None)?;
 
         self.emit(PipelineEvent::Phase {
@@ -602,13 +636,7 @@ impl Pipeline {
             .to_string_lossy()
             .to_string();
 
-        // Docker: container handles its own clone; wt_path is only used for
-        // local file ops (signal.json, state snapshot). Non-Docker: use repo directly.
-        let wt_path = if self.sandbox_mode == SandboxMode::Docker {
-            session_dir.clone()
-        } else {
-            task.repo_path.clone()
-        };
+        let work_dir = session_dir.clone();
 
         let pending_messages = self
             .db
@@ -618,9 +646,21 @@ impl Pipeline {
             .map(|m| (m.role, m.content))
             .collect::<Vec<_>>();
 
-        let mut ctx = self.make_context(task, wt_path.clone(), session_dir, pending_messages);
+        let mut ctx = self.make_context(task, work_dir.clone(), session_dir, pending_messages);
         let had_pending = !ctx.pending_messages.is_empty();
         let test_cmd = ctx.repo_config.test_cmd.clone();
+
+        // Inject prior research from knowledge graph for lawborg tasks
+        if task.mode == "lawborg" || task.mode == "legal" {
+            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
+            let query = format!("{} {}", task.title, task.description);
+            let results = crate::knowledge::get_prior_research(
+                &self.db, &self.embed_client, &query, pid, 5,
+            ).await;
+            ctx.prior_research = results.into_iter().map(|r| {
+                format!("[{}] {}", r.file_path, r.chunk_text)
+            }).collect();
+        }
 
         // Wire live NDJSON stream for the dashboard LiveTerminal.
         let (stream_tx, mut stream_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -640,15 +680,13 @@ impl Pipeline {
         let backend = match self.resolve_backend(task) {
             Some(b) => b,
             None => {
-                warn!(
-                    "task #{}: no backend configured, skipping phase {}",
-                    task.id, phase.name
-                );
+                warn!("task #{}: no backend configured, failing task", task.id);
+                self.fail_or_retry(task, &phase.name, "no agent backend configured")?;
                 return Ok(());
             },
         };
         if let Err(e) = self
-            .write_pipeline_state_snapshot(task, &phase.name, &wt_path)
+            .write_pipeline_state_snapshot(task, &phase.name, &work_dir)
             .await
         {
             warn!("task #{}: write_pipeline_state_snapshot: {e}", task.id);
@@ -692,7 +730,7 @@ impl Pipeline {
         });
 
         // Read agent signal from .borg/signal.json (if present).
-        let signal = Self::read_agent_signal(&wt_path);
+        let signal = Self::read_agent_signal(&work_dir);
         if !signal.reason.is_empty() {
             info!(
                 "task #{} signal: status={} reason={}",
@@ -750,7 +788,7 @@ impl Pipeline {
         }
 
         if let Some(ref artifact) = phase.check_artifact {
-            if !crate::ipc::check_artifact(&wt_path, artifact) {
+            if !crate::ipc::check_artifact(&work_dir, artifact) {
                 self.fail_or_retry(
                     task,
                     &phase.name,
@@ -761,14 +799,14 @@ impl Pipeline {
         }
 
         if phase.compile_check && !test_cmd.is_empty() {
-            if let Some(check_cmd) = Self::derive_compile_check(&test_cmd) {
+            if let Some(check_cmd) = derive_compile_check(&test_cmd) {
                 let out = if result.ran_in_docker {
                     container_result_as_test_output(
                         &result.container_test_results,
                         "compileCheck",
                     )
                 } else {
-                    match self.run_test_command(&wt_path, &check_cmd).await {
+                    match self.run_test_command(&work_dir, &check_cmd).await {
                         Ok(o) => Some(o),
                         Err(e) => {
                             warn!("compile check error for task #{}: {e}", task.id);
@@ -781,7 +819,7 @@ impl Pipeline {
                         let compile_err = format!("{}\n{}", o.stdout, o.stderr);
                         info!("task #{} compile check failed, running fix agent", task.id);
                         if !self
-                            .run_compile_fix(task, &wt_path, &check_cmd, &compile_err)
+                            .run_compile_fix(task, &work_dir, &check_cmd, &compile_err)
                             .await?
                         {
                             let msg = format!(
@@ -800,7 +838,7 @@ impl Pipeline {
             let out = if result.ran_in_docker {
                 container_result_as_test_output(&result.container_test_results, "test")
             } else {
-                match self.run_test_command(&wt_path, &test_cmd).await {
+                match self.run_test_command(&work_dir, &test_cmd).await {
                     Ok(o) => Some(o),
                     Err(e) => {
                         warn!("test command error for task #{}: {}", task.id, e);
@@ -821,9 +859,9 @@ impl Pipeline {
         Ok(())
     }
 
-    /// Read `.borg/signal.json` from the worktree. Returns default (done) if missing or malformed.
-    fn read_agent_signal(wt_path: &str) -> crate::types::AgentSignal {
-        let path = format!("{wt_path}/.borg/signal.json");
+    /// Read `.borg/signal.json` from the work dir. Returns default (done) if missing or malformed.
+    fn read_agent_signal(work_dir: &str) -> crate::types::AgentSignal {
+        let path = format!("{work_dir}/.borg/signal.json");
         match std::fs::read_to_string(&path) {
             Ok(contents) => {
                 // Clean up the signal file so it doesn't carry over to next run
@@ -841,7 +879,7 @@ impl Pipeline {
         phase: &PhaseConfig,
         mode: &PipelineMode,
     ) -> Result<()> {
-        let wt_path = task.repo_path.clone();
+        let work_dir = task.repo_path.clone();
 
         let test_cmd = self.repo_config(task).test_cmd;
         if test_cmd.is_empty() {
@@ -853,15 +891,24 @@ impl Pipeline {
         let use_docker = self.sandbox_mode == SandboxMode::Docker;
 
         // Compile check first (if derivable from test command)
-        if let Some(check_cmd) = Self::derive_compile_check(&test_cmd) {
+        if let Some(check_cmd) = derive_compile_check(&test_cmd) {
             let out = if use_docker {
                 self.run_test_in_container(task, &check_cmd).await?
             } else {
-                self.run_test_command(&wt_path, &check_cmd).await?
+                self.run_test_command(&work_dir, &check_cmd).await?
             };
             if out.exit_code != 0 {
                 let error_msg = format!("{}\n{}", out.stdout, out.stderr);
                 info!("task #{} validate: compile check failed", task.id);
+                if let Err(e) = self.db.insert_task_output(
+                    task.id,
+                    "validate",
+                    error_msg.trim(),
+                    "",
+                    out.exit_code as i64,
+                ) {
+                    warn!("task #{}: insert_task_output(validate): {e}", task.id);
+                }
                 let retry_status = if phase.retry_phase.is_empty() {
                     &phase.name
                 } else {
@@ -876,54 +923,57 @@ impl Pipeline {
         let out = if use_docker {
             self.run_test_in_container(task, &test_cmd).await?
         } else {
-            match self.run_test_command(&wt_path, &test_cmd).await {
+            match self.run_test_command(&work_dir, &test_cmd).await {
                 Ok(o) => o,
                 Err(e) => {
                     warn!("task #{} validate: test command error: {e}", task.id);
+                    self.fail_or_retry(task, "validate", &format!("test command error: {e}"))?;
                     return Ok(());
                 },
             }
         };
+        let full_output = format!("{}\n{}", out.stdout, out.stderr);
+        if let Err(e) = self.db.insert_task_output(
+            task.id,
+            "validate",
+            full_output.trim(),
+            "",
+            out.exit_code as i64,
+        ) {
+            warn!("task #{}: insert_task_output(validate): {e}", task.id);
+        }
         if out.exit_code == 0 {
             info!("task #{} validate: all tests pass", task.id);
             self.advance_phase(task, phase, mode)?;
         } else {
-            let error_msg = format!("{}\n{}", out.stdout, out.stderr);
             info!("task #{} validate: tests failed", task.id);
             let retry_status = if phase.retry_phase.is_empty() {
                 &phase.name
             } else {
                 &phase.retry_phase
             };
-            self.fail_or_retry(task, retry_status, error_msg.trim())?;
+            self.fail_or_retry(task, retry_status, full_output.trim())?;
         }
 
         Ok(())
     }
 
-    /// Run a rebase phase (Docker-only — uses GitHub API to update the PR branch).
+    /// Run a rebase phase — uses GitHub API to update the PR branch.
     async fn run_rebase_phase(
         &self,
         task: &Task,
         phase: &PhaseConfig,
-        _mode: &PipelineMode,
+        mode: &PipelineMode,
     ) -> Result<()> {
-        if self.sandbox_mode == SandboxMode::Docker {
-            return self.run_rebase_phase_docker(task, phase).await;
-        }
-
-        // Non-Docker rebase: no worktree, just advance.
-        info!("task #{} rebase: non-Docker mode, advancing", task.id);
-        self.db.update_task_status(task.id, &phase.next, None)?;
-        Ok(())
+        self.run_rebase_phase_docker(task, phase, mode).await
     }
 
-    /// Docker-mode rebase: use GitHub's update-branch API to rebase the PR onto main.
-    async fn run_rebase_phase_docker(&self, task: &Task, phase: &PhaseConfig) -> Result<()> {
+    /// Rebase: try GitHub update-branch API first; on conflict spawn a Docker agent.
+    async fn run_rebase_phase_docker(&self, task: &Task, phase: &PhaseConfig, mode: &PipelineMode) -> Result<()> {
         let repo = self.repo_config(task);
         if repo.repo_slug.is_empty() {
-            warn!("task #{} docker rebase: no repo_slug, skipping", task.id);
-            self.db.update_task_status(task.id, &phase.next, None)?;
+            warn!("task #{} rebase: no repo_slug, skipping", task.id);
+            self.advance_phase(task, phase, mode)?;
             return Ok(());
         }
 
@@ -947,155 +997,112 @@ impl Pipeline {
             ]).await;
             match update_out {
                 Ok(o) if o.exit_code == 0 => {
-                    info!("task #{} docker rebase: update-branch succeeded", task.id);
-                    self.db.update_task_status(task.id, &phase.next, None)?;
+                    info!("task #{} rebase: update-branch succeeded", task.id);
+                    self.advance_phase(task, phase, mode)?;
+                    return Ok(());
                 },
                 Ok(o) => {
                     let err = o.stderr.trim().chars().take(300).collect::<String>();
-                    warn!("task #{} docker rebase: update-branch failed: {err}", task.id);
-                    self.fail_or_retry(task, "rebase", &err)?;
+                    warn!("task #{} rebase: update-branch failed, spawning agent: {err}", task.id);
                 },
                 Err(e) => {
-                    warn!("task #{} docker rebase: update-branch error: {e}", task.id);
-                    self.fail_or_retry(task, "rebase", &e.to_string())?;
+                    warn!("task #{} rebase: update-branch error, spawning agent: {e}", task.id);
                 },
             }
         } else {
-            // No PR yet — branch may not exist on remote. Advance and let integration create it.
-            info!("task #{} docker rebase: no PR found, advancing", task.id);
-            self.db.update_task_status(task.id, &phase.next, None)?;
+            info!("task #{} rebase: no PR found, advancing", task.id);
+            self.advance_phase(task, phase, mode)?;
+            return Ok(());
+        }
+
+        // GitHub API couldn't auto-merge — spawn a Docker agent to resolve conflicts
+        self.run_rebase_agent(task, phase, mode, &branch).await
+    }
+
+    /// Spawn a Docker agent to rebase the branch onto main and resolve conflicts.
+    async fn run_rebase_agent(
+        &self,
+        task: &Task,
+        phase: &PhaseConfig,
+        mode: &PipelineMode,
+        branch: &str,
+    ) -> Result<()> {
+        let rebase_phase = PhaseConfig {
+            name: "rebase_fix".into(),
+            label: "Rebase Fix".into(),
+            system_prompt: "You are a rebase agent. Your job is to rebase the current branch \
+onto origin/main and resolve any merge conflicts. Preserve the intent of the branch's changes \
+while incorporating upstream updates. After resolving conflicts, ensure the code compiles and \
+tests pass if a test command is available. Push the result.".into(),
+            instruction: format!(
+                "Rebase branch `{branch}` onto `origin/main`. Steps:\n\
+1. `git fetch origin`\n\
+2. `git rebase origin/main`\n\
+3. If conflicts arise, resolve them preserving the branch's intent\n\
+4. `git rebase --continue` after resolving each conflict\n\
+5. `git push --force-with-lease origin {branch}`\n\n\
+If the rebase is too complex or the conflicts are unclear, abort with `git rebase --abort` \
+and report what went wrong.",
+            ),
+            allowed_tools: "Read,Glob,Grep,Write,Edit,Bash".into(),
+            use_docker: true,
+            fresh_session: true,
+            ..PhaseConfig::default()
+        };
+
+        let session_dir_rel = format!("store/sessions/task-{}", task.id);
+        tokio::fs::create_dir_all(&session_dir_rel).await.ok();
+        let session_dir = std::fs::canonicalize(&session_dir_rel)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&session_dir_rel))
+            .to_string_lossy()
+            .to_string();
+
+        let ctx = self.make_context(task, session_dir.clone(), session_dir, Vec::new());
+
+        let backend = match self.resolve_backend(task) {
+            Some(b) => b,
+            None => {
+                warn!("task #{} rebase: no backend available", task.id);
+                self.fail_or_retry(task, "rebase", "no agent backend")?;
+                return Ok(());
+            }
+        };
+
+        let result = backend
+            .run_phase(task, &rebase_phase, ctx)
+            .await
+            .unwrap_or_else(|e| {
+                error!("rebase agent for task #{}: {e}", task.id);
+                PhaseOutput::failed(String::new())
+            });
+
+        if let Some(ref sid) = result.new_session_id {
+            self.db.update_task_session(task.id, sid).ok();
+        }
+
+        self.db
+            .insert_task_output(task.id, "rebase_fix", &result.output, &result.raw_stream, if result.success { 0 } else { 1 })
+            .ok();
+
+        if result.success {
+            info!("task #{} rebase: agent resolved conflicts", task.id);
+            self.advance_phase(task, phase, mode)?;
+        } else {
+            warn!("task #{} rebase: agent failed to resolve conflicts", task.id);
+            self.fail_or_retry(task, "rebase", &result.output)?;
         }
 
         Ok(())
     }
 
-    /// Run a lint_fix phase: run lint command, spawn agent to fix if dirty, re-verify.
+    /// Lint is handled inside the Docker container by the entrypoint.
     async fn run_lint_fix_phase(
         &self,
         task: &Task,
         phase: &PhaseConfig,
         mode: &PipelineMode,
     ) -> Result<()> {
-        // In Docker mode, lint is handled inside the container by the entrypoint.
-        if self.sandbox_mode == SandboxMode::Docker {
-            self.advance_phase(task, phase, mode)?;
-            return Ok(());
-        }
-
-        let wt_path = task.repo_path.clone();
-
-        let lint_cmd = match self.repo_lint_cmd(&task.repo_path, &wt_path) {
-            Some(cmd) => cmd,
-            None => {
-                self.advance_phase(task, phase, mode)?;
-                info!("task #{} lint_fix: no lint command, skipping", task.id);
-                return Ok(());
-            },
-        };
-
-        const LINT_FIX_SYSTEM: &str = "You are a lint-fix agent. Your only job is to make the \
-codebase pass the project's linter with zero warnings or errors. Do not refactor, rename, or \
-change logic — only fix what the linter reports. Read the lint output carefully and make the \
-minimal changes needed. After editing, do not run the linter yourself — the pipeline will verify.";
-
-        let mut lint_out = self.run_test_command(&wt_path, &lint_cmd).await?;
-        if lint_out.exit_code == 0 {
-            self.advance_phase(task, phase, mode)?;
-            info!("task #{} lint_fix: already clean", task.id);
-            return Ok(());
-        }
-
-        let session_dir_rel = format!("store/sessions/task-{}", task.id);
-        let session_dir = std::fs::canonicalize(&session_dir_rel)
-            .unwrap_or_else(|_| std::path::PathBuf::from(&session_dir_rel))
-            .to_string_lossy()
-            .to_string();
-
-        for fix_attempt in 0..2u32 {
-            let lint_output_text = format!("{}\n{}", lint_out.stdout, lint_out.stderr)
-                .trim()
-                .to_string();
-
-            info!(
-                "task #{} lint_fix: running fix agent (attempt {})",
-                task.id,
-                fix_attempt + 1
-            );
-
-            let fix_phase = PhaseConfig {
-                name: format!("lint_fix_{fix_attempt}"),
-                label: "Lint Fix".into(),
-                system_prompt: LINT_FIX_SYSTEM.into(),
-                instruction: format!(
-                    "Fix all lint errors. Lint output:\n\n```\n{lint_output_text}\n```\n\n\
-Make only the minimal changes the linter requires. Do not refactor or change logic.",
-                ),
-                allowed_tools: "Read,Glob,Grep,Write,Edit,Bash".into(),
-                use_docker: true,
-                allow_no_changes: true,
-                fresh_session: true,
-                ..PhaseConfig::default()
-            };
-
-            let ctx = self.make_context(task, wt_path.clone(), session_dir.clone(), Vec::new());
-
-            let agent_result = match self.resolve_backend(task) {
-                Some(b) => {
-                    if let Err(e) = self
-                        .write_pipeline_state_snapshot(task, &fix_phase.name, &wt_path)
-                        .await
-                    {
-                        warn!("task #{}: write_pipeline_state_snapshot: {e}", task.id);
-                    }
-                    b.run_phase(task, &fix_phase, ctx)
-                        .await
-                        .unwrap_or_else(|e| {
-                            error!("lint-fix agent for task #{}: {e}", task.id);
-                            PhaseOutput::failed(String::new())
-                        })
-                },
-                None => {
-                    warn!(
-                        "task #{}: no backend, skipping lint fix attempt {}",
-                        task.id, fix_attempt
-                    );
-                    self.advance_phase(task, phase, mode)?;
-                    return Ok(());
-                },
-            };
-
-            if let Some(ref sid) = agent_result.new_session_id {
-                self.db.update_task_session(task.id, sid).ok();
-            }
-            self.db
-                .insert_task_output(
-                    task.id,
-                    &fix_phase.name,
-                    &agent_result.output,
-                    &agent_result.raw_stream,
-                    if agent_result.success { 0 } else { 1 },
-                )
-                .ok();
-
-            let git = Git::new(&task.repo_path);
-            let (_, user_coauthor) = self.git_coauthor_settings();
-            let lint_commit_msg = Self::with_user_coauthor("fix: lint errors", &user_coauthor);
-            let _ = git.commit_all(&wt_path, &lint_commit_msg, self.git_author());
-
-            lint_out = self.run_test_command(&wt_path, &lint_cmd).await?;
-            if lint_out.exit_code == 0 {
-                self.advance_phase(task, phase, mode)?;
-                info!(
-                    "task #{} lint_fix: clean after {} fix attempt(s)",
-                    task.id,
-                    fix_attempt + 1
-                );
-                return Ok(());
-            }
-        }
-
-        let error_msg = format!("{}\n{}", lint_out.stdout, lint_out.stderr);
-        self.fail_or_retry(task, "lint_fix", error_msg.trim())?;
+        self.advance_phase(task, phase, mode)?;
         Ok(())
     }
 
@@ -1104,7 +1111,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
     async fn run_compile_fix(
         &self,
         task: &Task,
-        wt_path: &str,
+        work_dir: &str,
         check_cmd: &str,
         initial_errors: &str,
     ) -> Result<bool> {
@@ -1141,7 +1148,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 ..PhaseConfig::default()
             };
 
-            let ctx = self.make_context(task, wt_path.to_string(), session_dir.clone(), Vec::new());
+            let ctx = self.make_context(task, work_dir.to_string(), session_dir.clone(), Vec::new());
 
             let result = match self.resolve_backend(task) {
                 Some(b) => b.run_phase(task, &fix_phase, ctx).await.unwrap_or_else(|e| {
@@ -1155,15 +1162,21 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 self.db.update_task_session(task.id, sid).ok();
             }
             self.db
-                .insert_task_output(task.id, &fix_phase.name, &result.output, &result.raw_stream, if result.success { 0 } else { 1 })
+                .insert_task_output(
+                    task.id,
+                    &fix_phase.name,
+                    &result.output,
+                    &result.raw_stream,
+                    if result.success { 0 } else { 1 },
+                )
                 .ok();
 
             let git = Git::new(&task.repo_path);
             let (_, user_coauthor) = self.git_coauthor_settings();
             let msg = Self::with_user_coauthor("fix: compile errors", &user_coauthor);
-            let _ = git.commit_all(wt_path, &msg, self.git_author());
+            let _ = git.commit_all(work_dir, &msg, self.git_author());
 
-            match self.run_test_command(wt_path, check_cmd).await {
+            match self.run_test_command(work_dir, check_cmd).await {
                 Ok(ref out) if out.exit_code == 0 => {
                     info!("task #{} compile_fix: resolved after {} attempt(s)", task.id, attempt + 1);
                     return Ok(true);
@@ -1190,7 +1203,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             self.read_structured_output(task);
             self.read_task_deadlines(task);
             self.index_task_documents(task);
-            self.db.update_task_status(task.id, "done", None)?;
+
+            self.db.update_task_status(task.id, "done", Some(""))?;
+            let _ = self.db.mark_task_completed(task.id);
+            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
+            let _ = self.db.log_event_full(Some(task.id), None, pid, "pipeline", "task.completed", &serde_json::json!({ "title": task.title }));
             match mode.integration {
                 IntegrationType::GitPr => {
                     let branch = format!("task-{}", task.id);
@@ -1206,7 +1223,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 IntegrationType::None => {}
             }
         } else {
-            self.db.update_task_status(task.id, next, None)?;
+            self.db.update_task_status(task.id, next, Some(""))?;
         }
         self.emit(PipelineEvent::Phase {
             task_id: Some(task.id),
@@ -1316,7 +1333,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         &self,
         task: &Task,
         phase_name: &str,
-        wt_path: &str,
+        work_dir: &str,
     ) -> Result<()> {
         // Build phase_history from last 5 task outputs, truncating output to 2 000 chars.
         let phase_history: Vec<PhaseHistoryEntry> = self
@@ -1375,14 +1392,14 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             task_id: task.id,
             task_title: task.title.clone(),
             phase: phase_name.to_string(),
-            worktree_path: wt_path.to_string(),
+            worktree_path: work_dir.to_string(),
             pr_url,
             pending_approvals,
             phase_history,
             generated_at: Utc::now(),
         };
 
-        let borg_dir = format!("{wt_path}/.borg");
+        let borg_dir = format!("{work_dir}/.borg");
         tokio::fs::create_dir_all(&borg_dir).await?;
         let json = serde_json::to_string_pretty(&snapshot)?;
         tokio::fs::write(format!("{borg_dir}/pipeline-state.json"), json).await?;
@@ -1391,25 +1408,6 @@ Make only the minimal changes the linter requires. Do not refactor or change log
     }
 
     // ── Lint helpers ──────────────────────────────────────────────────────
-
-    /// Resolve lint command: explicit repo config → `.borg/lint.sh` fallback.
-    fn repo_lint_cmd(&self, repo_path: &str, wt_path: &str) -> Option<String> {
-        if let Some(repo) = self
-            .config
-            .watched_repos
-            .iter()
-            .find(|r| r.path == repo_path)
-        {
-            if !repo.lint_cmd.is_empty() {
-                return Some(repo.lint_cmd.clone());
-            }
-        }
-        let script = format!("{wt_path}/.borg/lint.sh");
-        if std::path::Path::new(&script).exists() {
-            return Some(format!("bash '{script}'"));
-        }
-        None
-    }
 
     // ── Test runner ───────────────────────────────────────────────────────
 
@@ -1674,68 +1672,6 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 }
             }
 
-            // Check rebase status via GitHub compare API
-            let behind = self
-                .gh(&[
-                    "api",
-                    &format!("repos/{slug}/compare/{}...main", entry.branch),
-                    "--jq",
-                    ".behind_by",
-                ])
-                .await;
-            let not_rebased = behind
-                .as_ref()
-                .map(|r| {
-                    r.exit_code != 0
-                        || r.stdout.trim().parse::<u64>().map(|n| n > 0).unwrap_or(false)
-                })
-                .unwrap_or(false);
-            if not_rebased {
-                info!(
-                    "Task #{} {} not rebased on main, trying GitHub update-branch",
-                    entry.task_id, entry.branch
-                );
-                let pr_num_out = self
-                    .gh(&[
-                        "pr",
-                        "view",
-                        &entry.branch,
-                        "--repo",
-                        slug,
-                        "--json",
-                        "number",
-                        "--jq",
-                        ".number",
-                    ])
-                    .await;
-                let pr_num = pr_num_out
-                    .ok()
-                    .filter(|o| o.exit_code == 0)
-                    .and_then(|o| o.stdout.trim().parse::<u64>().ok());
-                if let Some(num) = pr_num {
-                    let _ = self
-                        .gh(&[
-                            "api",
-                            "-X",
-                            "PUT",
-                            &format!("repos/{slug}/pulls/{num}/update-branch"),
-                        ])
-                        .await;
-                    info!(
-                        "Task #{} {}: update-branch requested",
-                        entry.task_id, entry.branch
-                    );
-                }
-                self.db.update_queue_status_with_error(
-                    entry.id,
-                    "excluded",
-                    "branch not rebased on main",
-                )?;
-                self.db.update_task_status(entry.task_id, "rebase", None)?;
-                excluded_ids.insert(entry.id);
-                continue;
-            }
-
             // Check if PR already exists
             let view_out = self
                 .gh(&[
@@ -1749,7 +1685,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                     "--jq",
                     ".number",
                 ])
-                .await?;
+                .await;
+            let view_out = match view_out {
+                Ok(o) => o,
+                Err(e) => { warn!("gh pr view {}: {e}", entry.branch); continue; }
+            };
             if view_out.exit_code == 0 && !view_out.stdout.trim().is_empty() {
                 continue;
             }
@@ -1776,7 +1716,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                     "--body",
                     "Automated implementation.",
                 ])
-                .await?;
+                .await;
+            let create_out = match create_out {
+                Ok(o) => o,
+                Err(e) => { warn!("gh pr create {}: {e}", entry.branch); continue; }
+            };
 
             if create_out.exit_code != 0 {
                 let err = &create_out.stderr[..create_out.stderr.len().min(300)];
@@ -1835,7 +1779,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                         "--jq",
                         ".state",
                     ])
-                    .await?;
+                    .await;
+                let view_out = match view_out {
+                    Ok(o) => o,
+                    Err(e) => { warn!("gh pr view state {}: {e}", entry.branch); continue; }
+                };
                 if view_out.exit_code != 0 {
                     continue;
                 }
@@ -1861,7 +1809,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                         "--jq",
                         ".mergeable",
                     ])
-                    .await?;
+                    .await;
+                let mb_out = match mb_out {
+                    Ok(o) => o,
+                    Err(e) => { warn!("gh pr view mergeable {}: {e}", entry.branch); continue; }
+                };
                 let mb = mb_out.stdout.trim().to_string();
                 let mut force_merge = false;
 
@@ -1902,7 +1854,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 self.db.update_queue_status(entry.id, "merging")?;
                 let merge_out = self
                     .gh(&[
-                        "pr", "merge", &entry.branch, "--repo", slug, "--squash",
+                        "pr", "merge", &entry.branch, "--repo", slug, "--merge",
                     ])
                     .await;
 
@@ -2134,93 +2086,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 backend: String::new(),
                 project_id: 0,
                 task_type: String::new(),
-            };
-            match self.db.insert_task(&task) {
-                Ok(id) => {
-                    created += 1;
-                    info!("seed github_open_issues created task #{id}: {}", task.title);
-                },
-                Err(e) => warn!("seed github_open_issues insert_task: {e}"),
-            }
-        }
-
-        if created > 0 || skipped_existing > 0 {
-            info!(
-                "seed github_open_issues for {}: created={}, skipped_existing={}",
-                repo.path, created, skipped_existing
-            );
-        }
-        Ok(())
-    }
-
-    fn fetch_open_issues(&self, repo: &RepoConfig) -> Result<Vec<GithubIssue>> {
-        let mut cmd = Command::new("gh");
-        cmd.args([
-            "issue",
-            "list",
-            "--state",
-            "open",
-            "--limit",
-            "100",
-            "--json",
-            "number,title,body,url,labels",
-        ]);
-        if !repo.repo_slug.is_empty() {
-            cmd.args(["--repo", &repo.repo_slug]);
-        } else if std::path::Path::new(&repo.path).exists() {
-            cmd.current_dir(&repo.path);
-        } else {
-            anyhow::bail!("no repo_slug or local checkout for {}", repo.path);
-        }
-        let output = cmd
-            .output()
-            .with_context(|| format!("failed to execute `gh issue list` for {}", repo.path))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            anyhow::bail!("gh issue list failed for {}: {}", repo.path, stderr);
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let issues: Vec<GithubIssue> = serde_json::from_str(&stdout)
-            .with_context(|| format!("failed to parse gh issue list JSON for {}", repo.path))?;
-        Ok(issues)
-    }
-
-    async fn run_seed(
-        &self,
-        repo: &RepoConfig,
-        mode_name: &str,
-        seed_cfg: &crate::types::SeedConfig,
-    ) -> Result<()> {
-        let session_dir = std::fs::canonicalize("store/sessions/seed")
-            .unwrap_or_else(|_| {
-                std::fs::create_dir_all("store/sessions/seed").ok();
-                std::fs::canonicalize("store/sessions/seed")
-                    .unwrap_or_else(|_| std::path::PathBuf::from("store/sessions/seed"))
-            })
-            .to_string_lossy()
-            .to_string();
-        tokio::fs::create_dir_all(&session_dir).await.ok();
-
-        let task = Task {
-            id: 0,
-            title: format!("seed:{}", seed_cfg.name),
-            description: String::new(),
-            repo_path: repo.path.clone(),
-            branch: String::new(),
-            status: "seed".to_string(),
-            attempt: 0,
-            max_attempts: 1,
-            last_error: String::new(),
-            created_by: "seed".to_string(),
-            notify_chat: String::new(),
-            created_at: Utc::now(),
-            session_id: String::new(),
-            mode: mode_name.to_string(),
-            backend: String::new(),
-                project_id: 0,
-                task_type: String::new(),
+                started_at: None,
+                completed_at: None,
+                duration_secs: None,
+                review_status: None,
+                revision_count: 0,
         };
 
         let task_suffix =
@@ -2325,115 +2195,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                         backend: String::new(),
                 project_id: 0,
                 task_type: String::new(),
-                    };
-                    match self.db.insert_task(&task) {
-                        Ok(id) => info!("seed created task #{id}: {}", task.title),
-                        Err(e) => warn!("seed insert_task: {e}"),
-                    }
-                }
-            },
-            SeedOutputType::Proposal => {
-                for block in extract_blocks(output, "PROPOSAL_START", "PROPOSAL_END") {
-                    let title = extract_field(&block, "Title:").unwrap_or_default();
-                    let description = extract_field(&block, "Description:").unwrap_or_default();
-                    let rationale = extract_field(&block, "Rationale:").unwrap_or_default();
-                    if title.is_empty() {
-                        continue;
-                    }
-                    let proposal = Proposal {
-                        id: 0,
-                        repo_path: repo_path.to_string(),
-                        title,
-                        description,
-                        rationale,
-                        status: "proposed".to_string(),
-                        created_at: Utc::now(),
-                        triage_score: 0,
-                        triage_impact: 0,
-                        triage_feasibility: 0,
-                        triage_risk: 0,
-                        triage_effort: 0,
-                        triage_reasoning: String::new(),
-                    };
-                    match self.db.insert_proposal(&proposal) {
-                        Ok(id) => info!("seed created proposal #{id}: {}", proposal.title),
-                        Err(e) => warn!("seed insert_proposal: {e}"),
-                    }
-                }
-            },
-        }
-        Ok(())
-    }
-
-    // ── Health monitoring ─────────────────────────────────────────────────
-
-    pub async fn check_health(&self) -> Result<()> {
-        // In Docker mode, repos are not checked out on the host; skip host-side health checks.
-        if self.sandbox_mode == SandboxMode::Docker {
-            return Ok(());
-        }
-
-        const HEALTH_INTERVAL_S: i64 = 1800;
-        let now = chrono::Utc::now().timestamp();
-        if now - self.db.get_ts("last_health_ts") < HEALTH_INTERVAL_S {
-            return Ok(());
-        }
-        self.db.set_ts("last_health_ts", now);
-
-        for repo in &self.config.watched_repos {
-            if !repo.is_self {
-                continue;
-            }
-            // Run tests against the current working tree without pulling.
-            // Pulling here risks overwriting uncommitted local edits.
-            match self.run_test_command(&repo.path, &repo.test_cmd).await {
-                Ok(out) if out.exit_code != 0 => {
-                    warn!("Health: tests failed for {}", repo.path);
-                    self.create_health_task(&repo.path, "tests", &out.stderr)
-                        .await;
-                },
-                Ok(_) => info!("Health: {} OK", repo.path),
-                Err(e) => warn!("Health: test command error for {}: {e}", repo.path),
-            }
-        }
-        Ok(())
-    }
-
-    async fn create_health_task(&self, repo_path: &str, kind: &str, stderr: &str) {
-        // Dedup: skip if a fix task already exists for this repo
-        if let Ok(active) = self.db.list_active_tasks() {
-            if active
-                .iter()
-                .any(|t| t.title.starts_with("Fix failing ") && t.repo_path == repo_path)
-            {
-                return;
-            }
-        }
-        let tail = if stderr.len() > 500 {
-            &stderr[stderr.floor_char_boundary(stderr.len() - 500)..]
-        } else {
-            stderr
-        };
-        let title = format!("Fix failing {kind} on main");
-        let desc = format!("Health check detected {kind} failure on main branch.\n\nError output:\n```\n{tail}\n```");
-        let task = crate::types::Task {
-            id: 0,
-            title: title.clone(),
-            description: desc,
-            repo_path: repo_path.to_string(),
-            branch: String::new(),
-            status: "backlog".into(),
-            attempt: 0,
-            max_attempts: 5,
-            last_error: String::new(),
-            created_by: "health-check".into(),
-            notify_chat: String::new(),
-            created_at: chrono::Utc::now(),
-            session_id: String::new(),
-            mode: "sweborg".into(),
-            backend: String::new(),
-                project_id: 0,
-                task_type: String::new(),
+                started_at: None,
+                completed_at: None,
+                duration_secs: None,
+                review_status: None,
+                revision_count: 0,
         };
         match self.db.insert_task(&task) {
             Ok(id) => {
@@ -2802,6 +2568,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 backend: String::new(),
                 project_id: 0,
                 task_type: String::new(),
+                started_at: None,
+                completed_at: None,
+                duration_secs: None,
+                review_status: None,
+                revision_count: 0,
             };
             match self.db.insert_task(&task) {
                 Ok(id) => {
@@ -2906,36 +2677,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         let mut scored = 0u32;
         let mut dismissed = 0u32;
         for item in &items {
-            let get_i64 = |k: &str| item.get(k).and_then(|v| v.as_i64());
-            let p_id = match get_i64("id") {
-                Some(v) => v,
-                None => continue,
+            let Some((p_id, impact, feasibility, risk, effort, score, reasoning, should_dismiss)) =
+                parse_triage_item(item)
+            else {
+                continue;
             };
-            let impact = match get_i64("impact") {
-                Some(v) => v,
-                None => continue,
-            };
-            let feasibility = match get_i64("feasibility") {
-                Some(v) => v,
-                None => continue,
-            };
-            let risk = match get_i64("risk") {
-                Some(v) => v,
-                None => continue,
-            };
-            let effort = match get_i64("effort") {
-                Some(v) => v,
-                None => continue,
-            };
-            let score = match get_i64("score") {
-                Some(v) => v,
-                None => continue,
-            };
-            let reasoning = item.get("reasoning").and_then(|v| v.as_str()).unwrap_or("");
-            let should_dismiss = item
-                .get("dismiss")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
 
             if let Err(e) = self.db.update_proposal_triage(
                 p_id,
@@ -2971,6 +2717,53 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         }
         self.last_cache_prune_secs.store(now, std::sync::atomic::Ordering::Relaxed);
         Sandbox::prune_stale_cache_volumes(7).await;
+    }
+
+    async fn maybe_prune_session_dirs(&self) {
+        const PRUNE_INTERVAL_S: i64 = 3600;
+        let now = chrono::Utc::now().timestamp();
+        let last = self.last_session_prune_secs.load(std::sync::atomic::Ordering::Relaxed);
+        if now - last < PRUNE_INTERVAL_S {
+            return;
+        }
+        self.last_session_prune_secs.store(now, std::sync::atomic::Ordering::Relaxed);
+
+        let max_age_secs = self.config.session_max_age_hours * 3600;
+        if max_age_secs <= 0 {
+            return;
+        }
+
+        let sessions_dir = format!("{}/sessions", self.config.data_dir);
+        let in_flight_ids: HashSet<i64> = self
+            .in_flight
+            .try_lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+
+        let to_remove = collect_stale_session_dirs(
+            &sessions_dir,
+            now,
+            max_age_secs,
+            &in_flight_ids,
+            |task_id| {
+                self.db
+                    .get_task(task_id)
+                    .ok()
+                    .flatten()
+                    .map(|t| t.created_at.timestamp())
+            },
+        );
+
+        let mut pruned = 0usize;
+        for path in to_remove {
+            match tokio::fs::remove_dir_all(&path).await {
+                Ok(()) => pruned += 1,
+                Err(e) => warn!("failed to remove session dir {}: {e}", path.display()),
+            }
+        }
+        if pruned > 0 {
+            info!("pruned {pruned} stale session dir(s) from {sessions_dir}");
+        }
     }
 
     /// Run `claude --print --model <model>` with prompt on stdin, return stdout.
@@ -3094,6 +2887,71 @@ fn extract_field(block: &str, field: &str) -> Option<String> {
     None
 }
 
+fn parse_triage_item(item: &serde_json::Value) -> Option<(i64, i64, i64, i64, i64, i64, &str, bool)> {
+    let get_i64 = |k: &str| item.get(k).and_then(|v| v.as_i64());
+    let p_id = get_i64("id")?;
+    let impact = get_i64("impact")?;
+    let feasibility = get_i64("feasibility")?;
+    let risk = get_i64("risk")?;
+    let effort = get_i64("effort")?;
+    let score = get_i64("score")?;
+    let reasoning = item.get("reasoning").and_then(|v| v.as_str()).unwrap_or("");
+    let should_dismiss = item.get("dismiss").and_then(|v| v.as_bool()).unwrap_or(false);
+    Some((p_id, impact, feasibility, risk, effort, score, reasoning, should_dismiss))
+}
+
+/// Collect session directory paths under `sessions_dir` that are stale and
+/// eligible for removal.
+///
+/// A directory named `task-{N}` is stale when:
+/// - It is not in `skip_ids` (i.e. not currently in-flight), AND
+/// - Its age (seconds since task creation, or since mtime if the task is not
+///   in the DB) is >= `max_age_secs`.
+///
+/// Exposed as a free function so it can be unit-tested without a Pipeline.
+pub fn collect_stale_session_dirs(
+    sessions_dir: &str,
+    now_secs: i64,
+    max_age_secs: i64,
+    skip_ids: &HashSet<i64>,
+    task_created_at: impl Fn(i64) -> Option<i64>,
+) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(sessions_dir) else {
+        return vec![];
+    };
+    let mut stale = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let Some(id_str) = name_str.strip_prefix("task-") else {
+            continue;
+        };
+        let Ok(task_id) = id_str.parse::<i64>() else {
+            continue;
+        };
+        if skip_ids.contains(&task_id) {
+            continue;
+        }
+        let age_secs = match task_created_at(task_id) {
+            Some(created_at) => now_secs.saturating_sub(created_at),
+            None => {
+                // Orphaned dir: fall back to filesystem mtime
+                entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| now_secs.saturating_sub(d.as_secs() as i64))
+                    .unwrap_or(max_age_secs + 1) // unknown age → treat as stale
+            }
+        };
+        if age_secs >= max_age_secs {
+            stale.push(entry.path());
+        }
+    }
+    stale
+}
+
 fn looks_like_field_key(line: &str) -> bool {
     let trimmed = line.trim();
     if let Some(colon) = trimmed.find(':') {
@@ -3103,5 +2961,76 @@ fn looks_like_field_key(line: &str) -> bool {
             && key.chars().next().map_or(false, |c| c.is_alphabetic())
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Pipeline;
+
+    #[test]
+    fn test_build_system_prompt_suffix_no_coauthor_no_user() {
+        let s = Pipeline::build_system_prompt_suffix(false, "");
+        assert!(s.contains("Do not add Co-Authored-By trailers to commit messages."));
+    }
+
+    #[test]
+    fn test_build_system_prompt_suffix_claude_coauthor_no_user() {
+        let s = Pipeline::build_system_prompt_suffix(true, "");
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn test_build_system_prompt_suffix_no_coauthor_with_user() {
+        let s = Pipeline::build_system_prompt_suffix(false, "User Name <u@e.com>");
+        assert!(s.contains("Do not add Co-Authored-By trailers to commit messages."));
+        assert!(s.contains("Git author is configured via environment variables"));
+    }
+
+    #[test]
+    fn test_build_system_prompt_suffix_claude_coauthor_with_user() {
+        let s = Pipeline::build_system_prompt_suffix(true, "User Name <u@e.com>");
+        assert!(!s.contains("Do not add Co-Authored-By trailers"));
+        assert!(s.contains("Git author is configured via environment variables"));
+    }
+
+    #[test]
+    fn test_with_user_coauthor_empty_returns_message_unchanged() {
+        let msg = "fix: some bug";
+        assert_eq!(Pipeline::with_user_coauthor(msg, ""), msg);
+    }
+
+    #[test]
+    fn test_with_user_coauthor_appends_trailer() {
+        let result = Pipeline::with_user_coauthor("fix: some bug", "Name <email>");
+        assert_eq!(result, "fix: some bug\n\nCo-Authored-By: Name <email>");
+    }
+
+    #[test]
+    fn derive_compile_check_cargo_test_appends_no_run() {
+        let result = Pipeline::derive_compile_check("cargo test");
+        assert_eq!(result, Some("cargo test --no-run".to_string()));
+    }
+
+    #[test]
+    fn derive_compile_check_just_test_returns_none() {
+        assert_eq!(Pipeline::derive_compile_check("just test"), None);
+    }
+
+    #[test]
+    fn derive_compile_check_bun_test_returns_none() {
+        assert_eq!(Pipeline::derive_compile_check("bun test"), None);
+    }
+
+    #[test]
+    fn derive_compile_check_cargo_test_release_preserves_full_command() {
+        let result = Pipeline::derive_compile_check("cargo test --release");
+        assert_eq!(result, Some("cargo test --release --no-run".to_string()));
+    }
+
+    #[test]
+    fn derive_compile_check_trims_whitespace() {
+        let result = Pipeline::derive_compile_check("  cargo test  ");
+        assert_eq!(result, Some("cargo test --no-run".to_string()));
     }
 }

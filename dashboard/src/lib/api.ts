@@ -272,6 +272,76 @@ export async function retryTask(id: number): Promise<void> {
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
+export async function approveTask(id: number): Promise<{ next_phase: string }> {
+  const res = await apiFetch(`/api/tasks/${id}/approve`, { method: "POST" });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function rejectTask(id: number, feedback?: string): Promise<void> {
+  const res = await apiFetch(`/api/tasks/${id}/reject`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ feedback }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+export async function requestRevision(id: number, feedback: string): Promise<{ target_phase: string }> {
+  const res = await apiFetch(`/api/tasks/${id}/request-revision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ feedback }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export interface RevisionRound {
+  round: number;
+  feedback: string | null;
+  feedback_at: string | null;
+  phases: Array<{
+    phase: string;
+    exit_code: number;
+    output_preview: string;
+    created_at: string;
+  }>;
+}
+
+export interface RevisionHistory {
+  task_id: number;
+  revision_count: number;
+  review_status: string | null;
+  rounds: RevisionRound[];
+}
+
+export async function getRevisionHistory(taskId: number): Promise<RevisionHistory> {
+  return fetchJson(`/api/tasks/${taskId}/revisions`);
+}
+
+export interface CitationVerification {
+  id: number;
+  task_id: number;
+  citation_text: string;
+  citation_type: string;
+  status: string;
+  source: string;
+  treatment: string;
+  checked_at: string;
+  created_at: string;
+}
+
+export async function getTaskCitations(id: number): Promise<CitationVerification[]> {
+  return fetchJson(`/api/tasks/${id}/citations`);
+}
+
+export async function verifyTaskCitations(id: number): Promise<{ verified: number; total: number; citations: CitationVerification[] }> {
+  const res = await apiFetch(`/api/tasks/${id}/verify-citations`, { method: "POST" });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
 export async function retryAllFailed(): Promise<void> {
   const res = await apiFetch("/api/tasks/retry-all-failed", { method: "POST" });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -504,6 +574,24 @@ export async function uploadProjectFiles(
   return res.json();
 }
 
+export async function fetchProjectFileText(
+  projectId: number,
+  fileId: number
+): Promise<{ id: number; file_name: string; extracted_text: string; has_text: boolean }> {
+  return fetchJson(`/api/projects/${projectId}/files/${fileId}/text`);
+}
+
+export async function reextractProjectFile(
+  projectId: number,
+  fileId: number
+): Promise<{ id: number; extracted_text_chars: number; has_text: boolean }> {
+  const res = await apiFetch(`/api/projects/${projectId}/files/${fileId}/reextract`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
 // ── Deadlines ──────────────────────────────────────────────────────────
 
 export interface Deadline {
@@ -527,9 +615,9 @@ export function useProjectDeadlines(projectId: number | null) {
 }
 
 export async function createDeadline(projectId: number, label: string, dueDate: string, ruleBasis?: string): Promise<{ id: number }> {
-  const res = await fetch(apiUrl(`/api/projects/${projectId}/deadlines`), {
+  const res = await apiFetch(`/api/projects/${projectId}/deadlines`, {
     method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ label, due_date: dueDate, rule_basis: ruleBasis || "" }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
@@ -537,20 +625,31 @@ export async function createDeadline(projectId: number, label: string, dueDate: 
 }
 
 export async function updateDeadline(projectId: number, id: number, updates: Partial<{ label: string; due_date: string; rule_basis: string; status: string }>): Promise<void> {
-  const res = await fetch(apiUrl(`/api/projects/${projectId}/deadlines/${id}`), {
+  const res = await apiFetch(`/api/projects/${projectId}/deadlines/${id}`, {
     method: "PUT",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
 export async function deleteDeadline(projectId: number, id: number): Promise<void> {
-  const res = await fetch(apiUrl(`/api/projects/${projectId}/deadlines/${id}`), {
+  const res = await apiFetch(`/api/projects/${projectId}/deadlines/${id}`, {
     method: "DELETE",
-    headers: authHeaders(),
   });
   if (!res.ok) throw new Error(`${res.status}`);
+}
+
+export function useTemplates(category?: string) {
+  return useQuery<KnowledgeFile[]>({
+    queryKey: ["templates", category],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (category) params.set("category", category);
+      return fetchJson(`/api/knowledge/templates?${params}`);
+    },
+    refetchInterval: REFETCH_PROJECTS,
+  });
 }
 
 export function useUpcomingDeadlines(limit = 50) {
@@ -565,17 +664,41 @@ export function useUpcomingDeadlines(limit = 50) {
 
 export interface FtsSearchResult {
   project_id: number;
-  project_name: string;
+  project_name?: string;
   task_id: number;
   file_path: string;
-  title_snippet: string;
+  title_snippet?: string;
   content_snippet: string;
-  rank: number;
+  rank?: number;
+  score?: number;
+  source?: "keyword" | "semantic";
 }
 
-export async function searchDocuments(query: string, projectId?: number): Promise<FtsSearchResult[]> {
+// ── Audit ─────────────────────────────────────────────────────────────
+
+export interface AuditEvent {
+  id: number;
+  task_id: number | null;
+  project_id: number | null;
+  actor: string;
+  kind: string;
+  payload: string;
+  created_at: string;
+}
+
+export function useProjectAudit(projectId: number | null) {
+  return useQuery<AuditEvent[]>({
+    queryKey: ["project_audit", projectId],
+    queryFn: () => fetchJson(`/api/projects/${projectId}/audit`),
+    enabled: projectId !== null,
+    refetchInterval: REFETCH_PROJECTS,
+  });
+}
+
+export async function searchDocuments(query: string, projectId?: number, semantic = true): Promise<FtsSearchResult[]> {
   const params = new URLSearchParams({ q: query });
   if (projectId) params.set("project_id", String(projectId));
+  if (semantic) params.set("semantic", "true");
   return fetchJson(`/api/search?${params}`);
 }
 
@@ -784,20 +907,28 @@ export async function uploadKnowledgeFile(
   file: File,
   description: string,
   inline: boolean,
+  category?: string,
 ): Promise<{ id: number; file_name: string }> {
   await tokenReady;
   const form = new FormData();
   form.append("file", file);
   form.append("description", description);
   form.append("inline", inline ? "true" : "false");
+  if (category) form.append("category", category);
   const res = await fetch(`${apiBase()}/api/knowledge/upload`, { method: "POST", headers: authHeaders(), body: form });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
 
+export async function fetchKnowledgeContent(id: number): Promise<ArrayBuffer> {
+  const res = await apiFetch(`/api/knowledge/${id}/content`);
+  if (!res.ok) throw new Error(`Failed to load knowledge file (${res.status})`);
+  return res.arrayBuffer();
+}
+
 export async function updateKnowledgeFile(
   id: number,
-  patch: { description?: string; inline?: boolean },
+  patch: { description?: string; inline?: boolean; tags?: string; category?: string; jurisdiction?: string },
 ): Promise<{ ok: boolean }> {
   const res = await apiFetch(`/api/knowledge/${id}`, {
     method: "PUT",

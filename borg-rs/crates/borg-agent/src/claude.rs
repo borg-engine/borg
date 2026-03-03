@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use borg_core::{
     agent::AgentBackend,
+    pipeline::derive_compile_check,
     sandbox::{Sandbox, SandboxMode},
     types::{ContainerTestResult, PhaseConfig, PhaseContext, PhaseOutput, Task},
 };
@@ -40,15 +41,6 @@ pub fn extract_phase_result(text: &str) -> Option<&str> {
         }
     }
     last_content
-}
-
-fn derive_compile_check(test_cmd: &str) -> Option<String> {
-    let trimmed = test_cmd.trim();
-    if trimmed.contains("cargo test") {
-        Some(format!("{trimmed} --no-run"))
-    } else {
-        None
-    }
 }
 
 /// Runs Claude Code as a subprocess, with configurable sandbox isolation.
@@ -126,6 +118,7 @@ impl ClaudeBackend {
         compile_check_cmd: &str,
         lint_cmd: &str,
         test_cmd: &str,
+        gh_token: &str,
     ) -> Vec<u8> {
         let commit_message = if !ctx.user_coauthor.is_empty() {
             format!("{}\n\nCo-Authored-By: {}", phase.commit_message, ctx.user_coauthor)
@@ -138,7 +131,16 @@ impl ClaudeBackend {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
         let branch = format!("task-{}", task.id);
-        let gh_token = std::env::var("GH_TOKEN").unwrap_or_default();
+        let gh_token = gh_token.to_string();
+
+        // Docker containers need a GitHub URL, not a local path
+        let repo_url = if !ctx.repo_config.repo_slug.is_empty() && !gh_token.is_empty() {
+            format!("https://x-access-token:{gh_token}@github.com/{}.git", ctx.repo_config.repo_slug)
+        } else if !ctx.repo_config.repo_slug.is_empty() {
+            format!("https://github.com/{}.git", ctx.repo_config.repo_slug)
+        } else {
+            task.repo_path.clone()
+        };
 
         let author_name = &self.git_author_name;
         let author_email = &self.git_author_email;
@@ -149,7 +151,7 @@ impl ClaudeBackend {
             "systemPrompt": system_prompt,
             "allowedTools": phase.allowed_tools,
             "maxTurns": 200,
-            "repoUrl": task.repo_path,
+            "repoUrl": repo_url,
             "mirrorPath": format!("/mirrors/{repo_name}.git"),
             "branch": branch,
             "base": "origin/main",
@@ -186,12 +188,29 @@ impl ClaudeBackend {
         })
     }
 
+    fn resolve_gh_token() -> String {
+        std::env::var("GH_TOKEN")
+            .or_else(|_| std::env::var("GITHUB_TOKEN"))
+            .unwrap_or_else(|_| {
+                std::process::Command::new("gh")
+                    .args(["auth", "token"])
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default()
+            })
+    }
+
     fn host_mirror_path(task: &Task, data_dir: &str) -> String {
         let repo_name = std::path::Path::new(&task.repo_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        format!("{data_dir}/mirrors/{repo_name}.git")
+        let raw = format!("{data_dir}/mirrors/{repo_name}.git");
+        std::fs::canonicalize(&raw)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or(raw)
     }
 
     fn container_mirror_path(task: &Task) -> String {
@@ -212,8 +231,8 @@ impl AgentBackend for ClaudeBackend {
         ctx: PhaseContext,
     ) -> Result<PhaseOutput> {
         let file_listing = if phase.include_file_listing {
-            let git = borg_core::git::Git::new(&ctx.worktree_path);
-            git.ls_files(&ctx.worktree_path).ok()
+            let git = borg_core::git::Git::new(&ctx.work_dir);
+            git.ls_files(&ctx.work_dir).ok()
         } else {
             None
         };
@@ -337,13 +356,17 @@ impl AgentBackend for ClaudeBackend {
 
             // kreuzberg OCR — available to document-heavy modes when installed
             if matches!(mode, "lawborg" | "healthborg" | "buildborg") {
-                let has_kreuzberg = std::process::Command::new("kreuzberg")
-                    .arg("--version")
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false);
+                let has_kreuzberg = tokio::task::spawn_blocking(|| {
+                    std::process::Command::new("kreuzberg")
+                        .arg("--version")
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false)
+                })
+                .await
+                .unwrap_or(false);
                 if has_kreuzberg {
                     mcp_servers.insert("ocr".into(), serde_json::json!({
                         "command": "kreuzberg",
@@ -379,14 +402,15 @@ impl AgentBackend for ClaudeBackend {
         claude_args.push("--print".to_string());
         claude_args.push(instruction.clone());
 
-        // Determine effective mode: only apply sandbox when the phase requests it
-        let effective_mode = if phase.use_docker {
-            &self.sandbox_mode
-        } else {
-            &SandboxMode::Direct
-        };
+        let effective_mode = &self.sandbox_mode;
 
-        let oauth_token = self.fresh_oauth_token(&ctx.oauth_token);
+        let creds_path = self.credentials_path.clone();
+        let oauth_fallback = ctx.oauth_token.clone();
+        let oauth_token = tokio::task::spawn_blocking(move || {
+            borg_core::config::refresh_oauth_token(&creds_path, &oauth_fallback)
+        })
+        .await
+        .unwrap_or_else(|_| ctx.oauth_token.clone());
 
         info!(
             task_id = task.id,
@@ -436,14 +460,22 @@ impl AgentBackend for ClaudeBackend {
         let cargo_home = std::env::var("CARGO_HOME")
             .unwrap_or_else(|_| format!("{real_home}/.cargo"));
 
+        // Resolve GH token upfront (may invoke `gh auth token` subprocess)
+        let gh_token = if matches!(effective_mode, SandboxMode::Docker) {
+            tokio::task::spawn_blocking(Self::resolve_gh_token)
+                .await
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+
         let mut child = match effective_mode {
             SandboxMode::Bwrap => {
-                // Worktree .git file points to main repo's .git/worktrees/<name> — make
-                // the main .git dir writable so the agent can commit.
+                // .git must be writable so the agent can commit.
                 let git_dir = std::path::Path::new(&task.repo_path).join(".git");
                 let git_dir_str = git_dir.to_string_lossy().to_string();
-                let writable: Vec<&str> = vec![ctx.worktree_path.as_str(), ctx.session_dir.as_str(), &git_dir_str];
-                Sandbox::bwrap_command(&writable, &ctx.worktree_path, &full_cmd)
+                let writable: Vec<&str> = vec![ctx.work_dir.as_str(), ctx.session_dir.as_str(), &git_dir_str];
+                Sandbox::bwrap_command(&writable, &ctx.work_dir, &full_cmd)
                     .kill_on_drop(true)
                     .env("HOME", &ctx.session_dir)
                     .env("RUSTUP_HOME", &rustup_home)
@@ -456,7 +488,7 @@ impl AgentBackend for ClaudeBackend {
             },
             SandboxMode::Docker => {
                 // Session dir (rw) + optional bare mirror (ro) + optional setup script (ro).
-                // The container clones the repo itself; no worktree bind needed.
+                // The container clones the repo itself; no repo bind needed.
                 let host_mirror = Self::host_mirror_path(task, &ctx.data_dir);
                 let container_mirror = Self::container_mirror_path(task);
                 let mut binds: Vec<(String, String, bool)> = vec![
@@ -502,7 +534,6 @@ impl AgentBackend for ClaudeBackend {
                     ("borg-cache-rustup".to_string(), "/home/bun/.rustup".to_string()),
                 ];
 
-                let gh_token = std::env::var("GH_TOKEN").unwrap_or_default();
                 let mut env_kv: Vec<(String, String)> = vec![
                     ("HOME".to_string(), ctx.session_dir.clone()),
                     ("RUSTUP_HOME".to_string(), "/home/bun/.rustup".to_string()),
@@ -510,7 +541,7 @@ impl AgentBackend for ClaudeBackend {
                     ("CLAUDE_CODE_OAUTH_TOKEN".to_string(), oauth_token.clone()),
                 ];
                 if !gh_token.is_empty() {
-                    env_kv.push(("GH_TOKEN".to_string(), gh_token));
+                    env_kv.push(("GH_TOKEN".to_string(), gh_token.clone()));
                 }
 
                 let binds_ref: Vec<(&str, &str, bool)> = binds
@@ -571,7 +602,7 @@ impl AgentBackend for ClaudeBackend {
                 Command::new(&self.claude_bin)
                     .args(&full_cmd[1..])
                     .kill_on_drop(true)
-                    .current_dir(&ctx.worktree_path)
+                    .current_dir(&ctx.work_dir)
                     .env("HOME", &ctx.session_dir)
                     .env("RUSTUP_HOME", &rustup_home)
                     .env("CARGO_HOME", &cargo_home)
@@ -604,6 +635,7 @@ impl AgentBackend for ClaudeBackend {
                     &compile_check_cmd,
                     "",
                     runs_test_cmd,
+                    &gh_token,
                 );
                 let _ = stdin.write_all(&payload).await;
                 // stdin dropped here → EOF to container
@@ -745,12 +777,28 @@ impl AgentBackend for ClaudeBackend {
                 Ok(Err(e)) => return Err(e),
                 Err(_elapsed) => {
                     warn!(task_id = task.id, phase = %phase.name, timeout_s, "claude subprocess timed out");
+                    // Kill the Docker container — kill_on_drop only kills the CLI wrapper
+                    if let Some(ref cid_path) = cidfile_path {
+                        if let Ok(cid) = std::fs::read_to_string(cid_path) {
+                            let cid = cid.trim().to_string();
+                            if !cid.is_empty() {
+                                let _ = std::process::Command::new("docker")
+                                    .args(["stop", "--time=5", &cid])
+                                    .output();
+                            }
+                        }
+                        let _ = std::fs::remove_file(cid_path);
+                    }
                     return Ok(PhaseOutput::failed(String::new()));
                 },
             }
         } else {
             io_future.await?
         };
+
+        if let Some(ref cid_path) = cidfile_path {
+            let _ = std::fs::remove_file(cid_path);
+        }
 
         let (output, new_session_id) = crate::event::parse_stream(&raw_stream);
 
@@ -772,19 +820,5 @@ impl AgentBackend for ClaudeBackend {
             ran_in_docker: is_docker,
             container_test_results,
         })
-    }
-
-    async fn inject_message(&self, session_id: &str, message: &str) -> Result<()> {
-        warn!(
-            session_id = %session_id,
-            msg_len = message.len(),
-            "inject_message not yet implemented (requires TypeScript sidecar extension)"
-        );
-        Ok(())
-    }
-
-    async fn interrupt(&self, session_id: &str) -> Result<()> {
-        warn!(session_id = %session_id, "interrupt not yet implemented");
-        Ok(())
     }
 }
