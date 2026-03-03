@@ -29,15 +29,16 @@ pub fn all_modes() -> Vec<PipelineMode> {
 
 /// Look up a built-in mode by name (with backward-compat aliases).
 pub fn get_mode(name: &str) -> Option<PipelineMode> {
-    match name {
-        "swe" => get_mode("sweborg"),
-        "legal" => get_mode("lawborg"),
-        "health" => get_mode("healthborg"),
-        "chef" => get_mode("chefborg"),
-        "construction" => get_mode("buildborg"),
-        "medwrite" => get_mode("medborg"),
-        _ => all_modes().into_iter().find(|m| m.name == name),
-    }
+    let alias = match name {
+        "swe" => "sweborg",
+        "legal" => "lawborg",
+        "health" => "healthborg",
+        "chef" => "chefborg",
+        "construction" => "buildborg",
+        "medwrite" => "medborg",
+        _ => name,
+    };
+    all_modes().into_iter().find(|m| m.name == alias)
 }
 
 // ── Shared phase builders ────────────────────────────────────────────────

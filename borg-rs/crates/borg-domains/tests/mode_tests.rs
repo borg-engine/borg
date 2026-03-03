@@ -1,6 +1,27 @@
 use borg_core::types::PhaseType;
 
 #[test]
+fn test_get_mode_aliases() {
+    assert_eq!(borg_domains::get_mode("swe").unwrap().name, "sweborg");
+    assert_eq!(borg_domains::get_mode("legal").unwrap().name, "lawborg");
+    assert_eq!(borg_domains::get_mode("health").unwrap().name, "healthborg");
+    assert_eq!(borg_domains::get_mode("chef").unwrap().name, "chefborg");
+    assert_eq!(borg_domains::get_mode("construction").unwrap().name, "buildborg");
+    assert_eq!(borg_domains::get_mode("medwrite").unwrap().name, "medborg");
+}
+
+#[test]
+fn test_get_mode_canonical_names() {
+    assert_eq!(borg_domains::get_mode("sweborg").unwrap().name, "sweborg");
+    assert_eq!(borg_domains::get_mode("lawborg").unwrap().name, "lawborg");
+}
+
+#[test]
+fn test_get_mode_unknown_returns_none() {
+    assert!(borg_domains::get_mode("nonexistent").is_none());
+}
+
+#[test]
 fn test_swe_mode_has_implement_validate_flow() {
     let mode = borg_domains::swe::swe_mode();
     assert_eq!(mode.name, "sweborg");
