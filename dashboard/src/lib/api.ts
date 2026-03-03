@@ -297,6 +297,28 @@ export async function requestRevision(id: number, feedback: string): Promise<{ t
   return res.json();
 }
 
+export interface CitationVerification {
+  id: number;
+  task_id: number;
+  citation_text: string;
+  citation_type: string;
+  status: string;
+  source: string;
+  treatment: string;
+  checked_at: string;
+  created_at: string;
+}
+
+export async function getTaskCitations(id: number): Promise<CitationVerification[]> {
+  return fetchJson(`/api/tasks/${id}/citations`);
+}
+
+export async function verifyTaskCitations(id: number): Promise<{ verified: number; total: number; citations: CitationVerification[] }> {
+  const res = await apiFetch(`/api/tasks/${id}/verify-citations`, { method: "POST" });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
 export async function retryAllFailed(): Promise<void> {
   const res = await apiFetch("/api/tasks/retry-all-failed", { method: "POST" });
   if (!res.ok) throw new Error(`${res.status}`);

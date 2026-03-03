@@ -774,6 +774,7 @@ function TasksTab({ projectId }: { projectId: number }) {
   const [editTitle, setEditTitle] = useState("");
   const [reviewingId, setReviewingId] = useState<number | null>(null);
   const [revisionFeedback, setRevisionFeedback] = useState("");
+  const [citationsId, setCitationsId] = useState<number | null>(null);
   const [editDesc, setEditDesc] = useState("");
 
   if (isLoading) {
@@ -852,6 +853,14 @@ function TasksTab({ projectId }: { projectId: number }) {
                     className="flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 hover:border-emerald-500/30 hover:text-emerald-400 transition-colors"
                   >
                     {expandedResults === task.id ? "Hide" : "Results"}
+                  </button>
+                )}
+                {(task.status === "done" || task.status === "merged" || isHumanReview) && (
+                  <button
+                    onClick={() => setCitationsId(citationsId === task.id ? null : task.id)}
+                    className="flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 hover:border-blue-500/30 hover:text-blue-400 transition-colors"
+                  >
+                    {citationsId === task.id ? "Hide" : "Citations"}
                   </button>
                 )}
                 {isActive && (
@@ -1002,9 +1011,78 @@ function TasksTab({ projectId }: { projectId: number }) {
             {expandedResults === task.id && (
               <StructuredDataPanel taskId={task.id} />
             )}
+            {citationsId === task.id && (
+              <CitationPanel taskId={task.id} />
+            )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Citation panel ───────────────────────────────────────────────────────────
+
+function CitationPanel({ taskId }: { taskId: number }) {
+  const [citations, setCitations] = useState<import("@/lib/api").CitationVerification[]>([]);
+  const [verifying, setVerifying] = useState(false);
+
+  useEffect(() => {
+    import("@/lib/api").then(({ getTaskCitations }) => {
+      getTaskCitations(taskId).then(setCitations).catch(() => {});
+    });
+  }, [taskId]);
+
+  const statusColor = (s: string) => {
+    if (s === "verified") return "text-emerald-400 bg-emerald-500/10";
+    if (s === "flagged" || s === "error") return "text-red-400 bg-red-500/10";
+    if (s === "format_valid") return "text-blue-400 bg-blue-500/10";
+    return "text-zinc-400 bg-zinc-500/10";
+  };
+
+  return (
+    <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-medium text-zinc-400">
+          Citations {citations.length > 0 && `(${citations.length})`}
+        </span>
+        <button
+          onClick={async () => {
+            setVerifying(true);
+            try {
+              const { verifyTaskCitations } = await import("@/lib/api");
+              const result = await verifyTaskCitations(taskId);
+              setCitations(result.citations);
+            } finally {
+              setVerifying(false);
+            }
+          }}
+          disabled={verifying}
+          className="rounded-md bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-400 hover:bg-blue-500/20 disabled:opacity-50 transition-colors"
+        >
+          {verifying ? "Verifying..." : citations.length > 0 ? "Re-verify" : "Verify All"}
+        </button>
+      </div>
+      {citations.length > 0 && (
+        <div className="space-y-1">
+          {citations.map((c) => (
+            <div key={c.id} className="flex items-start gap-2 text-[10px]">
+              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-medium", statusColor(c.status))}>
+                {c.status}
+              </span>
+              <span className="font-mono text-zinc-300 min-w-0 break-all">{c.citation_text}</span>
+              {c.source && (
+                <span className="shrink-0 text-zinc-600">{c.source}</span>
+              )}
+            </div>
+          ))}
+          <div className="text-[9px] text-zinc-600 pt-1">
+            {citations.filter(c => c.status === "verified").length} verified
+            {" · "}{citations.filter(c => c.status === "unverified").length} unverified
+            {citations.some(c => c.status === "error") && ` · ${citations.filter(c => c.status === "error").length} errors`}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -321,3 +321,18 @@ CREATE TABLE IF NOT EXISTS embeddings (
 );
 CREATE INDEX IF NOT EXISTS idx_embeddings_project ON embeddings(project_id);
 CREATE INDEX IF NOT EXISTS idx_embeddings_task ON embeddings(task_id);
+
+-- ── Citation verifications ────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS citation_verifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES pipeline_tasks(id),
+  citation_text TEXT NOT NULL,
+  citation_type TEXT NOT NULL DEFAULT 'case',
+  status TEXT NOT NULL DEFAULT 'pending',
+  source TEXT NOT NULL DEFAULT '',
+  treatment TEXT NOT NULL DEFAULT '',
+  checked_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_citations_task ON citation_verifications(task_id);

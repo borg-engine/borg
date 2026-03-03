@@ -1916,6 +1916,82 @@ pub(crate) async fn request_revision(
     Ok(Json(json!({ "ok": true, "target_phase": target_phase })))
 }
 
+// ── Citation verification ──────────────────────────────────────────────
+
+pub(crate) async fn get_task_citations(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    state.db.get_task(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
+    let citations = state.db.get_task_citations(id).map_err(internal)?;
+    Ok(Json(json!(citations)))
+}
+
+pub(crate) async fn verify_task_citations(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    let task = state.db.get_task(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
+
+    // Delete previous verification results
+    state.db.delete_task_citations(id).map_err(internal)?;
+
+    // Read all .md files from the task branch
+    let repo_path = task.repo_path.clone();
+    let branch = task.branch.clone();
+    let markdown_content = tokio::task::spawn_blocking(move || {
+        let git = borg_core::git::Git::new(&repo_path);
+        // List files in the branch using git ls-tree
+        let tree_result = git.exec(&repo_path, &["ls-tree", "-r", "--name-only", &branch]);
+        let files: Vec<String> = tree_result
+            .map(|r| r.stdout.lines().map(String::from).collect())
+            .unwrap_or_default();
+        files
+            .into_iter()
+            .filter(|f| f.ends_with(".md"))
+            .filter_map(|f| {
+                let ref_path = format!("{branch}:{f}");
+                git.exec(&repo_path, &["show", &ref_path])
+                    .ok()
+                    .map(|r| r.stdout)
+            })
+            .collect::<Vec<String>>()
+            .join("\n\n")
+    })
+    .await
+    .map_err(|e| { tracing::error!("spawn_blocking: {e}"); StatusCode::INTERNAL_SERVER_ERROR })?;
+
+    if markdown_content.is_empty() {
+        return Ok(Json(json!({ "verified": 0, "citations": [] })));
+    }
+
+    // Extract citations
+    let citations = borg_domains::legal::citations::extract_citations(&markdown_content);
+    if citations.is_empty() {
+        return Ok(Json(json!({ "verified": 0, "citations": [] })));
+    }
+
+    // Verify against CourtListener
+    let cl = borg_domains::legal::courtlistener::CourtListenerClient::new();
+    let results = borg_domains::legal::citations::verify_citations(&citations, &cl).await;
+
+    // Store results
+    for r in &results {
+        let _ = state.db.insert_citation_verification(
+            id,
+            &r.citation_text,
+            &r.citation_type,
+            &r.status,
+            &r.source,
+            &r.treatment,
+            &r.checked_at,
+        );
+    }
+
+    let verified = results.iter().filter(|r| r.status == "verified").count();
+    Ok(Json(json!({ "verified": verified, "total": results.len(), "citations": results })))
+}
+
 pub(crate) async fn retry_task(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,

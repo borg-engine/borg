@@ -14,3 +14,5 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 urlencoding = "2"
+regex = "1"
+chrono = { workspace = true }

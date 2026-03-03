@@ -696,6 +696,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/tasks/:id/approve", post(routes::approve_task))
         .route("/api/tasks/:id/reject", post(routes::reject_task))
         .route("/api/tasks/:id/request-revision", post(routes::request_revision))
+        .route("/api/tasks/:id/citations", get(routes::get_task_citations))
+        .route("/api/tasks/:id/verify-citations", post(routes::verify_task_citations))
         .route("/api/tasks/:id/retry", post(routes::retry_task))
         .route("/api/tasks/:id/unblock", post(routes::unblock_task))
         .route("/api/tasks/retry-all-failed", post(routes::retry_all_failed))

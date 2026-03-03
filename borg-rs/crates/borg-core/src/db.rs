@@ -78,6 +78,19 @@ pub struct ApiKeyEntry {
     pub created_at: String,
 }
 
+#[derive(serde::Serialize)]
+pub struct CitationVerification {
+    pub id: i64,
+    pub task_id: i64,
+    pub citation_text: String,
+    pub citation_type: String,
+    pub status: String,
+    pub source: String,
+    pub treatment: String,
+    pub checked_at: String,
+    pub created_at: String,
+}
+
 pub struct RegisteredGroup {
     pub jid: String,
     pub name: String,
@@ -1469,6 +1482,61 @@ impl Db {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.query_row("SELECT COUNT(*) FROM embeddings", [], |r: &rusqlite::Row| r.get(0))
             .unwrap_or(0)
+    }
+
+    // ── Citation verifications ──────────────────────────────────────────
+
+    pub fn insert_citation_verification(
+        &self,
+        task_id: i64,
+        citation_text: &str,
+        citation_type: &str,
+        status: &str,
+        source: &str,
+        treatment: &str,
+        checked_at: &str,
+    ) -> Result<i64> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "INSERT INTO citation_verifications (task_id, citation_text, citation_type, status, source, treatment, checked_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![task_id, citation_text, citation_type, status, source, treatment, checked_at],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_task_citations(&self, task_id: i64) -> Result<Vec<CitationVerification>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, task_id, citation_text, citation_type, status, source, treatment, checked_at, created_at \
+             FROM citation_verifications WHERE task_id = ?1 ORDER BY id"
+        )?;
+        let rows = stmt
+            .query_map(params![task_id], |r: &rusqlite::Row| {
+                Ok(CitationVerification {
+                    id: r.get(0)?,
+                    task_id: r.get(1)?,
+                    citation_text: r.get(2)?,
+                    citation_type: r.get(3)?,
+                    status: r.get(4)?,
+                    source: r.get(5)?,
+                    treatment: r.get(6)?,
+                    checked_at: r.get::<_, Option<String>>(7)?.unwrap_or_default(),
+                    created_at: r.get::<_, String>(8)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn delete_task_citations(&self, task_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "DELETE FROM citation_verifications WHERE task_id = ?1",
+            params![task_id],
+        )?;
+        Ok(())
     }
 
     pub fn get_top_scored_proposals(&self, threshold: i64, limit: i64) -> Result<Vec<Proposal>> {

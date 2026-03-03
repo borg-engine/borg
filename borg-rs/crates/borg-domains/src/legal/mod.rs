@@ -4,6 +4,7 @@ pub mod lexmachina;
 pub mod intelligize;
 pub mod cognitive;
 pub mod courtlistener;
+pub mod citations;
 pub mod edgar;
 pub mod federal_register;
 pub mod westlaw;
