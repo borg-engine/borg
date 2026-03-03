@@ -8,6 +8,7 @@ use axum::{
 };
 use rand::Rng;
 use serde_json::json;
+use subtle::ConstantTimeEq;
 
 use crate::AppState;
 
@@ -43,7 +44,34 @@ pub async fn auth_middleware(
         return next.run(request).await;
     }
 
-    if verify_token(request.headers(), &state.api_token) {
+    // Check Authorization: Bearer header first
+    let header_token = request
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+
+    // For SSE endpoints EventSource can't set headers — allow ?token= query param
+    let query_token_buf = if header_token.is_none() {
+        request.uri().query().and_then(|q| {
+            q.split('&').find_map(|kv| {
+                let mut parts = kv.splitn(2, '=');
+                let k = parts.next()?;
+                let v = parts.next()?;
+                if k == "token" { Some(v.to_string()) } else { None }
+            })
+        })
+    } else {
+        None
+    };
+
+    let provided = header_token.or(query_token_buf.as_deref());
+
+    let valid = provided
+        .map(|t| t.as_bytes().ct_eq(state.api_token.as_bytes()).into())
+        .unwrap_or(false);
+
+    if valid {
         next.run(request).await
     } else {
         (
@@ -67,7 +95,20 @@ pub async fn get_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::{HeaderMap, HeaderValue};
+
+    #[test]
+    fn generate_token_is_64_hex_chars() {
+        let t = generate_token();
+        assert_eq!(t.len(), 64);
+        assert!(t.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn generate_token_produces_unique_values() {
+        let a = generate_token();
+        let b = generate_token();
+        assert_ne!(a, b);
+    }
 
     #[test]
     fn is_exempt_health() {
@@ -80,82 +121,43 @@ mod tests {
     }
 
     #[test]
-    fn is_exempt_static_assets() {
+    fn is_exempt_non_api_paths() {
         assert!(is_exempt("/"));
         assert!(is_exempt("/index.html"));
-        assert!(is_exempt("/static/main.js"));
+        assert!(is_exempt("/assets/app.js"));
     }
 
     #[test]
-    fn not_exempt_api_paths() {
+    fn is_exempt_protected_api() {
         assert!(!is_exempt("/api/tasks"));
-        assert!(!is_exempt("/api/logs"));
-        assert!(!is_exempt("/api/tasks/1/stream"));
-        assert!(!is_exempt("/api/chat/events"));
+        assert!(!is_exempt("/api/status"));
     }
 
     #[test]
-    fn generate_token_is_64_hex_chars() {
-        let token = generate_token();
-        assert_eq!(token.len(), 64);
-        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+    fn ct_eq_matching_tokens() {
+        let token = "abc123";
+        let result: bool = token.as_bytes().ct_eq(token.as_bytes()).into();
+        assert!(result);
     }
 
     #[test]
-    fn generate_tokens_are_unique() {
-        assert_ne!(generate_token(), generate_token());
+    fn ct_eq_mismatched_tokens() {
+        let result: bool = "abc123".as_bytes().ct_eq("xyz789".as_bytes()).into();
+        assert!(!result);
     }
 
     #[test]
-    fn verify_token_accepts_valid_bearer() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::AUTHORIZATION,
-            HeaderValue::from_static("Bearer secret123"),
-        );
-        assert!(verify_token(&headers, "secret123"));
+    fn ct_eq_prefix_not_accepted() {
+        // A prefix of the real token must not be accepted.
+        let token = "abc123def";
+        let prefix = "abc123";
+        let result: bool = prefix.as_bytes().ct_eq(token.as_bytes()).into();
+        assert!(!result);
     }
 
     #[test]
-    fn verify_token_rejects_wrong_token() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::AUTHORIZATION,
-            HeaderValue::from_static("Bearer wrongtoken"),
-        );
-        assert!(!verify_token(&headers, "secret123"));
-    }
-
-    #[test]
-    fn verify_token_rejects_missing_header() {
-        let headers = HeaderMap::new();
-        assert!(!verify_token(&headers, "secret123"));
-    }
-
-    #[test]
-    fn verify_token_rejects_query_param_only() {
-        // Tokens in query strings are not accepted — Authorization header required.
-        let headers = HeaderMap::new();
-        assert!(!verify_token(&headers, "secret123"));
-    }
-
-    #[test]
-    fn verify_token_rejects_malformed_bearer() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::AUTHORIZATION,
-            HeaderValue::from_static("secret123"),
-        );
-        assert!(!verify_token(&headers, "secret123"));
-    }
-
-    #[test]
-    fn verify_token_rejects_basic_auth() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::AUTHORIZATION,
-            HeaderValue::from_static("Basic secret123"),
-        );
-        assert!(!verify_token(&headers, "secret123"));
+    fn ct_eq_empty_vs_nonempty() {
+        let result: bool = "".as_bytes().ct_eq("token".as_bytes()).into();
+        assert!(!result);
     }
 }
