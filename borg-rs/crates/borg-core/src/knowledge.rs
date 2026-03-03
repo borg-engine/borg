@@ -285,6 +285,7 @@ mod tests {
     }
 }
 
+
 pub async fn get_prior_research(
     db: &Db,
     embed_client: &EmbeddingClient,
