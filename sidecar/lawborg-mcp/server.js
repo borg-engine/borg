@@ -184,6 +184,12 @@ function validateId(id) {
   return s;
 }
 
+function withoutKeys(obj, keys) {
+  const next = { ...(obj || {}) };
+  for (const k of keys) delete next[k];
+  return next;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // TOOL DEFINITIONS
 // ═══════════════════════════════════════════════════════════════════════
@@ -2440,13 +2446,13 @@ async function handleTool(name, args) {
       result = await kldRequest("GET", `/matters/${validateId(args.matter_id)}/custodians`);
       break;
     case "kldiscovery_add_custodian":
-      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/custodians`, args);
+      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/custodians`, withoutKeys(args, ["matter_id"]));
       break;
     case "kldiscovery_list_holds":
       result = await kldRequest("GET", `/matters/${validateId(args.matter_id)}/holds`);
       break;
     case "kldiscovery_create_hold":
-      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/holds`, args);
+      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/holds`, withoutKeys(args, ["matter_id"]));
       break;
     case "kldiscovery_release_hold":
       result = await kldRequest("PUT", `/matters/${validateId(args.matter_id)}/holds/${validateId(args.hold_id)}/release`);
@@ -2461,13 +2467,13 @@ async function handleTool(name, args) {
       result = await kldRequest("GET", `/matters/${validateId(args.matter_id)}/collections`);
       break;
     case "kldiscovery_create_collection":
-      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/collections`, args);
+      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/collections`, withoutKeys(args, ["matter_id"]));
       break;
     case "kldiscovery_get_collection_status":
       result = await kldRequest("GET", `/matters/${validateId(args.matter_id)}/collections/${validateId(args.collection_id)}`);
       break;
     case "kldiscovery_create_processing_job":
-      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/processing-jobs`, args);
+      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/processing-jobs`, withoutKeys(args, ["matter_id"]));
       break;
     case "kldiscovery_get_job_status":
       result = await kldRequest("GET", `/matters/${validateId(args.matter_id)}/processing-jobs/${validateId(args.job_id)}`);
@@ -2476,7 +2482,7 @@ async function handleTool(name, args) {
       result = await kldRequest("GET", `/matters/${validateId(args.matter_id)}/review-sets`);
       break;
     case "kldiscovery_create_review_set":
-      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/review-sets`, args);
+      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/review-sets`, withoutKeys(args, ["matter_id"]));
       break;
     case "kldiscovery_search_review_set":
       result = await kldRequest(
@@ -2488,7 +2494,7 @@ async function handleTool(name, args) {
       result = await kldRequest("GET", `/matters/${validateId(args.matter_id)}/productions`);
       break;
     case "kldiscovery_create_production":
-      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/productions`, args);
+      result = await kldRequest("POST", `/matters/${validateId(args.matter_id)}/productions`, withoutKeys(args, ["matter_id"]));
       break;
     case "kldiscovery_get_production_status":
       result = await kldRequest("GET", `/matters/${validateId(args.matter_id)}/productions/${validateId(args.production_id)}`);
@@ -2536,6 +2542,12 @@ function getAvailableTools() {
   if (KLDISCOVERY_API_KEY) tools.push(...KLDISCOVERY_TOOLS);
 
   return tools;
+}
+
+if (KLDISCOVERY_API_KEY) {
+  console.error(`[lawborg-mcp] KLDiscovery tools enabled (base: ${KLDISCOVERY_BASE_URL})`);
+} else {
+  console.error("[lawborg-mcp] KLDiscovery tools disabled (missing KLDISCOVERY_API_KEY)");
 }
 
 // ═══════════════════════════════════════════════════════════════════════

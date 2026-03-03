@@ -3699,17 +3699,24 @@ pub(crate) async fn cloud_auth_init(
     Path(provider): Path<String>,
     Query(q): Query<CloudAuthQuery>,
 ) -> Result<axum::response::Response, StatusCode> {
+    let public_url = state.db.get_config("public_url").map_err(internal)?.unwrap_or_default();
+    if public_url.trim().is_empty() {
+        return Ok(axum::response::Redirect::temporary("/#/projects?cloud_error=missing_public_url").into_response());
+    }
+
     let client_id = match provider.as_str() {
         "dropbox"      => state.db.get_config("dropbox_client_id").map_err(internal)?,
         "google_drive" => state.db.get_config("google_client_id").map_err(internal)?,
         "onedrive"     => state.db.get_config("ms_client_id").map_err(internal)?,
         _ => return Err(StatusCode::NOT_FOUND),
     };
-    let client_id = client_id.ok_or_else(|| {
+    let client_id = client_id.unwrap_or_else(|| {
         tracing::warn!("cloud: no client_id configured for {provider}");
-        StatusCode::BAD_REQUEST
-    })?;
-    if client_id.is_empty() { return Err(StatusCode::BAD_REQUEST); }
+        String::new()
+    });
+    if client_id.trim().is_empty() {
+        return Ok(axum::response::Redirect::temporary(&format!("/#/projects?cloud_error=missing_credentials&provider={provider}")).into_response());
+    }
 
     let state_json = serde_json::json!({ "project_id": q.project_id, "provider": provider }).to_string();
     let encoded_state = base64_encode(state_json.as_bytes());
@@ -3748,7 +3755,9 @@ pub(crate) async fn cloud_auth_callback(
 ) -> Result<axum::response::Response, StatusCode> {
     if let Some(err) = q.error {
         tracing::warn!("cloud OAuth error for {provider}: {err}");
-        return Ok(axum::response::Redirect::temporary("/#/projects?cloud_error=access_denied").into_response());
+        return Ok(axum::response::Redirect::temporary(
+            &format!("/#/projects?cloud_error=access_denied&provider={provider}")
+        ).into_response());
     }
     let code = q.code.ok_or(StatusCode::BAD_REQUEST)?;
     let state_raw = q.state.ok_or(StatusCode::BAD_REQUEST)?;
@@ -3789,7 +3798,9 @@ pub(crate) async fn cloud_auth_callback(
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
         tracing::error!("cloud token exchange failed for {provider}: {body}");
-        return Ok(axum::response::Redirect::temporary("/#/projects?cloud_error=token_exchange").into_response());
+        return Ok(axum::response::Redirect::temporary(
+            &format!("/#/projects?cloud_error=token_exchange&provider={provider}")
+        ).into_response());
     }
     let token_json: serde_json::Value = resp.json().await.map_err(internal)?;
     let access_token = token_json["access_token"].as_str().unwrap_or("").to_string();
@@ -3951,8 +3962,8 @@ pub(crate) async fn browse_cloud_files(
     let client = reqwest::Client::new();
     let result = match conn.provider.as_str() {
         "dropbox" => browse_dropbox(&client, &token, q.folder_id.as_deref(), q.cursor.as_deref()).await,
-        "google_drive" => browse_google_drive(&client, &token, q.folder_id.as_deref()).await,
-        "onedrive" => browse_onedrive(&client, &token, q.folder_id.as_deref()).await,
+        "google_drive" => browse_google_drive(&client, &token, q.folder_id.as_deref(), q.cursor.as_deref()).await,
+        "onedrive" => browse_onedrive(&client, &token, q.folder_id.as_deref(), q.cursor.as_deref()).await,
         _ => return Err(StatusCode::NOT_FOUND),
     };
     result.map(Json).map_err(|e| { tracing::error!("cloud browse error: {e}"); StatusCode::INTERNAL_SERVER_ERROR })
@@ -3992,18 +4003,21 @@ async fn browse_dropbox(client: &reqwest::Client, token: &str, folder_path: Opti
     }))
 }
 
-async fn browse_google_drive(client: &reqwest::Client, token: &str, folder_id: Option<&str>) -> anyhow::Result<Value> {
+async fn browse_google_drive(client: &reqwest::Client, token: &str, folder_id: Option<&str>, cursor: Option<&str>) -> anyhow::Result<Value> {
     let parent = folder_id.unwrap_or("root");
     let q = format!("'{}' in parents and trashed = false", parent);
-    let resp = client.get("https://www.googleapis.com/drive/v3/files")
+    let mut req = client
+        .get("https://www.googleapis.com/drive/v3/files")
         .bearer_auth(token)
         .query(&[
             ("q", q.as_str()),
             ("fields", "files(id,name,mimeType,size,modifiedTime,parents),nextPageToken"),
             ("pageSize", "200"),
-        ])
-        .send().await?
-        .json::<serde_json::Value>().await?;
+        ]);
+    if let Some(page_token) = cursor {
+        req = req.query(&[("pageToken", page_token)]);
+    }
+    let resp = req.send().await?.json::<serde_json::Value>().await?;
     let items: Vec<Value> = resp["files"].as_array().unwrap_or(&vec![]).iter().map(|f| {
         let mime = f["mimeType"].as_str().unwrap_or("");
         let is_folder = mime == "application/vnd.google-apps.folder";
@@ -4019,20 +4033,24 @@ async fn browse_google_drive(client: &reqwest::Client, token: &str, folder_id: O
     Ok(json!({
         "items": items,
         "next_page_token": resp["nextPageToken"].as_str(),
+        "has_more": resp["nextPageToken"].is_string(),
         "folder_id": parent,
     }))
 }
 
-async fn browse_onedrive(client: &reqwest::Client, token: &str, folder_id: Option<&str>) -> anyhow::Result<Value> {
-    let url = match folder_id {
-        Some(id) => format!("https://graph.microsoft.com/v1.0/me/drive/items/{id}/children"),
-        None      => "https://graph.microsoft.com/v1.0/me/drive/root/children".to_string(),
+async fn browse_onedrive(client: &reqwest::Client, token: &str, folder_id: Option<&str>, cursor: Option<&str>) -> anyhow::Result<Value> {
+    let req = if let Some(next_link) = cursor {
+        client.get(next_link).bearer_auth(token)
+    } else {
+        let url = match folder_id {
+            Some(id) => format!("https://graph.microsoft.com/v1.0/me/drive/items/{id}/children"),
+            None      => "https://graph.microsoft.com/v1.0/me/drive/root/children".to_string(),
+        };
+        client.get(&url)
+            .bearer_auth(token)
+            .query(&[("$top", "200"), ("$select", "id,name,file,folder,size,lastModifiedDateTime,@microsoft.graph.downloadUrl")])
     };
-    let resp = client.get(&url)
-        .bearer_auth(token)
-        .query(&[("$top", "200"), ("$select", "id,name,file,folder,size,lastModifiedDateTime,@microsoft.graph.downloadUrl")])
-        .send().await?
-        .json::<serde_json::Value>().await?;
+    let resp = req.send().await?.json::<serde_json::Value>().await?;
     let items: Vec<Value> = resp["value"].as_array().unwrap_or(&vec![]).iter().map(|f| {
         let is_folder = f["folder"].is_object();
         json!({
@@ -4047,6 +4065,7 @@ async fn browse_onedrive(client: &reqwest::Client, token: &str, folder_id: Optio
     Ok(json!({
         "items": items,
         "next_page_token": resp["@odata.nextLink"].as_str(),
+        "has_more": resp["@odata.nextLink"].is_string(),
         "folder_id": folder_id.unwrap_or("root"),
     }))
 }
@@ -4057,14 +4076,22 @@ pub(crate) async fn import_cloud_files(
     Path((id, conn_id)): Path<(i64, i64)>,
     Json(body): Json<CloudImportBody>,
 ) -> Result<Json<Value>, StatusCode> {
+    const MAX_IMPORT_BATCH_FILES: usize = 50;
     const MAX_PROJECT_BYTES: i64 = 100 * 1024 * 1024;
+    if body.files.len() > MAX_IMPORT_BATCH_FILES {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
     let conn = state.db.get_cloud_connection(conn_id).map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
     if conn.project_id != id { return Err(StatusCode::NOT_FOUND); }
     state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
 
     let token = refresh_cloud_token_if_needed(&state.db, &conn, &state.config).await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(internal)?;
     let files_dir = format!("{}/projects/{}/files", state.config.data_dir, id);
     tokio::fs::create_dir_all(&files_dir).await.map_err(internal)?;
 
@@ -4122,39 +4149,60 @@ pub(crate) async fn import_cloud_files(
 }
 
 async fn download_dropbox_file(client: &reqwest::Client, token: &str, path: &str) -> anyhow::Result<Vec<u8>> {
-    let arg = serde_json::json!({ "path": path }).to_string();
-    let resp = client.post("https://content.dropboxapi.com/2/files/download")
-        .header("Authorization", format!("Bearer {token}"))
-        .header("Dropbox-API-Arg", &arg)
-        .header("Content-Type", "")
-        .send().await?;
-    if !resp.status().is_success() {
-        anyhow::bail!("Dropbox download failed: {}", resp.status());
+    let mut last_err = String::new();
+    for attempt in 0..3 {
+        let arg = serde_json::json!({ "path": path }).to_string();
+        match client.post("https://content.dropboxapi.com/2/files/download")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Dropbox-API-Arg", &arg)
+            .header("Content-Type", "")
+            .send().await {
+            Ok(resp) if resp.status().is_success() => return Ok(resp.bytes().await?.to_vec()),
+            Ok(resp) => last_err = format!("Dropbox download failed: {}", resp.status()),
+            Err(e) => last_err = e.to_string(),
+        }
+        if attempt < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(500 * (attempt + 1) as u64)).await;
+        }
     }
-    Ok(resp.bytes().await?.to_vec())
+    anyhow::bail!("{last_err}")
 }
 
 async fn download_google_file(client: &reqwest::Client, token: &str, file_id: &str) -> anyhow::Result<Vec<u8>> {
-    let resp = client
-        .get(format!("https://www.googleapis.com/drive/v3/files/{file_id}"))
-        .bearer_auth(token)
-        .query(&[("alt", "media")])
-        .send().await?;
-    if !resp.status().is_success() {
-        anyhow::bail!("Google Drive download failed: {}", resp.status());
+    let mut last_err = String::new();
+    for attempt in 0..3 {
+        match client
+            .get(format!("https://www.googleapis.com/drive/v3/files/{file_id}"))
+            .bearer_auth(token)
+            .query(&[("alt", "media")])
+            .send().await {
+            Ok(resp) if resp.status().is_success() => return Ok(resp.bytes().await?.to_vec()),
+            Ok(resp) => last_err = format!("Google Drive download failed: {}", resp.status()),
+            Err(e) => last_err = e.to_string(),
+        }
+        if attempt < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(500 * (attempt + 1) as u64)).await;
+        }
     }
-    Ok(resp.bytes().await?.to_vec())
+    anyhow::bail!("{last_err}")
 }
 
 async fn download_onedrive_file(client: &reqwest::Client, token: &str, item_id: &str) -> anyhow::Result<Vec<u8>> {
-    let resp = client
-        .get(format!("https://graph.microsoft.com/v1.0/me/drive/items/{item_id}/content"))
-        .bearer_auth(token)
-        .send().await?;
-    if !resp.status().is_success() {
-        anyhow::bail!("OneDrive download failed: {}", resp.status());
+    let mut last_err = String::new();
+    for attempt in 0..3 {
+        match client
+            .get(format!("https://graph.microsoft.com/v1.0/me/drive/items/{item_id}/content"))
+            .bearer_auth(token)
+            .send().await {
+            Ok(resp) if resp.status().is_success() => return Ok(resp.bytes().await?.to_vec()),
+            Ok(resp) => last_err = format!("OneDrive download failed: {}", resp.status()),
+            Err(e) => last_err = e.to_string(),
+        }
+        if attempt < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(500 * (attempt + 1) as u64)).await;
+        }
     }
-    Ok(resp.bytes().await?.to_vec())
+    anyhow::bail!("{last_err}")
 }
 
 fn guess_mime(name: &str) -> String {

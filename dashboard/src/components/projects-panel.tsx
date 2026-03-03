@@ -51,6 +51,7 @@ const CLOUD_PROVIDERS = [
   { id: "google_drive", label: "Google Drive", clientIdKey: "google_client_id", clientSecretKey: "google_client_secret" },
   { id: "onedrive", label: "OneDrive", clientIdKey: "ms_client_id", clientSecretKey: "ms_client_secret" },
 ] as const;
+const MAX_CLOUD_IMPORT_SELECTION = 50;
 
 function cloudProviderLabel(provider: string): string {
   return CLOUD_PROVIDERS.find((p) => p.id === provider)?.label ?? provider;
@@ -227,6 +228,16 @@ export function ProjectsPanel() {
     [files]
   );
   const currentCloudFolderId = cloudBreadcrumbs[cloudBreadcrumbs.length - 1]?.id;
+  const publicUrl = settings?.public_url?.trim() || "";
+  const publicUrlValid = useMemo(() => {
+    if (!publicUrl) return false;
+    try {
+      const parsed = new URL(publicUrl);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, [publicUrl]);
 
   useEffect(() => {
     if (!selectedProjectId && projects.length > 0) {
@@ -305,6 +316,7 @@ export function ProjectsPanel() {
     const params = new URLSearchParams(hash.slice(queryIdx + 1));
     const connected = params.get("cloud_connected");
     const error = params.get("cloud_error");
+    const provider = params.get("provider");
     const projectIdParam = params.get("project_id");
     if (!connected && !error) return;
 
@@ -317,7 +329,18 @@ export function ProjectsPanel() {
       setCloudMessage({ type: "success", text: `${cloudProviderLabel(connected)} connected.` });
       refetchCloudConnections();
     } else if (error) {
-      setCloudMessage({ type: "error", text: `Cloud connection failed (${error}).` });
+      const prefix = provider ? `${cloudProviderLabel(provider)}: ` : "";
+      if (error === "access_denied") {
+        setCloudMessage({ type: "error", text: `${prefix}authorization was denied.` });
+      } else if (error === "token_exchange") {
+        setCloudMessage({ type: "error", text: `${prefix}token exchange failed. Check client ID/secret and callback URL.` });
+      } else if (error === "missing_public_url") {
+        setCloudMessage({ type: "error", text: "Set a valid Public URL in Settings before connecting cloud providers." });
+      } else if (error === "missing_credentials") {
+        setCloudMessage({ type: "error", text: `${prefix}credentials are missing in Settings > Cloud Storage.` });
+      } else {
+        setCloudMessage({ type: "error", text: `${prefix}connection failed (${error}).` });
+      }
     }
 
     const cleanHash = hash.slice(0, queryIdx) || "#/projects";
@@ -424,6 +447,10 @@ export function ProjectsPanel() {
 
   function connectCloudProvider(provider: (typeof CLOUD_PROVIDERS)[number]["id"]) {
     if (!activeProjectId) return;
+    if (!publicUrlValid) {
+      setCloudMessage({ type: "error", text: "Set a valid Public URL in Settings before connecting cloud providers." });
+      return;
+    }
     window.location.href = `/api/cloud/${provider}/auth?project_id=${activeProjectId}`;
   }
 
@@ -456,6 +483,10 @@ export function ProjectsPanel() {
       .filter((item) => item.type === "file")
       .map((item) => ({ id: item.id, name: item.name, size: item.size }));
     if (filesToImport.length === 0) return;
+    if (filesToImport.length > MAX_CLOUD_IMPORT_SELECTION) {
+      setCloudLoadError(`Please select at most ${MAX_CLOUD_IMPORT_SELECTION} files per import.`);
+      return;
+    }
 
     setCloudImporting(true);
     try {
@@ -694,16 +725,28 @@ export function ProjectsPanel() {
               </div>
               <div className="mt-3 rounded border border-white/[0.06] bg-black/20 p-2">
                 <div className="mb-2 text-[11px] font-medium text-zinc-400">Cloud Storage</div>
+                {!publicUrlValid && (
+                  <div className="mb-2 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+                    Configure a valid Public URL in Settings before connecting cloud accounts.
+                  </div>
+                )}
                 {cloudMessage && (
                   <div
                     className={cn(
-                      "mb-2 rounded border px-2 py-1 text-[11px]",
+                      "mb-2 flex items-start justify-between gap-2 rounded border px-2 py-1 text-[11px]",
                       cloudMessage.type === "success"
                         ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
                         : "border-red-500/30 bg-red-500/10 text-red-400"
                     )}
                   >
-                    {cloudMessage.text}
+                    <span>{cloudMessage.text}</span>
+                    <button
+                      onClick={() => setCloudMessage(null)}
+                      className="shrink-0 text-[10px] opacity-80 hover:opacity-100"
+                      title="Dismiss"
+                    >
+                      x
+                    </button>
                   </div>
                 )}
                 <div className="mb-2 flex flex-wrap gap-1.5">
@@ -713,9 +756,11 @@ export function ProjectsPanel() {
                       <button
                         key={provider.id}
                         onClick={() => connectCloudProvider(provider.id)}
-                        disabled={!configured || !activeProjectId}
+                        disabled={!configured || !activeProjectId || !publicUrlValid}
                         title={
-                          configured
+                          !publicUrlValid
+                            ? "Set a valid Public URL in Settings > Cloud Storage"
+                            : configured
                             ? `Connect ${provider.label}`
                             : `Configure ${provider.label} credentials in Settings > Cloud Storage`
                         }

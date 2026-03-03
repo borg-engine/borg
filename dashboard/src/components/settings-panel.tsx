@@ -13,6 +13,17 @@ function formatUptime(seconds: number) {
   return `${m}m`;
 }
 
+function isValidHttpUrl(url: string): boolean {
+  const raw = url.trim();
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function SettingsPanel() {
   const { data: settings, isLoading } = useSettings();
   const { data: status } = useStatus();
@@ -29,6 +40,7 @@ export function SettingsPanel() {
 
   const effective = settings ? { ...settings, ...draft } : null;
   const hasDraft = Object.keys(draft).length > 0;
+  const publicUrlInvalid = !!effective?.public_url && !isValidHttpUrl(effective.public_url);
 
   async function handleSave() {
     if (!hasDraft) return;
@@ -221,6 +233,11 @@ export function SettingsPanel() {
             value={effective.public_url}
             onChange={(v) => update("public_url", v)}
           />
+          {publicUrlInvalid && (
+            <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-300">
+              Public URL should be a valid http(s) URL.
+            </div>
+          )}
           <TextField
             label="Dropbox Client ID"
             desc="OAuth app client ID for Dropbox"
