@@ -637,7 +637,10 @@ impl AgentBackend for ClaudeBackend {
                     runs_test_cmd,
                     &gh_token,
                 );
-                let _ = stdin.write_all(&payload).await;
+                if let Err(e) = stdin.write_all(&payload).await {
+                    warn!(task_id = task.id, error = %e, "failed to write payload to container stdin — aborting run");
+                    return Err(e).context("failed to write payload to container stdin");
+                }
                 // stdin dropped here → EOF to container
             }
         }
