@@ -229,7 +229,7 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
 CREATE INDEX IF NOT EXISTS idx_pipeline_events_task_id ON pipeline_events(task_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_events_kind ON pipeline_events(kind);
 CREATE INDEX IF NOT EXISTS idx_pipeline_events_created_at ON pipeline_events(created_at);
--- idx_pipeline_events_project created in migrate() after ALTER TABLE.
+CREATE INDEX IF NOT EXISTS idx_pipeline_events_project ON pipeline_events(project_id);
 
 -- ── Per-task chat ─────────────────────────────────────────────────────────
 
