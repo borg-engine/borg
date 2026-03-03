@@ -153,3 +153,11 @@ fn test_swe_signal_instructions_in_prompt() {
     assert!(implement.instruction.contains("blocked"));
     assert!(implement.instruction.contains("abandon"));
 }
+
+#[test]
+fn test_all_built_in_modes_have_valid_phase_graphs() {
+    for mode in borg_domains::all_modes() {
+        mode.validate_phase_graph()
+            .unwrap_or_else(|e| panic!("{e}"));
+    }
+}

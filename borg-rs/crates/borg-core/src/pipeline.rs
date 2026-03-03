@@ -735,7 +735,6 @@ impl Pipeline {
         {
             warn!("task #{}: write_pipeline_state_snapshot: {e}", task.id);
         }
-        let phase_started_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let result = backend
             .run_phase(task, phase, ctx)
             .await
@@ -743,8 +742,6 @@ impl Pipeline {
                 error!("backend.run_phase for task #{}: {e}", task.id);
                 PhaseOutput::failed(String::new())
             });
-        let phase_completed_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-
         if let Some(ref sid) = result.new_session_id {
             if let Err(e) = self.db.update_task_session(task.id, sid) {
                 warn!("task #{}: update_task_session: {e}", task.id);
@@ -940,13 +937,11 @@ impl Pipeline {
 
         // Compile check first (if derivable from test command)
         if let Some(check_cmd) = Self::derive_compile_check(&test_cmd) {
-            let started_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let out = if use_docker {
                 self.run_test_in_container(task, &check_cmd).await?
             } else {
                 self.run_test_command(&work_dir, &check_cmd).await?
             };
-            let completed_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             if out.exit_code != 0 {
                 let error_msg = format!("{}\n{}", out.stdout, out.stderr);
                 info!("task #{} validate: compile check failed", task.id);
@@ -970,7 +965,6 @@ impl Pipeline {
         }
 
         // Run the full test suite
-        let validate_started_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let out = if use_docker {
             self.run_test_in_container(task, &test_cmd).await?
         } else {
@@ -982,7 +976,6 @@ impl Pipeline {
                 },
             }
         };
-        let validate_completed_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let full_output = format!("{}\n{}", out.stdout, out.stderr);
         if let Err(e) = self.db.insert_task_output(
             task.id,
@@ -1169,7 +1162,6 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
             let ctx = self.make_context(task, work_dir.clone(), session_dir.clone(), Vec::new());
 
-            let lint_fix_started_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let agent_result = match self.resolve_backend(task) {
                 Some(b) => {
                     if let Err(e) = self
@@ -1198,7 +1190,6 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             if let Some(ref sid) = agent_result.new_session_id {
                 self.db.update_task_session(task.id, sid).ok();
             }
-            let lint_fix_completed_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             self.db
                 .insert_task_output(
                     task.id,
@@ -1275,7 +1266,6 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
             let ctx = self.make_context(task, work_dir.to_string(), session_dir.clone(), Vec::new());
 
-            let compile_fix_started_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let result = match self.resolve_backend(task) {
                 Some(b) => b.run_phase(task, &fix_phase, ctx).await.unwrap_or_else(|e| {
                     error!("compile-fix agent for task #{}: {e}", task.id);
@@ -1287,7 +1277,6 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             if let Some(ref sid) = result.new_session_id {
                 self.db.update_task_session(task.id, sid).ok();
             }
-            let compile_fix_completed_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             self.db
                 .insert_task_output(
                     task.id,

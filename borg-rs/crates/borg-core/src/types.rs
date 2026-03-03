@@ -283,6 +283,29 @@ impl PipelineMode {
     pub fn is_terminal(&self, status: &str) -> bool {
         matches!(status, "done" | "merged" | "failed")
     }
+
+    /// Validate that all `next` and `retry_phase` references resolve to a real
+    /// phase name in this mode, or to `"done"`. Returns an error describing the
+    /// first broken reference found.
+    pub fn validate_phase_graph(&self) -> Result<(), String> {
+        let names: std::collections::HashSet<&str> =
+            self.phases.iter().map(|p| p.name.as_str()).collect();
+        for phase in &self.phases {
+            if phase.next != "done" && !names.contains(phase.next.as_str()) {
+                return Err(format!(
+                    "mode '{}': phase '{}' has next='{}' which does not exist",
+                    self.name, phase.name, phase.next
+                ));
+            }
+            if !phase.retry_phase.is_empty() && !names.contains(phase.retry_phase.as_str()) {
+                return Err(format!(
+                    "mode '{}': phase '{}' has retry_phase='{}' which does not exist",
+                    self.name, phase.name, phase.retry_phase
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for PhaseConfig {
@@ -480,5 +503,95 @@ impl PhaseOutput {
             ran_in_docker: false,
             container_test_results: Vec::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn minimal_mode(phases: Vec<PhaseConfig>) -> PipelineMode {
+        PipelineMode {
+            name: "test_mode".into(),
+            label: "Test".into(),
+            category: String::new(),
+            phases,
+            seed_modes: vec![],
+            initial_status: "backlog".into(),
+            uses_docker: false,
+            uses_test_cmd: false,
+            integration: IntegrationType::None,
+            default_max_attempts: 3,
+        }
+    }
+
+    #[test]
+    fn validate_phase_graph_ok_for_valid_mode() {
+        let mode = minimal_mode(vec![
+            PhaseConfig { name: "backlog".into(), next: "work".into(), ..Default::default() },
+            PhaseConfig { name: "work".into(), next: "done".into(), ..Default::default() },
+        ]);
+        assert!(mode.validate_phase_graph().is_ok());
+    }
+
+    #[test]
+    fn validate_phase_graph_accepts_done_as_next() {
+        let mode = minimal_mode(vec![
+            PhaseConfig { name: "only".into(), next: "done".into(), ..Default::default() },
+        ]);
+        assert!(mode.validate_phase_graph().is_ok());
+    }
+
+    #[test]
+    fn validate_phase_graph_rejects_unknown_next() {
+        let mode = minimal_mode(vec![
+            PhaseConfig { name: "backlog".into(), next: "nonexistent".into(), ..Default::default() },
+        ]);
+        let err = mode.validate_phase_graph().unwrap_err();
+        assert!(err.contains("next='nonexistent'"), "error: {err}");
+        assert!(err.contains("backlog"), "error: {err}");
+    }
+
+    #[test]
+    fn validate_phase_graph_rejects_unknown_retry_phase() {
+        let mode = minimal_mode(vec![
+            PhaseConfig {
+                name: "validate".into(),
+                next: "done".into(),
+                retry_phase: "ghost".into(),
+                ..Default::default()
+            },
+        ]);
+        let err = mode.validate_phase_graph().unwrap_err();
+        assert!(err.contains("retry_phase='ghost'"), "error: {err}");
+        assert!(err.contains("validate"), "error: {err}");
+    }
+
+    #[test]
+    fn validate_phase_graph_ok_with_empty_retry_phase() {
+        let mode = minimal_mode(vec![
+            PhaseConfig {
+                name: "validate".into(),
+                next: "done".into(),
+                retry_phase: String::new(),
+                ..Default::default()
+            },
+        ]);
+        assert!(mode.validate_phase_graph().is_ok());
+    }
+
+    #[test]
+    fn validate_phase_graph_ok_for_retry_phase_pointing_to_real_phase() {
+        let mode = minimal_mode(vec![
+            PhaseConfig { name: "backlog".into(), next: "work".into(), ..Default::default() },
+            PhaseConfig { name: "work".into(), next: "check".into(), ..Default::default() },
+            PhaseConfig {
+                name: "check".into(),
+                next: "done".into(),
+                retry_phase: "work".into(),
+                ..Default::default()
+            },
+        ]);
+        assert!(mode.validate_phase_graph().is_ok());
     }
 }

@@ -7,7 +7,16 @@ static MODES: OnceLock<Vec<PipelineMode>> = OnceLock::new();
 /// Register all built-in modes. Must be called once at startup before any
 /// `get_mode` / `all_modes` calls. Typically called from the server binary
 /// with the modes provided by `borg_domains::all_modes()`.
+///
+/// Panics if any mode has an invalid phase transition graph (broken `next` or
+/// `retry_phase` reference). Built-in modes are static — a broken reference is
+/// a programming error and must be caught at startup.
 pub fn register_modes(modes: Vec<PipelineMode>) {
+    for mode in &modes {
+        if let Err(e) = mode.validate_phase_graph() {
+            panic!("invalid built-in mode: {e}");
+        }
+    }
     if MODES.set(modes).is_err() {
         tracing::warn!("register_modes called more than once; subsequent call ignored");
     }
