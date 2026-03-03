@@ -27,20 +27,25 @@ fn build_client(timeout_secs: u64) -> reqwest::Client {
 }
 
 impl OllamaBackend {
-    pub fn new(base_url: impl Into<String>, model: impl Into<String>) -> Self {
+    pub fn new(base_url: impl Into<String>, model: impl Into<String>) -> Result<Self> {
         let timeout_secs = 300u64;
-        Self {
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout_secs))
+            .build()?;
+        Ok(Self {
             base_url: base_url.into(),
             model: model.into(),
-            http: build_client(timeout_secs),
+            http,
             timeout_secs,
-        }
+        })
     }
 
-    pub fn with_timeout(mut self, secs: u64) -> Self {
+    pub fn with_timeout(mut self, secs: u64) -> Result<Self> {
         self.timeout_secs = secs;
-        self.http = build_client(secs);
-        self
+        self.http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(secs))
+            .build()?;
+        Ok(self)
     }
 }
 
@@ -167,5 +172,33 @@ impl AgentBackend for OllamaBackend {
             ran_in_docker: false,
             container_test_results: Vec::new(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_returns_ok() {
+        let backend = OllamaBackend::new("http://localhost:11434", "llama3.2");
+        assert!(backend.is_ok());
+    }
+
+    #[test]
+    fn with_timeout_returns_ok() {
+        let backend = OllamaBackend::new("http://localhost:11434", "llama3.2")
+            .unwrap()
+            .with_timeout(60);
+        assert!(backend.is_ok());
+        assert_eq!(backend.unwrap().timeout_secs, 60);
+    }
+
+    #[test]
+    fn new_preserves_fields() {
+        let backend = OllamaBackend::new("http://myhost:9999", "mistral").unwrap();
+        assert_eq!(backend.base_url, "http://myhost:9999");
+        assert_eq!(backend.model, "mistral");
+        assert_eq!(backend.timeout_secs, 300);
     }
 }
