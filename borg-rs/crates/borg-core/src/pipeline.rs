@@ -51,6 +51,7 @@ pub struct Pipeline {
     seed_cooldowns: Mutex<HashMap<(String, String), i64>>,
     last_self_update_secs: std::sync::atomic::AtomicI64,
     last_cache_prune_secs: std::sync::atomic::AtomicI64,
+    last_session_prune_secs: std::sync::atomic::AtomicI64,
     startup_heads: HashMap<String, String>,
     in_flight: Mutex<HashSet<i64>>,
     /// Per-task last agent dispatch timestamp (epoch seconds) for rate limiting.
@@ -131,6 +132,7 @@ impl Pipeline {
             seed_cooldowns: Mutex::new(seed_cooldowns),
             last_self_update_secs: std::sync::atomic::AtomicI64::new(0),
             last_cache_prune_secs: std::sync::atomic::AtomicI64::new(0),
+            last_session_prune_secs: std::sync::atomic::AtomicI64::new(0),
             startup_heads,
             in_flight: Mutex::new(HashSet::new()),
             last_agent_dispatch: Mutex::new(HashMap::new()),
@@ -456,6 +458,7 @@ impl Pipeline {
         self.maybe_apply_self_update();
         self.refresh_mirrors().await;
         self.maybe_prune_cache_volumes().await;
+        self.maybe_prune_session_dirs().await;
 
         // Check if main loop should exit for self-update restart
         if self
@@ -2696,6 +2699,53 @@ and report what went wrong.",
         Sandbox::prune_stale_cache_volumes(7).await;
     }
 
+    async fn maybe_prune_session_dirs(&self) {
+        const PRUNE_INTERVAL_S: i64 = 3600;
+        let now = chrono::Utc::now().timestamp();
+        let last = self.last_session_prune_secs.load(std::sync::atomic::Ordering::Relaxed);
+        if now - last < PRUNE_INTERVAL_S {
+            return;
+        }
+        self.last_session_prune_secs.store(now, std::sync::atomic::Ordering::Relaxed);
+
+        let max_age_secs = self.config.session_max_age_hours * 3600;
+        if max_age_secs <= 0 {
+            return;
+        }
+
+        let sessions_dir = format!("{}/sessions", self.config.data_dir);
+        let in_flight_ids: HashSet<i64> = self
+            .in_flight
+            .try_lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+
+        let to_remove = collect_stale_session_dirs(
+            &sessions_dir,
+            now,
+            max_age_secs,
+            &in_flight_ids,
+            |task_id| {
+                self.db
+                    .get_task(task_id)
+                    .ok()
+                    .flatten()
+                    .map(|t| t.created_at.timestamp())
+            },
+        );
+
+        let mut pruned = 0usize;
+        for path in to_remove {
+            match tokio::fs::remove_dir_all(&path).await {
+                Ok(()) => pruned += 1,
+                Err(e) => warn!("failed to remove session dir {}: {e}", path.display()),
+            }
+        }
+        if pruned > 0 {
+            info!("pruned {pruned} stale session dir(s) from {sessions_dir}");
+        }
+    }
+
     /// Run `claude --print --model <model>` with prompt on stdin, return stdout.
     async fn run_claude_print(&self, model: &str, prompt: &str) -> Result<String> {
         use tokio::io::AsyncWriteExt;
@@ -2828,6 +2878,58 @@ fn parse_triage_item(item: &serde_json::Value) -> Option<(i64, i64, i64, i64, i6
     let reasoning = item.get("reasoning").and_then(|v| v.as_str()).unwrap_or("");
     let should_dismiss = item.get("dismiss").and_then(|v| v.as_bool()).unwrap_or(false);
     Some((p_id, impact, feasibility, risk, effort, score, reasoning, should_dismiss))
+}
+
+/// Collect session directory paths under `sessions_dir` that are stale and
+/// eligible for removal.
+///
+/// A directory named `task-{N}` is stale when:
+/// - It is not in `skip_ids` (i.e. not currently in-flight), AND
+/// - Its age (seconds since task creation, or since mtime if the task is not
+///   in the DB) is >= `max_age_secs`.
+///
+/// Exposed as a free function so it can be unit-tested without a Pipeline.
+pub fn collect_stale_session_dirs(
+    sessions_dir: &str,
+    now_secs: i64,
+    max_age_secs: i64,
+    skip_ids: &HashSet<i64>,
+    task_created_at: impl Fn(i64) -> Option<i64>,
+) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(sessions_dir) else {
+        return vec![];
+    };
+    let mut stale = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let Some(id_str) = name_str.strip_prefix("task-") else {
+            continue;
+        };
+        let Ok(task_id) = id_str.parse::<i64>() else {
+            continue;
+        };
+        if skip_ids.contains(&task_id) {
+            continue;
+        }
+        let age_secs = match task_created_at(task_id) {
+            Some(created_at) => now_secs.saturating_sub(created_at),
+            None => {
+                // Orphaned dir: fall back to filesystem mtime
+                entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| now_secs.saturating_sub(d.as_secs() as i64))
+                    .unwrap_or(max_age_secs + 1) // unknown age → treat as stale
+            }
+        };
+        if age_secs >= max_age_secs {
+            stale.push(entry.path());
+        }
+    }
+    stale
 }
 
 fn looks_like_field_key(line: &str) -> bool {
