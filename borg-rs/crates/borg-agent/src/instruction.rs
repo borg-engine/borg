@@ -95,7 +95,15 @@ pub fn build_knowledge_section(files: &[KnowledgeFile], knowledge_dir: &str) -> 
     );
     for file in files {
         if file.inline {
-            let path = format!("{}/{}", knowledge_dir, file.file_name);
+            // Strip any directory components to prevent path traversal.
+            let safe_name = std::path::Path::new(&file.file_name)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            if safe_name.is_empty() {
+                continue;
+            }
+            let path = format!("{}/{}", knowledge_dir, safe_name);
             let content = std::fs::read_to_string(&path).unwrap_or_default();
             let content = content.trim();
             if content.is_empty() {

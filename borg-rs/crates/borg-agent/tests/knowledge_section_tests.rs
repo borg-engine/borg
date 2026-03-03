@@ -139,3 +139,56 @@ fn multiple_reference_files_all_listed() {
     assert!(result.contains("- `/knowledge/beta.md`: Beta doc\n"));
     assert!(result.contains("- `/knowledge/gamma.md`: Gamma doc\n"));
 }
+
+// =============================================================================
+// Path traversal prevention
+// =============================================================================
+
+#[test]
+fn inline_traversal_dotdot_does_not_read_outside_knowledge_dir() {
+    // Create a sentinel file one level above a temp knowledge dir
+    let base = temp_dir("traversal_dotdot");
+    let knowledge_dir = base.join("knowledge");
+    std::fs::create_dir_all(&knowledge_dir).unwrap();
+    // Place secret content outside the knowledge dir
+    std::fs::write(base.join("secret.txt"), "SECRET CONTENT").unwrap();
+
+    // file_name contains traversal; should be stripped to "secret.txt" within knowledge_dir
+    // (which doesn't exist there), so content must be empty / name-only output
+    let files = vec![kf(1, "../secret.txt", "", true)];
+    let result = build_knowledge_section(&files, knowledge_dir.to_str().unwrap());
+    assert!(!result.contains("SECRET CONTENT"), "traversal read sensitive file");
+}
+
+#[test]
+fn inline_traversal_absolute_path_does_not_escape() {
+    let dir = temp_dir("traversal_abs");
+
+    // Absolute path as file_name — after stripping should just be "passwd"
+    // which won't exist in our temp dir so content is empty.
+    let files = vec![kf(1, "/etc/passwd", "", true)];
+    let result = build_knowledge_section(&files, dir.to_str().unwrap());
+    // Must not contain real /etc/passwd content (root: or similar)
+    assert!(!result.contains("root:"), "read /etc/passwd via absolute file_name");
+}
+
+#[test]
+fn inline_traversal_subdir_stripped_to_basename() {
+    let dir = temp_dir("traversal_subdir");
+    // Place file.txt directly in dir (not in a sub-folder)
+    std::fs::write(dir.join("file.txt"), "Safe content").unwrap();
+
+    // subdir/file.txt should be stripped to file.txt and read correctly
+    let files = vec![kf(1, "subdir/file.txt", "", true)];
+    let result = build_knowledge_section(&files, dir.to_str().unwrap());
+    assert!(result.contains("Safe content"), "basename file should be readable");
+}
+
+#[test]
+fn inline_traversal_long_chain_stripped() {
+    let dir = temp_dir("traversal_chain");
+
+    let files = vec![kf(1, "../../../../etc/shadow", "", true)];
+    let result = build_knowledge_section(&files, dir.to_str().unwrap());
+    assert!(!result.contains("root"), "long traversal chain must not escape");
+}
