@@ -231,60 +231,45 @@ pub async fn index_task_embeddings(
     }
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{bytes_to_embedding, embedding_to_bytes};
 
-    fn make_words(n: usize) -> String {
-        (0..n).map(|i| format!("w{i}")).collect::<Vec<_>>().join(" ")
+    #[test]
+    fn single_f32_round_trips_exactly() {
+        let val = 1.234_567_8_f32;
+        let bytes = embedding_to_bytes(&[val]);
+        let back = bytes_to_embedding(&bytes);
+        assert_eq!(back, vec![val]);
     }
 
     #[test]
-    fn empty_string_returns_empty_vec() {
-        assert_eq!(chunk_text(""), Vec::<String>::new());
+    fn multi_element_vector_round_trips_exactly() {
+        let vec = vec![0.0_f32, 1.0, -1.0, f32::MAX, f32::MIN_POSITIVE, f32::NAN];
+        let bytes = embedding_to_bytes(&vec);
+        let back = bytes_to_embedding(&bytes);
+        assert_eq!(back.len(), vec.len());
+        for (a, b) in vec.iter().zip(back.iter()) {
+            // NaN != NaN so compare bits directly
+            assert_eq!(a.to_bits(), b.to_bits());
+        }
     }
 
     #[test]
-    fn fewer_than_512_words_is_single_chunk() {
-        let text = make_words(100);
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], text);
+    fn byte_count_is_four_times_length() {
+        let vec = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0];
+        let bytes = embedding_to_bytes(&vec);
+        assert_eq!(bytes.len(), 4 * vec.len());
     }
 
     #[test]
-    fn exactly_512_words_is_single_chunk() {
-        let words: Vec<String> = (0..512).map(|i| format!("w{i}")).collect();
-        let text = words.join(" ");
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], text);
-    }
-
-    #[test]
-    fn exactly_513_words_produces_two_chunks_with_correct_boundaries() {
-        let words: Vec<String> = (0..513).map(|i| format!("w{i}")).collect();
-        let text = words.join(" ");
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 2);
-        // first chunk: words 0..512
-        assert_eq!(chunks[0], words[..512].join(" "));
-        // second chunk: starts at word 448 (the 449th word), ends at 512
-        assert_eq!(chunks[1], words[448..].join(" "));
-        assert!(chunks[1].starts_with("w448 "));
-    }
-
-    #[test]
-    fn no_whitespace_is_single_chunk() {
-        let text = "abcdefghijklmnopqrstuvwxyz".repeat(50);
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], text);
+    fn non_multiple_of_four_truncates_cleanly() {
+        // 9 bytes → only the first 8 (two f32s) are decoded; no panic
+        let bytes = vec![0u8; 9];
+        let back = bytes_to_embedding(&bytes);
+        assert_eq!(back.len(), 2);
     }
 }
-
 
 pub async fn get_prior_research(
     db: &Db,
