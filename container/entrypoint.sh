@@ -15,6 +15,10 @@ log_event() {
     echo "---BORG_EVENT---${1}" >&2
 }
 
+json_encode() {
+    printf '%s' "$1" | bun -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.stringify(s)));"
+}
+
 run_check() {
     local phase="$1"
     local cmd="$2"
@@ -59,11 +63,11 @@ source "$VARS_FILE"
 
 REPO_DIR=/workspace/repo
 
-log_event "{\"type\":\"container_event\",\"event\":\"agent_started\",\"model\":\"${MODEL}\",\"repo\":\"${REPO_URL}\"}"
+log_event "{\"type\":\"container_event\",\"event\":\"agent_started\",\"model\":$(json_encode "${MODEL}"),\"repo\":$(json_encode "${REPO_URL}")}"
 
 if [ -n "$REPO_URL" ]; then
     CLONE_START=$(date +%s%3N)
-    log_event "{\"type\":\"container_event\",\"event\":\"clone_started\",\"repo\":\"${REPO_URL}\",\"branch\":\"${BRANCH}\"}"
+    log_event "{\"type\":\"container_event\",\"event\":\"clone_started\",\"repo\":$(json_encode "${REPO_URL}"),\"branch\":$(json_encode "${BRANCH}")}"
 
     # Clone to temp dir first, then move into repo dir (which may have mounted volumes)
     CLONE_TMP=$(mktemp -d /workspace/clone.XXXXXX)
