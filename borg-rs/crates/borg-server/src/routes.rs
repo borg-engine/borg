@@ -158,6 +158,7 @@ pub(crate) struct UpdateProjectBody {
     pub deadline: Option<Option<String>>,
     pub privilege_level: Option<String>,
     pub status: Option<String>,
+    pub default_template_id: Option<Option<i64>>,
 }
 
 #[derive(Deserialize)]
@@ -243,6 +244,7 @@ pub(crate) struct ProjectJson {
     pub deadline: Option<String>,
     pub privilege_level: String,
     pub status: String,
+    pub default_template_id: Option<i64>,
     pub created_at: String,
 }
 
@@ -261,6 +263,7 @@ impl From<ProjectRow> for ProjectJson {
             deadline: p.deadline,
             privilege_level: p.privilege_level,
             status: p.status,
+            default_template_id: p.default_template_id,
             created_at: p.created_at.to_rfc3339(),
         }
     }
@@ -908,7 +911,7 @@ pub(crate) async fn create_project(
             .await;
         state
             .db
-            .update_project(id, None, None, None, None, None, None, None, None, None, Some(&repo_dir))
+            .update_project(id, None, None, None, None, None, None, None, None, None, Some(&repo_dir), None)
             .map_err(internal)?;
     }
 
@@ -955,6 +958,7 @@ pub(crate) async fn update_project(
             body.privilege_level.as_deref(),
             body.status.as_deref(),
             None,
+            body.default_template_id,
         )
         .map_err(internal)?;
     let updated = state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
@@ -1568,8 +1572,9 @@ pub(crate) async fn export_project_document(
 
     let md_bytes = md_content.into_bytes();
 
-    // Resolve template reference doc
-    let template_info = if let Some(tid) = q.template_id {
+    // Resolve template: explicit template_id takes priority, then project default
+    let effective_template_id = q.template_id.or(project.default_template_id);
+    let template_info = if let Some(tid) = effective_template_id {
         let kf = state.db.list_knowledge_files().map_err(internal)?;
         kf.iter().find(|f| f.id == tid).map(|f| {
             let p = format!("{}/knowledge/{}", state.config.data_dir, f.file_name);
@@ -1747,7 +1752,8 @@ pub(crate) async fn export_all_project_documents(
     let tmp_dir = tempfile::tempdir().map_err(internal)?;
     let mut file_entries: Vec<(String, Vec<u8>)> = Vec::new();
 
-    let template_info = q.template_id.and_then(|tid| {
+    let effective_tid = q.template_id.or(project.default_template_id);
+    let template_info = effective_tid.and_then(|tid| {
         state.db.list_knowledge_files().ok().and_then(|kf| {
             kf.iter().find(|f| f.id == tid).map(|f| {
                 let p = format!("{}/knowledge/{}", state.config.data_dir, f.file_name);

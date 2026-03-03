@@ -117,7 +117,7 @@ pub fn build_knowledge_section(files: &[KnowledgeFile], knowledge_dir: &str) -> 
 }
 
 /// Read the per-repo prompt from the explicit prompt_file config, or by
-/// auto-detecting `.borg/prompt.md` in the worktree / repo root.
+/// auto-detecting `.borg/prompt.md` in the work dir / repo root.
 fn read_repo_prompt(ctx: &PhaseContext) -> Option<String> {
     use borg_core::ipc::{self, IpcReadResult};
 
@@ -131,16 +131,16 @@ fn read_repo_prompt(ctx: &PhaseContext) -> Option<String> {
         }
     }
 
-    // 2. .borg/prompt.md in the worktree (may differ from repo root during tasks)
-    if let IpcReadResult::Ok(content) = ipc::read_file(&ctx.worktree_path, ".borg/prompt.md") {
+    // 2. .borg/prompt.md in the work dir (may differ from repo root during tasks)
+    if let IpcReadResult::Ok(content) = ipc::read_file(&ctx.work_dir, ".borg/prompt.md") {
         let trimmed = content.trim().to_string();
         if !trimmed.is_empty() {
             return Some(trimmed);
         }
     }
 
-    // 3. .borg/prompt.md in the repo root (skip if same path as worktree)
-    if ctx.repo_config.path != ctx.worktree_path {
+    // 3. .borg/prompt.md in the repo root (skip if same path as work dir)
+    if ctx.repo_config.path != ctx.work_dir {
         if let IpcReadResult::Ok(content) = ipc::read_file(&ctx.repo_config.path, ".borg/prompt.md")
         {
             let trimmed = content.trim().to_string();

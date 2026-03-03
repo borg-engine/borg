@@ -101,10 +101,10 @@ CREATE TABLE IF NOT EXISTS pipeline_tasks (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_pipeline_project ON pipeline_tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_status ON pipeline_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_pipeline_repo ON pipeline_tasks(repo_path);
-CREATE INDEX IF NOT EXISTS idx_pipeline_repo_status ON pipeline_tasks(repo_id, status);
+-- idx_pipeline_project and idx_pipeline_repo_status created in migrate()
+-- after ALTER TABLE adds the columns for older databases.
 
 -- Statuses: backlog → implement → validate → lint_fix → rebase → done → merged
 --           review, pending_review (mode-specific)
@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS projects (
   deadline TEXT,
   privilege_level TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'active',
+  default_template_id INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -228,7 +229,7 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
 CREATE INDEX IF NOT EXISTS idx_pipeline_events_task_id ON pipeline_events(task_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_events_kind ON pipeline_events(kind);
 CREATE INDEX IF NOT EXISTS idx_pipeline_events_created_at ON pipeline_events(created_at);
-CREATE INDEX IF NOT EXISTS idx_pipeline_events_project ON pipeline_events(project_id);
+-- idx_pipeline_events_project created in migrate() after ALTER TABLE.
 
 -- ── Per-task chat ─────────────────────────────────────────────────────────
 

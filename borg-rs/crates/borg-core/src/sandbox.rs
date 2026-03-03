@@ -95,7 +95,7 @@ impl Sandbox {
     /// Mount order (mirrors OpenAI Codex linux-sandbox/bwrap.rs):
     /// 1. `--ro-bind / /`    — read-only root filesystem
     /// 2. `--dev /dev`       — minimal device tree (null, random, urandom, tty)
-    /// 3. `--bind X X`       — per writable_dir (worktree, session dir)
+    /// 3. `--bind X X`       — per writable_dir (repo, session dir)
     /// 4. `--bind /tmp /tmp` — shared /tmp (needed by compilers, git, etc.)
     /// 5. `--unshare-pid`    — isolated PID namespace
     /// 6. `--new-session`    — setsid (detach terminal)

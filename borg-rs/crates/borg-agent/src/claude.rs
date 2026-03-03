@@ -212,8 +212,8 @@ impl AgentBackend for ClaudeBackend {
         ctx: PhaseContext,
     ) -> Result<PhaseOutput> {
         let file_listing = if phase.include_file_listing {
-            let git = borg_core::git::Git::new(&ctx.worktree_path);
-            git.ls_files(&ctx.worktree_path).ok()
+            let git = borg_core::git::Git::new(&ctx.work_dir);
+            git.ls_files(&ctx.work_dir).ok()
         } else {
             None
         };
@@ -438,12 +438,11 @@ impl AgentBackend for ClaudeBackend {
 
         let mut child = match effective_mode {
             SandboxMode::Bwrap => {
-                // Worktree .git file points to main repo's .git/worktrees/<name> — make
-                // the main .git dir writable so the agent can commit.
+                // .git must be writable so the agent can commit.
                 let git_dir = std::path::Path::new(&task.repo_path).join(".git");
                 let git_dir_str = git_dir.to_string_lossy().to_string();
-                let writable: Vec<&str> = vec![ctx.worktree_path.as_str(), ctx.session_dir.as_str(), &git_dir_str];
-                Sandbox::bwrap_command(&writable, &ctx.worktree_path, &full_cmd)
+                let writable: Vec<&str> = vec![ctx.work_dir.as_str(), ctx.session_dir.as_str(), &git_dir_str];
+                Sandbox::bwrap_command(&writable, &ctx.work_dir, &full_cmd)
                     .kill_on_drop(true)
                     .env("HOME", &ctx.session_dir)
                     .env("RUSTUP_HOME", &rustup_home)
@@ -456,7 +455,7 @@ impl AgentBackend for ClaudeBackend {
             },
             SandboxMode::Docker => {
                 // Session dir (rw) + optional bare mirror (ro) + optional setup script (ro).
-                // The container clones the repo itself; no worktree bind needed.
+                // The container clones the repo itself; no repo bind needed.
                 let host_mirror = Self::host_mirror_path(task, &ctx.data_dir);
                 let container_mirror = Self::container_mirror_path(task);
                 let mut binds: Vec<(String, String, bool)> = vec![
@@ -571,7 +570,7 @@ impl AgentBackend for ClaudeBackend {
                 Command::new(&self.claude_bin)
                     .args(&full_cmd[1..])
                     .kill_on_drop(true)
-                    .current_dir(&ctx.worktree_path)
+                    .current_dir(&ctx.work_dir)
                     .env("HOME", &ctx.session_dir)
                     .env("RUSTUP_HOME", &rustup_home)
                     .env("CARGO_HOME", &cargo_home)

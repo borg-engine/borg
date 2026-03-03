@@ -187,7 +187,7 @@ impl Pipeline {
     fn make_context(
         &self,
         task: &Task,
-        worktree_path: String,
+        work_dir: String,
         session_dir: String,
         pending_messages: Vec<(String, String)>,
     ) -> PhaseContext {
@@ -226,7 +226,7 @@ impl Pipeline {
             repo_config: self.repo_config(task),
             data_dir: self.config.data_dir.clone(),
             session_dir,
-            worktree_path,
+            work_dir,
             oauth_token: self.config.oauth_token.clone(),
             model: self.config.model.clone(),
             pending_messages,
@@ -248,6 +248,16 @@ impl Pipeline {
         }
     }
 
+    /// Return repo to main branch if we're in non-Docker mode.
+    fn return_to_main(&self, task: &Task) {
+        if self.sandbox_mode != SandboxMode::Docker && !task.repo_path.is_empty() {
+            let git = Git::new(&task.repo_path);
+            if let Err(e) = git.checkout("main") {
+                warn!("task #{}: return to main: {e}", task.id);
+            }
+        }
+    }
+
     /// Increment attempt and set the retry status, or fail if attempts exhausted.
     /// After 3 failed attempts, clears the session ID to force a fresh start and
     /// builds a summary of previous attempts so the new session has context.
@@ -256,6 +266,7 @@ impl Pipeline {
         let current = self.db.get_task(task.id)?.unwrap_or_else(|| task.clone());
         if current.attempt >= current.max_attempts {
             self.db.update_task_status(task.id, "failed", Some(error))?;
+            self.return_to_main(task);
         } else {
             // After 3 attempts, force a fresh session with a summary of what was tried
             let error_ctx = if current.attempt >= 3 {
@@ -590,6 +601,7 @@ impl Pipeline {
     // ── Phase handlers ────────────────────────────────────────────────────
 
     /// Setup phase: record branch name and advance to first agent phase.
+    /// In non-Docker mode, also creates the git branch so the agent works on it.
     async fn setup_branch(&self, task: &Task, mode: &PipelineMode) -> Result<()> {
         let next = mode
             .phases
@@ -600,6 +612,17 @@ impl Pipeline {
 
         let branch = format!("task-{}", task.id);
         self.db.update_task_branch(task.id, &branch)?;
+
+        if self.sandbox_mode != SandboxMode::Docker && !task.repo_path.is_empty() {
+            let git = Git::new(&task.repo_path);
+            if let Err(e) = git.fetch_origin() {
+                warn!("task #{}: fetch before branch create: {e}", task.id);
+            }
+            git.checkout_new_branch(&branch, "origin/main")
+                .with_context(|| format!("task #{}: create branch {branch}", task.id))?;
+            info!("task #{}: created branch {branch}", task.id);
+        }
+
         self.db.update_task_status(task.id, next, None)?;
 
         self.emit(PipelineEvent::Phase {
@@ -624,9 +647,9 @@ impl Pipeline {
             .to_string_lossy()
             .to_string();
 
-        // Docker: container handles its own clone; wt_path is only used for
+        // Docker: container handles its own clone; work_dir is only used for
         // local file ops (signal.json, state snapshot). Non-Docker: use repo directly.
-        let wt_path = if self.sandbox_mode == SandboxMode::Docker {
+        let work_dir = if self.sandbox_mode == SandboxMode::Docker {
             session_dir.clone()
         } else {
             task.repo_path.clone()
@@ -640,7 +663,7 @@ impl Pipeline {
             .map(|m| (m.role, m.content))
             .collect::<Vec<_>>();
 
-        let mut ctx = self.make_context(task, wt_path.clone(), session_dir, pending_messages);
+        let mut ctx = self.make_context(task, work_dir.clone(), session_dir, pending_messages);
         let had_pending = !ctx.pending_messages.is_empty();
         let test_cmd = ctx.repo_config.test_cmd.clone();
 
@@ -682,7 +705,7 @@ impl Pipeline {
             },
         };
         if let Err(e) = self
-            .write_pipeline_state_snapshot(task, &phase.name, &wt_path)
+            .write_pipeline_state_snapshot(task, &phase.name, &work_dir)
             .await
         {
             warn!("task #{}: write_pipeline_state_snapshot: {e}", task.id);
@@ -726,7 +749,7 @@ impl Pipeline {
         });
 
         // Read agent signal from .borg/signal.json (if present).
-        let signal = Self::read_agent_signal(&wt_path);
+        let signal = Self::read_agent_signal(&work_dir);
         if !signal.reason.is_empty() {
             info!(
                 "task #{} signal: status={} reason={}",
@@ -743,6 +766,7 @@ impl Pipeline {
             };
             self.db
                 .update_task_status(task.id, "failed", Some(&reason))?;
+            self.return_to_main(task);
             return Ok(());
         }
 
@@ -764,6 +788,7 @@ impl Pipeline {
                 task_id: Some(task.id),
                 message: format!("task #{} blocked: {}", task.id, reason),
             });
+            self.return_to_main(task);
             return Ok(());
         }
 
@@ -784,7 +809,7 @@ impl Pipeline {
         }
 
         if let Some(ref artifact) = phase.check_artifact {
-            if !crate::ipc::check_artifact(&wt_path, artifact) {
+            if !crate::ipc::check_artifact(&work_dir, artifact) {
                 self.fail_or_retry(
                     task,
                     &phase.name,
@@ -802,7 +827,7 @@ impl Pipeline {
                         "compileCheck",
                     )
                 } else {
-                    match self.run_test_command(&wt_path, &check_cmd).await {
+                    match self.run_test_command(&work_dir, &check_cmd).await {
                         Ok(o) => Some(o),
                         Err(e) => {
                             warn!("compile check error for task #{}: {e}", task.id);
@@ -815,7 +840,7 @@ impl Pipeline {
                         let compile_err = format!("{}\n{}", o.stdout, o.stderr);
                         info!("task #{} compile check failed, running fix agent", task.id);
                         if !self
-                            .run_compile_fix(task, &wt_path, &check_cmd, &compile_err)
+                            .run_compile_fix(task, &work_dir, &check_cmd, &compile_err)
                             .await?
                         {
                             let msg = format!(
@@ -834,7 +859,7 @@ impl Pipeline {
             let out = if result.ran_in_docker {
                 container_result_as_test_output(&result.container_test_results, "test")
             } else {
-                match self.run_test_command(&wt_path, &test_cmd).await {
+                match self.run_test_command(&work_dir, &test_cmd).await {
                     Ok(o) => Some(o),
                     Err(e) => {
                         warn!("test command error for task #{}: {}", task.id, e);
@@ -855,9 +880,9 @@ impl Pipeline {
         Ok(())
     }
 
-    /// Read `.borg/signal.json` from the worktree. Returns default (done) if missing or malformed.
-    fn read_agent_signal(wt_path: &str) -> crate::types::AgentSignal {
-        let path = format!("{wt_path}/.borg/signal.json");
+    /// Read `.borg/signal.json` from the work dir. Returns default (done) if missing or malformed.
+    fn read_agent_signal(work_dir: &str) -> crate::types::AgentSignal {
+        let path = format!("{work_dir}/.borg/signal.json");
         match std::fs::read_to_string(&path) {
             Ok(contents) => {
                 // Clean up the signal file so it doesn't carry over to next run
@@ -875,7 +900,7 @@ impl Pipeline {
         phase: &PhaseConfig,
         mode: &PipelineMode,
     ) -> Result<()> {
-        let wt_path = task.repo_path.clone();
+        let work_dir = task.repo_path.clone();
 
         let test_cmd = self.repo_config(task).test_cmd;
         if test_cmd.is_empty() {
@@ -891,7 +916,7 @@ impl Pipeline {
             let out = if use_docker {
                 self.run_test_in_container(task, &check_cmd).await?
             } else {
-                self.run_test_command(&wt_path, &check_cmd).await?
+                self.run_test_command(&work_dir, &check_cmd).await?
             };
             if out.exit_code != 0 {
                 let error_msg = format!("{}\n{}", out.stdout, out.stderr);
@@ -910,7 +935,7 @@ impl Pipeline {
         let out = if use_docker {
             self.run_test_in_container(task, &test_cmd).await?
         } else {
-            match self.run_test_command(&wt_path, &test_cmd).await {
+            match self.run_test_command(&work_dir, &test_cmd).await {
                 Ok(o) => o,
                 Err(e) => {
                     warn!("task #{} validate: test command error: {e}", task.id);
@@ -946,7 +971,7 @@ impl Pipeline {
             return self.run_rebase_phase_docker(task, phase).await;
         }
 
-        // Non-Docker rebase: no worktree, just advance.
+        // Non-Docker rebase: just advance (rebase handled by GitHub update-branch API).
         info!("task #{} rebase: non-Docker mode, advancing", task.id);
         self.db.update_task_status(task.id, &phase.next, None)?;
         Ok(())
@@ -1016,9 +1041,9 @@ impl Pipeline {
             return Ok(());
         }
 
-        let wt_path = task.repo_path.clone();
+        let work_dir = task.repo_path.clone();
 
-        let lint_cmd = match self.repo_lint_cmd(&task.repo_path, &wt_path) {
+        let lint_cmd = match self.repo_lint_cmd(&task.repo_path, &work_dir) {
             Some(cmd) => cmd,
             None => {
                 self.advance_phase(task, phase, mode)?;
@@ -1032,7 +1057,7 @@ codebase pass the project's linter with zero warnings or errors. Do not refactor
 change logic — only fix what the linter reports. Read the lint output carefully and make the \
 minimal changes needed. After editing, do not run the linter yourself — the pipeline will verify.";
 
-        let mut lint_out = self.run_test_command(&wt_path, &lint_cmd).await?;
+        let mut lint_out = self.run_test_command(&work_dir, &lint_cmd).await?;
         if lint_out.exit_code == 0 {
             self.advance_phase(task, phase, mode)?;
             info!("task #{} lint_fix: already clean", task.id);
@@ -1071,12 +1096,12 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 ..PhaseConfig::default()
             };
 
-            let ctx = self.make_context(task, wt_path.clone(), session_dir.clone(), Vec::new());
+            let ctx = self.make_context(task, work_dir.clone(), session_dir.clone(), Vec::new());
 
             let agent_result = match self.resolve_backend(task) {
                 Some(b) => {
                     if let Err(e) = self
-                        .write_pipeline_state_snapshot(task, &fix_phase.name, &wt_path)
+                        .write_pipeline_state_snapshot(task, &fix_phase.name, &work_dir)
                         .await
                     {
                         warn!("task #{}: write_pipeline_state_snapshot: {e}", task.id);
@@ -1114,9 +1139,9 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             let git = Git::new(&task.repo_path);
             let (_, user_coauthor) = self.git_coauthor_settings();
             let lint_commit_msg = Self::with_user_coauthor("fix: lint errors", &user_coauthor);
-            let _ = git.commit_all(&wt_path, &lint_commit_msg, self.git_author());
+            let _ = git.commit_all(&work_dir, &lint_commit_msg, self.git_author());
 
-            lint_out = self.run_test_command(&wt_path, &lint_cmd).await?;
+            lint_out = self.run_test_command(&work_dir, &lint_cmd).await?;
             if lint_out.exit_code == 0 {
                 self.advance_phase(task, phase, mode)?;
                 info!(
@@ -1138,7 +1163,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
     async fn run_compile_fix(
         &self,
         task: &Task,
-        wt_path: &str,
+        work_dir: &str,
         check_cmd: &str,
         initial_errors: &str,
     ) -> Result<bool> {
@@ -1175,7 +1200,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 ..PhaseConfig::default()
             };
 
-            let ctx = self.make_context(task, wt_path.to_string(), session_dir.clone(), Vec::new());
+            let ctx = self.make_context(task, work_dir.to_string(), session_dir.clone(), Vec::new());
 
             let result = match self.resolve_backend(task) {
                 Some(b) => b.run_phase(task, &fix_phase, ctx).await.unwrap_or_else(|e| {
@@ -1195,9 +1220,9 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             let git = Git::new(&task.repo_path);
             let (_, user_coauthor) = self.git_coauthor_settings();
             let msg = Self::with_user_coauthor("fix: compile errors", &user_coauthor);
-            let _ = git.commit_all(wt_path, &msg, self.git_author());
+            let _ = git.commit_all(work_dir, &msg, self.git_author());
 
-            match self.run_test_command(wt_path, check_cmd).await {
+            match self.run_test_command(work_dir, check_cmd).await {
                 Ok(ref out) if out.exit_code == 0 => {
                     info!("task #{} compile_fix: resolved after {} attempt(s)", task.id, attempt + 1);
                     return Ok(true);
@@ -1224,6 +1249,20 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             self.read_structured_output(task);
             self.read_task_deadlines(task);
             self.index_task_documents(task);
+
+            // Non-Docker: push the task branch to remote before enqueuing.
+            if self.sandbox_mode != SandboxMode::Docker && !task.repo_path.is_empty() {
+                let branch = format!("task-{}", task.id);
+                let git = Git::new(&task.repo_path);
+                match git.push_branch(&branch) {
+                    Ok(()) => info!("task #{}: pushed branch {branch}", task.id),
+                    Err(e) => warn!("task #{}: push branch {branch}: {e}", task.id),
+                }
+                if let Err(e) = git.checkout("main") {
+                    warn!("task #{}: checkout main after push: {e}", task.id);
+                }
+            }
+
             self.db.update_task_status(task.id, "done", None)?;
             let _ = self.db.mark_task_completed(task.id);
             let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
@@ -1353,7 +1392,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         &self,
         task: &Task,
         phase_name: &str,
-        wt_path: &str,
+        work_dir: &str,
     ) -> Result<()> {
         // Build phase_history from last 5 task outputs, truncating output to 2 000 chars.
         let phase_history: Vec<PhaseHistoryEntry> = self
@@ -1412,14 +1451,14 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             task_id: task.id,
             task_title: task.title.clone(),
             phase: phase_name.to_string(),
-            worktree_path: wt_path.to_string(),
+            work_dir: work_dir.to_string(),
             pr_url,
             pending_approvals,
             phase_history,
             generated_at: Utc::now(),
         };
 
-        let borg_dir = format!("{wt_path}/.borg");
+        let borg_dir = format!("{work_dir}/.borg");
         tokio::fs::create_dir_all(&borg_dir).await?;
         let json = serde_json::to_string_pretty(&snapshot)?;
         tokio::fs::write(format!("{borg_dir}/pipeline-state.json"), json).await?;
@@ -1430,7 +1469,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
     // ── Lint helpers ──────────────────────────────────────────────────────
 
     /// Resolve lint command: explicit repo config → `.borg/lint.sh` fallback.
-    fn repo_lint_cmd(&self, repo_path: &str, wt_path: &str) -> Option<String> {
+    fn repo_lint_cmd(&self, repo_path: &str, work_dir: &str) -> Option<String> {
         if let Some(repo) = self
             .config
             .watched_repos
@@ -1441,7 +1480,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 return Some(repo.lint_cmd.clone());
             }
         }
-        let script = format!("{wt_path}/.borg/lint.sh");
+        let script = format!("{work_dir}/.borg/lint.sh");
         if std::path::Path::new(&script).exists() {
             return Some(format!("bash '{script}'"));
         }

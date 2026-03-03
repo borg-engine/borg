@@ -97,7 +97,7 @@ impl AgentBackend for CodexBackend {
             ))
             .arg("--full-auto")
             .arg(&instruction)
-            .current_dir(&ctx.worktree_path)
+            .current_dir(&ctx.work_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if !self.api_key.is_empty() {

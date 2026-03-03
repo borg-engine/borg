@@ -84,19 +84,19 @@ impl Git {
 
     pub fn commit_all(
         &self,
-        worktree_path: &str,
+        work_dir: &str,
         message: &str,
         author: Option<(&str, &str)>,
     ) -> Result<bool> {
-        let add = self.exec(worktree_path, &["add", "-A"])?;
+        let add = self.exec(work_dir, &["add", "-A"])?;
         if !add.success() {
             return Err(anyhow!(
-                "git add -A failed in {worktree_path}: {}",
+                "git add -A failed in {work_dir}: {}",
                 add.combined_output()
             ));
         }
 
-        let status = self.exec(worktree_path, &["status", "--porcelain"])?;
+        let status = self.exec(work_dir, &["status", "--porcelain"])?;
         if status.stdout.trim().is_empty() {
             return Ok(false);
         }
@@ -109,24 +109,62 @@ impl Git {
             args.push(&author_str);
         }
 
-        let result = self.exec(worktree_path, &args)?;
+        let result = self.exec(work_dir, &args)?;
         if !result.success() {
             return Err(anyhow!(
-                "git commit failed in {worktree_path}: {}",
+                "git commit failed in {work_dir}: {}",
                 result.combined_output()
             ));
         }
         Ok(true)
     }
 
-    pub fn ls_files(&self, worktree_path: &str) -> Result<String> {
-        let result = self.exec(worktree_path, &["ls-files"])?;
+    pub fn ls_files(&self, work_dir: &str) -> Result<String> {
+        let result = self.exec(work_dir, &["ls-files"])?;
         if !result.success() {
             return Err(anyhow!(
-                "git ls-files failed in {worktree_path}: {}",
+                "git ls-files failed in {work_dir}: {}",
                 result.combined_output()
             ));
         }
         Ok(result.stdout)
+    }
+
+    /// Create and checkout a new branch from a given start point.
+    pub fn checkout_new_branch(&self, branch: &str, start: &str) -> Result<()> {
+        // Delete the branch if it already exists locally (stale leftover from a previous attempt)
+        let _ = self.exec(&self.repo_path, &["branch", "-D", branch]);
+        let result = self.exec(&self.repo_path, &["checkout", "-b", branch, start])?;
+        if !result.success() {
+            return Err(anyhow!(
+                "git checkout -b {branch} {start} failed: {}",
+                result.combined_output()
+            ));
+        }
+        Ok(())
+    }
+
+    /// Push a branch to origin.
+    pub fn push_branch(&self, branch: &str) -> Result<()> {
+        let result = self.exec(&self.repo_path, &["push", "-u", "origin", branch, "--force-with-lease"])?;
+        if !result.success() {
+            return Err(anyhow!(
+                "git push origin {branch} failed: {}",
+                result.combined_output()
+            ));
+        }
+        Ok(())
+    }
+
+    /// Checkout an existing branch.
+    pub fn checkout(&self, branch: &str) -> Result<()> {
+        let result = self.exec(&self.repo_path, &["checkout", branch])?;
+        if !result.success() {
+            return Err(anyhow!(
+                "git checkout {branch} failed: {}",
+                result.combined_output()
+            ));
+        }
+        Ok(())
     }
 }

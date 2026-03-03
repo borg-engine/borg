@@ -162,7 +162,7 @@ pub struct PipelineStateSnapshot {
     pub task_id: i64,
     pub task_title: String,
     pub phase: String,
-    pub worktree_path: String,
+    pub work_dir: String,
     /// GitHub PR URL, or null if no PR has been opened yet.
     pub pr_url: Option<String>,
     /// Queue entries for this task that are in `pending_review` status
@@ -416,7 +416,7 @@ pub struct PhaseContext {
     pub repo_config: RepoConfig,
     pub data_dir: String,
     pub session_dir: String,
-    pub worktree_path: String,
+    pub work_dir: String,
     pub oauth_token: String,
     pub model: String,
     /// Pending messages (role, content) to inject into this phase's instruction.

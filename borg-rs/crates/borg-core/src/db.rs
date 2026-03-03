@@ -128,6 +128,7 @@ pub struct ProjectRow {
     pub deadline: Option<String>,
     pub privilege_level: String,
     pub status: String,
+    pub default_template_id: Option<i64>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -379,10 +380,10 @@ fn row_to_legacy_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<LegacyEvent>
 }
 
 const PROJECT_COLS: &str = "id, name, mode, repo_path, client_name, case_number, jurisdiction, \
-    matter_type, opposing_counsel, deadline, privilege_level, status, created_at";
+    matter_type, opposing_counsel, deadline, privilege_level, status, default_template_id, created_at";
 
 fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectRow> {
-    let created_at_str: String = row.get(12)?;
+    let created_at_str: String = row.get(13)?;
     Ok(ProjectRow {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -396,6 +397,7 @@ fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectRow> {
         deadline: row.get(9)?,
         privilege_level: row.get(10)?,
         status: row.get(11)?,
+        default_template_id: row.get(12)?,
         created_at: parse_ts(&created_at_str),
     })
 }
@@ -466,8 +468,20 @@ impl Db {
             "ALTER TABLE pipeline_tasks ADD COLUMN review_status TEXT",
             "ALTER TABLE pipeline_tasks ADD COLUMN revision_count INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE project_files ADD COLUMN extracted_text TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN default_template_id INTEGER",
         ];
         for sql in alters {
+            let _ = conn.execute(sql, []);
+        }
+
+        // Indexes on columns added via ALTER TABLE (can't be in SCHEMA_SQL because
+        // the column may not exist when CREATE TABLE IF NOT EXISTS is a no-op).
+        let post_alter_indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_pipeline_project ON pipeline_tasks(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_pipeline_repo_status ON pipeline_tasks(repo_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_pipeline_events_project ON pipeline_events(project_id)",
+        ];
+        for sql in post_alter_indexes {
             let _ = conn.execute(sql, []);
         }
 
@@ -974,6 +988,7 @@ impl Db {
         privilege_level: Option<&str>,
         status: Option<&str>,
         repo_path: Option<&str>,
+        default_template_id: Option<Option<i64>>,
     ) -> Result<()> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut sets = Vec::new();
@@ -1002,6 +1017,12 @@ impl Db {
         if let Some(dl) = deadline {
             sets.push(format!("deadline = ?{}", idx));
             vals.push(Box::new(dl.map(|s| s.to_string())));
+            idx += 1;
+        }
+
+        if let Some(tid) = default_template_id {
+            sets.push(format!("default_template_id = ?{}", idx));
+            vals.push(Box::new(tid));
             idx += 1;
         }
 
@@ -1574,7 +1595,7 @@ impl Db {
             [],
             |r| r.get(0),
         )
-        .unwrap_or_else(|e| { tracing::warn!("count_unscored_proposals: {e}"); 0 })
+        .unwrap_or(0)
     }
 
     pub fn list_untriaged_proposals(&self) -> Result<Vec<Proposal>> {
@@ -2060,7 +2081,7 @@ impl Db {
             [],
             |r| r.get(0),
         )
-        .unwrap_or_else(|e| { tracing::warn!("active_task_count: {e}"); 0 })
+        .unwrap_or(0)
     }
 
     pub fn get_recent_merged_tasks(&self, limit: i64) -> Result<Vec<Task>> {
