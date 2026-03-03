@@ -20,14 +20,33 @@ const BORG_TEST_RESULT_MARKER: &str = "---BORG_TEST_RESULT---";
 pub const PHASE_RESULT_START: &str = "---PHASE_RESULT_START---";
 pub const PHASE_RESULT_END: &str = "---PHASE_RESULT_END---";
 
+/// Find the first occurrence of `marker` that begins at position 0 or immediately after a `\n`.
+fn find_line_start_marker(text: &str, marker: &str) -> Option<usize> {
+    let mut search_start = 0;
+    while let Some(rel_pos) = text[search_start..].find(marker) {
+        let abs_pos = search_start + rel_pos;
+        if abs_pos == 0 || text.as_bytes()[abs_pos - 1] == b'\n' {
+            return Some(abs_pos);
+        }
+        search_start = abs_pos + marker.len();
+    }
+    None
+}
+
 /// Extract the last complete marker block from decoded text.
+///
+/// Markers must appear at the start of a line (position 0 or after `\n`). This
+/// prevents false positives when the model mentions the marker names mid-sentence
+/// or when the function is accidentally called on raw NDJSON (where markers appear
+/// inside JSON string values, not on their own lines).
+///
 /// Returns a trimmed slice of the content between the last pair of markers, or None.
 pub fn extract_phase_result(text: &str) -> Option<&str> {
     let mut last_content: Option<&str> = None;
     let mut search = text;
-    while let Some(start_pos) = search.find(PHASE_RESULT_START) {
+    while let Some(start_pos) = find_line_start_marker(search, PHASE_RESULT_START) {
         let after_start = &search[start_pos + PHASE_RESULT_START.len()..];
-        if let Some(end_pos) = after_start.find(PHASE_RESULT_END) {
+        if let Some(end_pos) = find_line_start_marker(after_start, PHASE_RESULT_END) {
             let content = after_start[..end_pos].trim();
             if !content.is_empty() {
                 last_content = Some(content);

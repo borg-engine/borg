@@ -191,3 +191,122 @@ fn test_empty_last_pair_nullifies_prior_content() {
         "whitespace-only last pair should nullify prior content"
     );
 }
+
+// =============================================================================
+// EC-JSON: markers inside JSON-escaped strings (raw NDJSON) must not trigger
+// =============================================================================
+
+#[test]
+fn test_json_escaped_markers_in_raw_ndjson_no_false_positive() {
+    // Raw NDJSON where the model output embeds markers inside a JSON string value.
+    // The `\n` sequences are 2-char JSON escapes (backslash + n), not actual newlines,
+    // so the markers are NOT at the start of a line and must not be extracted.
+    let raw = r#"{"type":"result","result":"---PHASE_RESULT_START---\nfake content\n---PHASE_RESULT_END---"}"#;
+    assert!(
+        extract_phase_result(raw).is_none(),
+        "markers inside a JSON string value (JSON-escaped \\n) must not trigger extraction"
+    );
+}
+
+#[test]
+fn test_ndjson_assistant_message_with_embedded_markers_no_false_positive() {
+    // Full NDJSON assistant event where model text discusses both markers.
+    // Markers appear inside the JSON "text" string, not on their own lines.
+    let raw = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"---PHASE_RESULT_START---\nmy summary\n---PHASE_RESULT_END---"}]}}"#;
+    assert!(
+        extract_phase_result(raw).is_none(),
+        "markers inside assistant NDJSON string value must not trigger extraction"
+    );
+}
+
+// =============================================================================
+// EC-INLINE: markers mentioned mid-sentence must not trigger extraction
+// =============================================================================
+
+#[test]
+fn test_markers_mentioned_inline_no_false_positive() {
+    // Model discusses both marker names on the same line mid-sentence.
+    // Neither marker is at the start of a line, so no extraction should occur.
+    let text = format!("Use {START} before your result and {END} after it.");
+    assert!(
+        extract_phase_result(&text).is_none(),
+        "markers mentioned mid-sentence on one line must not trigger extraction"
+    );
+}
+
+#[test]
+fn test_end_marker_mentioned_inline_after_valid_start_no_false_positive() {
+    // START marker is on its own line, but END appears mid-sentence on the same
+    // line as some content. The inline END must not terminate the block early;
+    // the real END (on its own line) should close it.
+    let text = format!(
+        "{START}\nContent mentioning {END} inline; more content.\n{END}"
+    );
+    let result = extract_phase_result(&text);
+    assert!(result.is_some());
+    // The inline END mention does not close the block early; all content is captured.
+    let r = result.unwrap();
+    assert!(
+        r.contains("Content mentioning"),
+        "content before inline END mention must be included, got: {r}"
+    );
+    assert!(
+        r.contains("more content"),
+        "content after inline END mention must be included, got: {r}"
+    );
+}
+
+// =============================================================================
+// EC-PARTIAL: partial start-marker substrings must not be confused with the
+// full marker
+// =============================================================================
+
+#[test]
+fn test_partial_start_marker_prefix_no_false_positive() {
+    // Text contains the marker without its trailing dashes. This is a substring
+    // of the real marker and must not trigger extraction; the valid pair that
+    // follows on its own line should be returned normally.
+    let partial = "---PHASE_RESULT_START"; // missing trailing ---
+    let text = format!("{partial} mentioned here\n{START}\nreal content\n{END}");
+    let result = extract_phase_result(&text);
+    assert!(result.is_some(), "valid marker pair must still be found");
+    assert_eq!(
+        result.unwrap(),
+        "real content",
+        "only content from the valid pair should be returned"
+    );
+}
+
+#[test]
+fn test_partial_start_marker_inside_valid_content() {
+    // Content between a valid pair of markers contains the start-marker prefix.
+    // This must not confuse extraction; all content must be returned intact.
+    let partial = "---PHASE_RESULT_START"; // missing trailing ---
+    let text = format!("{START}\nContent with {partial} halfway.\n{END}");
+    let result = extract_phase_result(&text);
+    assert!(result.is_some());
+    let r = result.unwrap();
+    assert!(
+        r.contains(partial),
+        "partial marker prefix inside content must be preserved, got: {r}"
+    );
+    assert!(
+        r.contains("halfway"),
+        "surrounding content must also be preserved, got: {r}"
+    );
+}
+
+#[test]
+fn test_partial_end_marker_inside_valid_content() {
+    // Content contains the end-marker without trailing dashes.
+    // This must not terminate the block early.
+    let partial_end = "---PHASE_RESULT_END"; // missing trailing ---
+    let text = format!("{START}\nContent with {partial_end} substring here.\n{END}");
+    let result = extract_phase_result(&text);
+    assert!(result.is_some());
+    let r = result.unwrap();
+    assert!(
+        r.contains(partial_end),
+        "partial end-marker inside content must be preserved, got: {r}"
+    );
+}
