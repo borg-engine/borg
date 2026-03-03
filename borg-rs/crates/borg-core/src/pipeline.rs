@@ -266,7 +266,12 @@ impl Pipeline {
     /// builds a summary of previous attempts so the new session has context.
     fn fail_or_retry(&self, task: &Task, retry_status: &str, error: &str) -> Result<()> {
         self.db.increment_attempt(task.id)?;
-        let current = self.db.get_task(task.id)?.unwrap_or_else(|| task.clone());
+        let current = self.db.get_task(task.id)?.unwrap_or_else(|| {
+            // Fallback: use stale snapshot but with incremented attempt so check is correct
+            let mut t = task.clone();
+            t.attempt += 1;
+            t
+        });
         if current.attempt >= current.max_attempts {
             self.db.update_task_status(task.id, "failed", Some(error))?;
         } else {
@@ -675,10 +680,8 @@ impl Pipeline {
         let backend = match self.resolve_backend(task) {
             Some(b) => b,
             None => {
-                warn!(
-                    "task #{}: no backend configured, skipping phase {}",
-                    task.id, phase.name
-                );
+                warn!("task #{}: no backend configured, failing task", task.id);
+                self.fail_or_retry(task, &phase.name, "no agent backend configured")?;
                 return Ok(());
             },
         };
@@ -924,6 +927,7 @@ impl Pipeline {
                 Ok(o) => o,
                 Err(e) => {
                     warn!("task #{} validate: test command error: {e}", task.id);
+                    self.fail_or_retry(task, "validate", &format!("test command error: {e}"))?;
                     return Ok(());
                 },
             }
@@ -1200,7 +1204,7 @@ and report what went wrong.",
             self.read_task_deadlines(task);
             self.index_task_documents(task);
 
-            self.db.update_task_status(task.id, "done", None)?;
+            self.db.update_task_status(task.id, "done", Some(""))?;
             let _ = self.db.mark_task_completed(task.id);
             let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
             let _ = self.db.log_event_full(Some(task.id), None, pid, "pipeline", "task.completed", &serde_json::json!({ "title": task.title }));
@@ -1219,7 +1223,7 @@ and report what went wrong.",
                 IntegrationType::None => {}
             }
         } else {
-            self.db.update_task_status(task.id, next, None)?;
+            self.db.update_task_status(task.id, next, Some(""))?;
         }
         self.emit(PipelineEvent::Phase {
             task_id: Some(task.id),
@@ -1681,7 +1685,11 @@ and report what went wrong.",
                     "--jq",
                     ".number",
                 ])
-                .await?;
+                .await;
+            let view_out = match view_out {
+                Ok(o) => o,
+                Err(e) => { warn!("gh pr view {}: {e}", entry.branch); continue; }
+            };
             if view_out.exit_code == 0 && !view_out.stdout.trim().is_empty() {
                 continue;
             }
@@ -1708,7 +1716,11 @@ and report what went wrong.",
                     "--body",
                     "Automated implementation.",
                 ])
-                .await?;
+                .await;
+            let create_out = match create_out {
+                Ok(o) => o,
+                Err(e) => { warn!("gh pr create {}: {e}", entry.branch); continue; }
+            };
 
             if create_out.exit_code != 0 {
                 let err = &create_out.stderr[..create_out.stderr.len().min(300)];
@@ -1767,7 +1779,11 @@ and report what went wrong.",
                         "--jq",
                         ".state",
                     ])
-                    .await?;
+                    .await;
+                let view_out = match view_out {
+                    Ok(o) => o,
+                    Err(e) => { warn!("gh pr view state {}: {e}", entry.branch); continue; }
+                };
                 if view_out.exit_code != 0 {
                     continue;
                 }
@@ -1793,7 +1809,11 @@ and report what went wrong.",
                         "--jq",
                         ".mergeable",
                     ])
-                    .await?;
+                    .await;
+                let mb_out = match mb_out {
+                    Ok(o) => o,
+                    Err(e) => { warn!("gh pr view mergeable {}: {e}", entry.branch); continue; }
+                };
                 let mb = mb_out.stdout.trim().to_string();
                 let mut force_merge = false;
 

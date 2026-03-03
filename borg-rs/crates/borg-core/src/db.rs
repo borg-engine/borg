@@ -1478,13 +1478,16 @@ impl Db {
         project_id: Option<i64>,
     ) -> Result<Vec<crate::knowledge::EmbeddingSearchResult>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        // Cap full-table scan: fetch at most 2000 rows ordered by rowid desc (most recent first)
+        // to avoid loading the entire embedding table into RAM.
+        let cap = (limit * 20).max(2000) as i64;
         let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match project_id {
             Some(pid) => (
-                "SELECT id, project_id, task_id, chunk_text, file_path, embedding FROM embeddings WHERE project_id = ?1".to_string(),
+                format!("SELECT id, project_id, task_id, chunk_text, file_path, embedding FROM embeddings WHERE project_id = ?1 ORDER BY rowid DESC LIMIT {cap}"),
                 vec![Box::new(pid) as Box<dyn rusqlite::types::ToSql>],
             ),
             None => (
-                "SELECT id, project_id, task_id, chunk_text, file_path, embedding FROM embeddings".to_string(),
+                format!("SELECT id, project_id, task_id, chunk_text, file_path, embedding FROM embeddings ORDER BY rowid DESC LIMIT {cap}"),
                 vec![],
             ),
         };
