@@ -10,6 +10,10 @@ fn kf(id: i64, file_name: &str, description: &str, inline: bool) -> KnowledgeFil
         description: description.to_string(),
         size_bytes: 0,
         inline,
+        tags: String::new(),
+        category: String::new(),
+        jurisdiction: String::new(),
+        project_id: None,
         created_at: String::new(),
     }
 }
