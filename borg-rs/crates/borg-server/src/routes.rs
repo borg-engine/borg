@@ -953,6 +953,18 @@ pub(crate) async fn get_project(
     Ok(Json(json!(ProjectJson::from(project))))
 }
 
+pub(crate) async fn get_project(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    let project = state
+        .db
+        .get_project(id)
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(json!(ProjectJson::from(project))))
+}
+
 pub(crate) async fn update_project(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
@@ -1214,6 +1226,7 @@ pub(crate) async fn search_documents(
 
     Ok(Json(json!(items)))
 }
+
 
 /// Read a file from git: tries local `git show ref:path` first, falls back to `gh api`.
 async fn git_show_file(repo_path: &str, slug: &str, ref_name: &str, path: &str) -> Option<Vec<u8>> {
