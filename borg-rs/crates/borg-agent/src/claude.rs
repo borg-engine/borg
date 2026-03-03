@@ -129,10 +129,7 @@ impl ClaudeBackend {
             phase.commit_message.clone()
         };
 
-        let repo_name = std::path::Path::new(&task.repo_path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let repo_name = Self::repo_name(task);
         let branch = format!("task-{}", task.id);
         let gh_token = gh_token.to_string();
 
@@ -206,22 +203,20 @@ impl ClaudeBackend {
     }
 
     fn host_mirror_path(task: &Task, data_dir: &str) -> String {
-        let repo_name = std::path::Path::new(&task.repo_path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let raw = format!("{data_dir}/mirrors/{repo_name}.git");
-        std::fs::canonicalize(&raw)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or(raw)
+        let repo_name = Self::repo_name(task);
+        format!("{data_dir}/mirrors/{repo_name}.git")
     }
 
     fn container_mirror_path(task: &Task) -> String {
-        let repo_name = std::path::Path::new(&task.repo_path)
+        let repo_name = Self::repo_name(task);
+        format!("/mirrors/{repo_name}.git")
+    }
+
+    fn repo_name(task: &Task) -> String {
+        std::path::Path::new(&task.repo_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        format!("/mirrors/{repo_name}.git")
+            .unwrap_or_default()
     }
 }
 
