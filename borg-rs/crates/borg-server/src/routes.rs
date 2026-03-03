@@ -1569,80 +1569,135 @@ pub(crate) async fn export_project_document(
     let md_bytes = md_content.into_bytes();
 
     // Resolve template reference doc
-    let template_path = if let Some(tid) = q.template_id {
+    let template_info = if let Some(tid) = q.template_id {
         let kf = state.db.list_knowledge_files().map_err(internal)?;
         kf.iter().find(|f| f.id == tid).map(|f| {
-            format!("{}/knowledge/{}", state.config.data_dir, f.file_name)
+            let p = format!("{}/knowledge/{}", state.config.data_dir, f.file_name);
+            let is_docx = f.file_name.to_lowercase().ends_with(".docx");
+            (p, is_docx)
         })
     } else {
         None
     };
+    let use_docxtemplater = format == "docx"
+        && template_info.as_ref().is_some_and(|(p, is_docx)| *is_docx && std::path::Path::new(p).exists());
 
-    // Write markdown to a temp file
     let tmp_dir = tempfile::tempdir().map_err(internal)?;
-    let md_path = tmp_dir.path().join("document.md");
-    let out_filename = format!(
-        "{}.{}",
-        std::path::Path::new(path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("document"),
-        format
-    );
+    let stem = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document");
+    let out_filename = format!("{}.{}", stem, format);
     let out_path = tmp_dir.path().join(&out_filename);
 
-    tokio::fs::write(&md_path, &md_bytes).await.map_err(internal)?;
-
-    let mut cmd = tokio::process::Command::new("pandoc");
-    cmd.arg(&md_path)
-        .arg("-f").arg("markdown")
-        .arg("-o").arg(&out_path)
-        .stderr(std::process::Stdio::piped());
-
-    if add_toc {
-        cmd.arg("--toc").arg("--toc-depth=3");
-    }
-    if number_sections {
-        cmd.arg("--number-sections");
-    }
-
-    if format == "pdf" {
-        cmd.arg("-t").arg("html").arg("--pdf-engine=weasyprint");
-    } else {
-        cmd.arg("-t").arg(format);
-        if let Some(ref tpl) = template_path {
-            if std::path::Path::new(tpl).exists() {
-                cmd.arg("--reference-doc").arg(tpl);
+    if use_docxtemplater {
+        // Use docxtemplater to fill the .docx template
+        let (tpl_path, _) = template_info.as_ref().unwrap();
+        let fill_data = json!({
+            "title": task.title,
+            "client_name": project.client_name,
+            "case_number": project.case_number,
+            "jurisdiction": project.jurisdiction,
+            "matter_type": project.matter_type,
+            "date": Utc::now().format("%B %d, %Y").to_string(),
+            "privilege_header": if project.privilege_level.is_empty() { String::new() }
+                else { format!("PRIVILEGED AND CONFIDENTIAL — {}", project.privilege_level.to_uppercase()) },
+            "body": String::from_utf8_lossy(&md_bytes).to_string(),
+        });
+        let fill_input = json!({
+            "templatePath": tpl_path,
+            "outputPath": out_path.to_string_lossy(),
+            "data": fill_data,
+        });
+        let fill_script = format!("{}/sidecar/docx-template/fill.ts",
+            std::env::current_dir().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| ".".into()));
+        if let Ok(mut child) = tokio::process::Command::new("bun")
+            .arg("run").arg(&fill_script)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            if let Some(stdin) = child.stdin.as_mut() {
+                use tokio::io::AsyncWriteExt;
+                let _ = stdin.write_all(fill_input.to_string().as_bytes()).await;
+            }
+            match child.wait_with_output().await {
+                Ok(out) if !out.status.success() => {
+                    tracing::warn!("docxtemplater fill failed: {}", String::from_utf8_lossy(&out.stderr));
+                }
+                Err(e) => {
+                    tracing::warn!("docxtemplater process error: {e}");
+                }
+                _ => {}
             }
         }
     }
 
-    let pandoc_out = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
-        cmd.output(),
-    )
-    .await
-    .map_err(internal)?
-    .map_err(internal)?;
+    // Fall back to pandoc if docxtemplater didn't produce output
+    if !out_path.exists() {
+        let md_path = tmp_dir.path().join("document.md");
+        tokio::fs::write(&md_path, &md_bytes).await.map_err(internal)?;
 
-    // If weasyprint failed for PDF, retry with xelatex
-    if !pandoc_out.status.success() && format == "pdf" {
-        let retry = tokio::time::timeout(
+        let mut cmd = tokio::process::Command::new("pandoc");
+        cmd.arg(&md_path)
+            .arg("-f").arg("markdown")
+            .arg("-o").arg(&out_path)
+            .stderr(std::process::Stdio::piped());
+
+        if add_toc {
+            cmd.arg("--toc").arg("--toc-depth=3");
+        }
+        if number_sections {
+            cmd.arg("--number-sections");
+        }
+
+        if format == "pdf" {
+            cmd.arg("-t").arg("html").arg("--pdf-engine=weasyprint");
+        } else {
+            cmd.arg("-t").arg(format);
+            if let Some((ref tpl, _)) = template_info {
+                if std::path::Path::new(tpl).exists() {
+                    cmd.arg("--reference-doc").arg(tpl);
+                }
+            }
+        }
+
+        let pandoc_out = tokio::time::timeout(
             std::time::Duration::from_secs(60),
-            tokio::process::Command::new("pandoc")
-                .arg(&md_path)
-                .arg("-f").arg("markdown")
-                .arg("-o").arg(&out_path)
-                .arg("--pdf-engine=xelatex")
-                .stderr(std::process::Stdio::piped())
-                .output(),
+            cmd.output(),
         )
         .await
         .map_err(internal)?
         .map_err(internal)?;
 
-        if !retry.status.success() {
-            let stderr = String::from_utf8_lossy(&retry.stderr);
+        // If weasyprint failed for PDF, retry with xelatex
+        if !pandoc_out.status.success() && format == "pdf" {
+            let retry = tokio::time::timeout(
+                std::time::Duration::from_secs(60),
+                tokio::process::Command::new("pandoc")
+                    .arg(&md_path)
+                    .arg("-f").arg("markdown")
+                    .arg("-o").arg(&out_path)
+                    .arg("--pdf-engine=xelatex")
+                    .stderr(std::process::Stdio::piped())
+                    .output(),
+            )
+            .await
+            .map_err(internal)?
+            .map_err(internal)?;
+
+            if !retry.status.success() {
+                let stderr = String::from_utf8_lossy(&retry.stderr);
+                tracing::warn!("pandoc export failed: {stderr}");
+                return Ok(axum::response::Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .header("content-type", "text/plain")
+                    .body(axum::body::Body::from(format!("pandoc failed: {stderr}")))
+                    .unwrap());
+            }
+        } else if !pandoc_out.status.success() {
+            let stderr = String::from_utf8_lossy(&pandoc_out.stderr);
             tracing::warn!("pandoc export failed: {stderr}");
             return Ok(axum::response::Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1650,15 +1705,7 @@ pub(crate) async fn export_project_document(
                 .body(axum::body::Body::from(format!("pandoc failed: {stderr}")))
                 .unwrap());
         }
-    } else if !pandoc_out.status.success() {
-        let stderr = String::from_utf8_lossy(&pandoc_out.stderr);
-        tracing::warn!("pandoc export failed: {stderr}");
-        return Ok(axum::response::Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .header("content-type", "text/plain")
-            .body(axum::body::Body::from(format!("pandoc failed: {stderr}")))
-            .unwrap());
-    }
+    } // end pandoc fallback
 
     let file_bytes = tokio::fs::read(&out_path).await.map_err(internal)?;
 
@@ -1700,13 +1747,19 @@ pub(crate) async fn export_all_project_documents(
     let tmp_dir = tempfile::tempdir().map_err(internal)?;
     let mut file_entries: Vec<(String, Vec<u8>)> = Vec::new();
 
-    let template_path = q.template_id.and_then(|tid| {
+    let template_info = q.template_id.and_then(|tid| {
         state.db.list_knowledge_files().ok().and_then(|kf| {
             kf.iter().find(|f| f.id == tid).map(|f| {
-                format!("{}/knowledge/{}", state.config.data_dir, f.file_name)
+                let p = format!("{}/knowledge/{}", state.config.data_dir, f.file_name);
+                let is_docx = f.file_name.to_lowercase().ends_with(".docx");
+                (p, is_docx)
             })
         })
     });
+    let use_docxtemplater = format == "docx"
+        && template_info.as_ref().is_some_and(|(p, is_docx)| *is_docx && std::path::Path::new(p).exists());
+    let fill_script = format!("{}/sidecar/docx-template/fill.ts",
+        std::env::current_dir().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| ".".into()));
 
     for task in &tasks {
         if task.branch.is_empty() { continue; }
@@ -1739,28 +1792,65 @@ pub(crate) async fn export_all_project_documents(
             let md_path = tmp_dir.path().join(format!("src-{}-{}.md", task.id, stem));
             let out_path = tmp_dir.path().join(&out_name);
 
-            tokio::fs::write(&md_path, md_content.as_bytes()).await.map_err(internal)?;
+            let mut produced = false;
 
-            let mut cmd = tokio::process::Command::new("pandoc");
-            cmd.arg(&md_path).arg("-f").arg("markdown").arg("-o").arg(&out_path)
-                .stderr(std::process::Stdio::piped());
-            if q.toc.unwrap_or(false) {
-                cmd.arg("--toc");
-            }
-            if format == "pdf" {
-                cmd.arg("-t").arg("html").arg("--pdf-engine=weasyprint");
-            } else {
-                cmd.arg("-t").arg("docx");
-                if let Some(ref tpl) = template_path {
-                    if std::path::Path::new(tpl).exists() {
-                        cmd.arg("--reference-doc").arg(tpl);
+            if use_docxtemplater {
+                let (tpl_path, _) = template_info.as_ref().unwrap();
+                let fill_input = json!({
+                    "templatePath": tpl_path,
+                    "outputPath": out_path.to_string_lossy(),
+                    "data": {
+                        "title": task.title,
+                        "client_name": project.client_name,
+                        "case_number": project.case_number,
+                        "jurisdiction": project.jurisdiction,
+                        "date": Utc::now().format("%B %d, %Y").to_string(),
+                        "body": md_content,
+                    },
+                });
+                if let Ok(mut child) = tokio::process::Command::new("bun")
+                    .arg("run").arg(&fill_script)
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        use tokio::io::AsyncWriteExt;
+                        let _ = stdin.write_all(fill_input.to_string().as_bytes()).await;
+                    }
+                    if let Ok(out) = child.wait_with_output().await {
+                        if out.status.success() && out_path.exists() {
+                            produced = true;
+                        }
                     }
                 }
             }
 
-            let out = tokio::time::timeout(std::time::Duration::from_secs(60), cmd.output())
-                .await.map_err(internal)?.map_err(internal)?;
-            if out.status.success() {
+            if !produced {
+                tokio::fs::write(&md_path, md_content.as_bytes()).await.map_err(internal)?;
+                let mut cmd = tokio::process::Command::new("pandoc");
+                cmd.arg(&md_path).arg("-f").arg("markdown").arg("-o").arg(&out_path)
+                    .stderr(std::process::Stdio::piped());
+                if q.toc.unwrap_or(false) {
+                    cmd.arg("--toc").arg("--toc-depth=3");
+                }
+                if format == "pdf" {
+                    cmd.arg("-t").arg("html").arg("--pdf-engine=weasyprint");
+                } else {
+                    cmd.arg("-t").arg("docx");
+                    if let Some((ref tpl, _)) = template_info {
+                        if std::path::Path::new(tpl).exists() {
+                            cmd.arg("--reference-doc").arg(tpl);
+                        }
+                    }
+                }
+                let out = tokio::time::timeout(std::time::Duration::from_secs(60), cmd.output())
+                    .await.map_err(internal)?.map_err(internal)?;
+                produced = out.status.success();
+            }
+
+            if produced {
                 if let Ok(bytes) = tokio::fs::read(&out_path).await {
                     file_entries.push((out_name, bytes));
                 }
