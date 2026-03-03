@@ -3310,14 +3310,30 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             },
         };
 
+        macro_rules! req {
+            ($expr:expr) => {
+                match $expr {
+                    Some(v) => v,
+                    None => continue,
+                }
+            };
+        }
+
         let mut scored = 0u32;
         let mut dismissed = 0u32;
         for item in &items {
-            let Some((p_id, impact, feasibility, risk, effort, score, reasoning, should_dismiss)) =
-                parse_triage_item(item)
-            else {
-                continue;
-            };
+            let get_i64 = |k: &str| item.get(k).and_then(|v| v.as_i64());
+            let p_id = req!(get_i64("id"));
+            let impact = req!(get_i64("impact"));
+            let feasibility = req!(get_i64("feasibility"));
+            let risk = req!(get_i64("risk"));
+            let effort = req!(get_i64("effort"));
+            let score = req!(get_i64("score"));
+            let reasoning = item.get("reasoning").and_then(|v| v.as_str()).unwrap_or("");
+            let should_dismiss = item
+                .get("dismiss")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
 
             if let Err(e) = self.db.update_proposal_triage(
                 p_id,
