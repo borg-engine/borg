@@ -954,17 +954,17 @@ impl Pipeline {
         &self,
         task: &Task,
         phase: &PhaseConfig,
-        _mode: &PipelineMode,
+        mode: &PipelineMode,
     ) -> Result<()> {
-        self.run_rebase_phase_docker(task, phase).await
+        self.run_rebase_phase_docker(task, phase, mode).await
     }
 
     /// Rebase: try GitHub update-branch API first; on conflict spawn a Docker agent.
-    async fn run_rebase_phase_docker(&self, task: &Task, phase: &PhaseConfig) -> Result<()> {
+    async fn run_rebase_phase_docker(&self, task: &Task, phase: &PhaseConfig, mode: &PipelineMode) -> Result<()> {
         let repo = self.repo_config(task);
         if repo.repo_slug.is_empty() {
             warn!("task #{} rebase: no repo_slug, skipping", task.id);
-            self.db.update_task_status(task.id, &phase.next, None)?;
+            self.advance_phase(task, phase, mode)?;
             return Ok(());
         }
 
@@ -989,7 +989,7 @@ impl Pipeline {
             match update_out {
                 Ok(o) if o.exit_code == 0 => {
                     info!("task #{} rebase: update-branch succeeded", task.id);
-                    self.db.update_task_status(task.id, &phase.next, None)?;
+                    self.advance_phase(task, phase, mode)?;
                     return Ok(());
                 },
                 Ok(o) => {
@@ -1002,12 +1002,12 @@ impl Pipeline {
             }
         } else {
             info!("task #{} rebase: no PR found, advancing", task.id);
-            self.db.update_task_status(task.id, &phase.next, None)?;
+            self.advance_phase(task, phase, mode)?;
             return Ok(());
         }
 
         // GitHub API couldn't auto-merge — spawn a Docker agent to resolve conflicts
-        self.run_rebase_agent(task, phase, &branch).await
+        self.run_rebase_agent(task, phase, mode, &branch).await
     }
 
     /// Spawn a Docker agent to rebase the branch onto main and resolve conflicts.
@@ -1015,6 +1015,7 @@ impl Pipeline {
         &self,
         task: &Task,
         phase: &PhaseConfig,
+        mode: &PipelineMode,
         branch: &str,
     ) -> Result<()> {
         let rebase_phase = PhaseConfig {
@@ -1076,7 +1077,7 @@ and report what went wrong.",
 
         if result.success {
             info!("task #{} rebase: agent resolved conflicts", task.id);
-            self.db.update_task_status(task.id, &phase.next, None)?;
+            self.advance_phase(task, phase, mode)?;
         } else {
             warn!("task #{} rebase: agent failed to resolve conflicts", task.id);
             self.fail_or_retry(task, "rebase", &result.output)?;
