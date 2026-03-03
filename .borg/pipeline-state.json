@@ -1,0 +1,10 @@
+{
+  "task_id": 134,
+  "task_title": "Test `fail_or_retry()` attempt increment and session clearing in `pipeline.rs`",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-134",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-03T02:27:56.650962016Z"
+}
