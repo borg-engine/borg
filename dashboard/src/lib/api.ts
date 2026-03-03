@@ -907,15 +907,23 @@ export async function uploadKnowledgeFile(
   file: File,
   description: string,
   inline: boolean,
+  category?: string,
 ): Promise<{ id: number; file_name: string }> {
   await tokenReady;
   const form = new FormData();
   form.append("file", file);
   form.append("description", description);
   form.append("inline", inline ? "true" : "false");
+  if (category) form.append("category", category);
   const res = await fetch(`${apiBase()}/api/knowledge/upload`, { method: "POST", headers: authHeaders(), body: form });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
+}
+
+export async function fetchKnowledgeContent(id: number): Promise<ArrayBuffer> {
+  const res = await apiFetch(`/api/knowledge/${id}/content`);
+  if (!res.ok) throw new Error(`Failed to load knowledge file (${res.status})`);
+  return res.arrayBuffer();
 }
 
 export async function updateKnowledgeFile(

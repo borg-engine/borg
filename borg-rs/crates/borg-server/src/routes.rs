@@ -2713,7 +2713,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 },
                 data_dir: state.config.data_dir.clone(),
                 session_dir: format!("{}/sessions/triage-{}", state.config.data_dir, proposal.id),
-                worktree_path: proposal.repo_path.clone(),
+                work_dir: proposal.repo_path.clone(),
                 oauth_token: oauth.clone(),
                 model: model.clone(),
                 pending_messages: Vec::new(),
@@ -3416,6 +3416,7 @@ pub(crate) async fn upload_knowledge(
     let mut file_name = String::new();
     let mut description = String::new();
     let mut inline = false;
+    let mut category = String::new();
     let mut file_bytes: Vec<u8> = Vec::new();
 
     while let Some(field) = multipart.next_field().await.map_err(|_| StatusCode::BAD_REQUEST)? {
@@ -3433,6 +3434,9 @@ pub(crate) async fn upload_knowledge(
                 let v = field.text().await.unwrap_or_default();
                 inline = v == "true" || v == "1";
             },
+            Some("category") => {
+                category = field.text().await.unwrap_or_default();
+            },
             _ => {},
         }
     }
@@ -3448,6 +3452,9 @@ pub(crate) async fn upload_knowledge(
         .db
         .insert_knowledge_file(&file_name, &description, file_bytes.len() as i64, inline)
         .map_err(internal)?;
+    if !category.is_empty() {
+        let _ = state.db.update_knowledge_file(id, None, None, None, Some(&category), None);
+    }
 
     Ok(Json(json!({ "id": id, "file_name": file_name })))
 }
