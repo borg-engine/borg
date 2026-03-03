@@ -1,0 +1,10 @@
+{
+  "task_id": 204,
+  "task_title": "Sanitize user-supplied path before embedding in Content-Disposition header",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-204",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-03T06:03:56.509024635Z"
+}
