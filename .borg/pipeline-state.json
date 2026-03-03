@@ -1,0 +1,10 @@
+{
+  "task_id": 286,
+  "task_title": "Prevent knowledge file upload from silently overwriting existing file (routes.rs:3444)",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-286",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-03T10:18:26.078097242Z"
+}
