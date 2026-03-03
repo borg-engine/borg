@@ -12,7 +12,7 @@
 //   EC2: whitespace-only content between markers → None.
 //   EC4: three marker pairs → last (third) is returned.
 
-use borg_agent::claude::extract_phase_result;
+use borg_agent::claude::{extract_phase_result, parse_test_result};
 
 const START: &str = "---PHASE_RESULT_START---";
 const END: &str = "---PHASE_RESULT_END---";
@@ -190,4 +190,79 @@ fn test_empty_last_pair_nullifies_prior_content() {
         extract_phase_result(&text).is_none(),
         "whitespace-only last pair should nullify prior content"
     );
+}
+
+// =============================================================================
+// parse_test_result tests
+// =============================================================================
+
+const MARKER: &str = "---BORG_TEST_RESULT---";
+
+#[test]
+fn test_parse_test_result_success() {
+    let line = format!(r#"{MARKER}{{"phase":"test","passed":true,"exitCode":0,"output":"all ok"}}"#);
+    let r = parse_test_result(&line).expect("should parse");
+    assert!(r.passed);
+    assert_eq!(r.exit_code, 0);
+    assert_eq!(r.phase, "test");
+    assert_eq!(r.output, "all ok");
+}
+
+#[test]
+fn test_parse_test_result_failure() {
+    let line = format!(r#"{MARKER}{{"phase":"test","passed":false,"exitCode":1,"output":"2 failures"}}"#);
+    let r = parse_test_result(&line).expect("should parse");
+    assert!(!r.passed);
+    assert_eq!(r.exit_code, 1);
+    assert_eq!(r.output, "2 failures");
+}
+
+#[test]
+fn test_parse_test_result_no_marker_returns_none() {
+    assert!(parse_test_result(r#"{"phase":"test","passed":true}"#).is_none());
+    assert!(parse_test_result("plain log line").is_none());
+    assert!(parse_test_result("").is_none());
+}
+
+#[test]
+fn test_parse_test_result_whitespace_only_returns_none() {
+    let line = format!("{MARKER}   ");
+    assert!(parse_test_result(&line).is_none());
+}
+
+#[test]
+fn test_parse_test_result_invalid_json_returns_none() {
+    let line = format!("{MARKER}not-json");
+    assert!(parse_test_result(&line).is_none());
+}
+
+#[test]
+fn test_parse_test_result_missing_fields_use_defaults() {
+    // passed defaults to false, exitCode defaults to 1, phase/output default to ""
+    let line = format!("{MARKER}{{}}");
+    let r = parse_test_result(&line).expect("should parse empty object");
+    assert!(!r.passed);
+    assert_eq!(r.exit_code, 1);
+    assert_eq!(r.phase, "");
+    assert_eq!(r.output, "");
+}
+
+#[test]
+fn test_parse_test_result_multiple_lines_last_is_independent() {
+    // Each line is parsed independently; the "last one" in a stream is just the
+    // most recent call. All three must succeed and reflect their own values.
+    let lines = [
+        format!(r#"{MARKER}{{"phase":"compile","passed":true,"exitCode":0,"output":"ok"}}"#),
+        format!(r#"{MARKER}{{"phase":"lint","passed":false,"exitCode":2,"output":"warn"}}"#),
+        format!(r#"{MARKER}{{"phase":"test","passed":true,"exitCode":0,"output":"pass"}}"#),
+    ];
+    let results: Vec<_> = lines.iter().filter_map(|l| parse_test_result(l)).collect();
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0].phase, "compile");
+    assert!(results[0].passed);
+    assert_eq!(results[1].phase, "lint");
+    assert!(!results[1].passed);
+    // last result
+    assert_eq!(results[2].phase, "test");
+    assert!(results[2].passed);
 }
