@@ -132,12 +132,11 @@ pub struct KnowledgeFile {
 
 // ── Timestamp helpers ─────────────────────────────────────────────────────
 
-fn parse_ts(s: &str) -> DateTime<Utc> {
+fn parse_ts(s: &str) -> rusqlite::Result<DateTime<Utc>> {
     NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
         .map(|ndt| ndt.and_utc())
-        .unwrap_or_else(|e| {
-            tracing::warn!("failed to parse timestamp '{s}': {e}");
-            Utc::now()
+        .map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
         })
 }
 
@@ -161,7 +160,7 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         last_error: row.get(8)?,
         created_by: row.get(9)?,
         notify_chat: row.get(10)?,
-        created_at: parse_ts(&created_at_str),
+        created_at: parse_ts(&created_at_str)?,
         session_id: row.get(12)?,
         mode: row.get(13)?,
         backend: row.get::<_, Option<String>>(14)?.unwrap_or_default(),
@@ -177,7 +176,7 @@ fn row_to_proposal(row: &rusqlite::Row<'_>) -> rusqlite::Result<Proposal> {
         description: row.get(3)?,
         rationale: row.get(4)?,
         status: row.get(5)?,
-        created_at: parse_ts(&created_at_str),
+        created_at: parse_ts(&created_at_str)?,
         triage_score: row.get(7)?,
         triage_impact: row.get(8)?,
         triage_feasibility: row.get(9)?,
@@ -195,7 +194,7 @@ fn row_to_queue_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<QueueEntry> {
         branch: row.get(2)?,
         repo_path: row.get(3)?,
         status: row.get(4)?,
-        queued_at: parse_ts(&queued_at_str),
+        queued_at: parse_ts(&queued_at_str)?,
         pr_number: row.get(6)?,
     })
 }
@@ -209,7 +208,7 @@ fn row_to_task_output(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskOutput> {
         output: row.get(3)?,
         raw_stream: row.get(4)?,
         exit_code: row.get(5)?,
-        created_at: parse_ts(&created_at_str),
+        created_at: parse_ts(&created_at_str)?,
     })
 }
 
@@ -220,7 +219,7 @@ fn row_to_task_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskMessage>
         task_id: row.get(1)?,
         role: row.get(2)?,
         content: row.get(3)?,
-        created_at: parse_ts(&created_at_str),
+        created_at: parse_ts(&created_at_str)?,
         delivered_phase: row.get(5)?,
     })
 }
@@ -274,7 +273,7 @@ fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectRow> {
         id: row.get(0)?,
         name: row.get(1)?,
         mode: row.get(2)?,
-        created_at: parse_ts(&created_at_str),
+        created_at: parse_ts(&created_at_str)?,
     })
 }
 
@@ -287,7 +286,7 @@ fn row_to_project_file(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectFileR
         stored_path: row.get(3)?,
         mime_type: row.get(4)?,
         size_bytes: row.get(5)?,
-        created_at: parse_ts(&created_at_str),
+        created_at: parse_ts(&created_at_str)?,
     })
 }
 
