@@ -34,6 +34,8 @@ pub(crate) use crate::routes_modes::{
     delete_custom_mode, get_full_modes, get_modes, list_custom_modes, upsert_custom_mode,
 };
 
+const TRUNCATE_SUMMARY: usize = 500;
+
 // ── Error helper ──────────────────────────────────────────────────────────
 
 pub(crate) fn internal(e: impl std::fmt::Display) -> StatusCode {
@@ -838,7 +840,7 @@ pub(crate) async fn run_chat_agent(
 
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        tracing::warn!("chat agent failed ({}): {}", chat_key, stderr.chars().take(500).collect::<String>());
+        tracing::warn!("chat agent failed ({}): {}", chat_key, stderr.chars().take(TRUNCATE_SUMMARY).collect::<String>());
     }
 
     let raw = String::from_utf8_lossy(&out.stdout).into_owned();

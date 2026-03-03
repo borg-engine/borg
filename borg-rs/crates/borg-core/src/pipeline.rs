@@ -27,18 +27,11 @@ use crate::{
     },
 };
 
-/// Derive a compile-only check command from a test command, if possible.
-/// For `cargo test` commands, returns the same command with `--no-run` appended.
-pub fn derive_compile_check(test_cmd: &str) -> Option<String> {
-    let trimmed = test_cmd.trim();
-    if !trimmed.contains("cargo test") {
-        return None;
-    }
-    if trimmed.contains("--no-run") {
-        return Some(trimmed.to_string());
-    }
-    Some(format!("{trimmed} --no-run"))
-}
+const TRUNCATE_TITLE: usize = 100;
+const TRUNCATE_SHORT: usize = 300;
+const TRUNCATE_SUMMARY: usize = 500;
+const TRUNCATE_OUTPUT: usize = 2000;
+const TRUNCATE_CONTEXT: usize = 4000;
 
 pub struct Pipeline {
     pub db: Arc<Db>,
@@ -482,7 +475,7 @@ impl Pipeline {
         let outputs = self.db.get_task_outputs(task_id).unwrap_or_default();
         let mut summary = String::from("FRESH RETRY — previous approaches failed. Summary of attempts:\n");
         for (i, output) in outputs.iter().rev().take(3).enumerate() {
-            let truncated: String = output.output.chars().take(500).collect();
+            let truncated: String = output.output.chars().take(TRUNCATE_SUMMARY).collect();
             summary.push_str(&format!(
                 "\nAttempt {} ({}): {}\n",
                 i + 1,
@@ -492,7 +485,7 @@ impl Pipeline {
         }
         summary.push_str(&format!(
             "\nLatest error:\n{}\n\nTry a fundamentally different approach.",
-            current_error.chars().take(2000).collect::<String>()
+            current_error.chars().take(TRUNCATE_OUTPUT).collect::<String>()
         ));
         summary
     }
@@ -1156,7 +1149,7 @@ impl Pipeline {
                         {
                             let msg = format!(
                                 "Compile fix failed after 2 attempts\n\n{}",
-                                compile_err.chars().take(2000).collect::<String>()
+                                compile_err.chars().take(TRUNCATE_OUTPUT).collect::<String>()
                             );
                             self.fail_or_retry(task, &phase.name, &msg)?;
                             return Ok(());
@@ -1334,24 +1327,9 @@ impl Pipeline {
                     return Ok(());
                 },
                 Ok(o) => {
-                    let err = o.stderr.trim().chars().take(300).collect::<String>();
-                    let err_lc = err.to_ascii_lowercase();
-                    if err_lc.contains("expected head sha")
-                        || err_lc.contains("head ref")
-                    {
-                        // GitHub branch-tip race; retry on next tick instead of spawning an agent.
-                        info!("task #{} rebase: head SHA race, will retry update-branch on next tick", task.id);
-                        return Ok(());
-                    }
-                    if err_lc.contains("could not resolve host")
-                        || err_lc.contains("temporary failure in name resolution")
-                        || err_lc.contains("network is unreachable")
-                    {
-                        warn!("task #{} rebase: GitHub DNS/network unavailable; skipping agent spawn", task.id);
-                        self.fail_or_retry(task, "rebase", &err)?;
-                        return Ok(());
-                    }
-                    warn!("task #{} rebase: update-branch failed, spawning agent: {err}", task.id);
+                    let err = o.stderr.trim().chars().take(TRUNCATE_SHORT).collect::<String>();
+                    warn!("task #{} docker rebase: update-branch failed: {err}", task.id);
+                    self.fail_or_retry(task, "rebase", &err)?;
                 },
                 Err(e) => {
                     let es = e.to_string();
@@ -1841,7 +1819,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                      Make only the minimal changes needed to fix the errors.\n\
                      Do not refactor, rename, or change logic.\n\n\
                      ```\n{}\n```",
-                    errors.chars().take(4000).collect::<String>()
+                    errors.chars().take(TRUNCATE_CONTEXT).collect::<String>()
                 ),
                 allowed_tools: "Read,Glob,Grep,Write,Edit,Bash".into(),
                 use_docker: true,
@@ -2075,7 +2053,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             .map(|o| PhaseHistoryEntry {
                 phase: o.phase,
                 success: o.exit_code == 0,
-                output: o.output.chars().take(2_000).collect(),
+                output: o.output.chars().take(TRUNCATE_OUTPUT).collect(),
                 timestamp: o.created_at,
             })
             .collect();
@@ -2474,7 +2452,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             let title = self
                 .db
                 .get_task(entry.task_id)?
-                .map(|t| t.title.chars().take(100).collect::<String>())
+                .map(|t| t.title.chars().take(TRUNCATE_TITLE).collect::<String>())
                 .unwrap_or_else(|| entry.branch.clone());
 
             let create_out = self
@@ -3456,11 +3434,10 @@ fn trim_issue_body(body: &str) -> String {
     if trimmed.is_empty() {
         return "No issue body provided.".to_string();
     }
-    const MAX_CHARS: usize = 2000;
-    if trimmed.chars().count() <= MAX_CHARS {
+    if trimmed.chars().count() <= TRUNCATE_OUTPUT {
         return trimmed.to_string();
     }
-    let clipped: String = trimmed.chars().take(MAX_CHARS).collect();
+    let clipped: String = trimmed.chars().take(TRUNCATE_OUTPUT).collect();
     format!("{clipped}...")
 }
 
