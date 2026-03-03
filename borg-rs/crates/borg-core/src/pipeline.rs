@@ -27,17 +27,13 @@ use crate::{
     },
 };
 
-/// Derive a compile-only check command from a test command, if possible.
-/// For `cargo test` commands, returns the same command with `--no-run` appended.
-pub fn derive_compile_check(test_cmd: &str) -> Option<String> {
-    let trimmed = test_cmd.trim();
-    if !trimmed.contains("cargo test") {
-        return None;
-    }
-    if trimmed.contains("--no-run") {
-        return Some(trimmed.to_string());
-    }
-    Some(format!("{trimmed} --no-run"))
+/// Returns the absolute session directory path for a task, canonicalizing if possible.
+pub fn task_session_dir(id: i64) -> String {
+    let rel = format!("store/sessions/task-{id}");
+    std::fs::canonicalize(&rel)
+        .unwrap_or_else(|_| std::path::PathBuf::from(&rel))
+        .to_string_lossy()
+        .to_string()
 }
 
 pub struct Pipeline {
@@ -525,11 +521,8 @@ impl Pipeline {
             for task in orphans {
                 if let Some(mode) = self.resolve_mode(&task.mode) {
                     if mode.integration == IntegrationType::GitPr {
-                        let branch = format!("task-{}", task.id);
-                        if let Err(e) = self
-                            .db
-                            .enqueue_or_requeue(task.id, &branch, &task.repo_path, 0)
-                        {
+                        let branch = task.branch_name();
+                        if let Err(e) = self.db.enqueue(task.id, &branch, &task.repo_path, 0) {
                             warn!("re-enqueue orphaned done task #{}: {e}", task.id);
                         } else {
                             info!(
@@ -848,7 +841,7 @@ impl Pipeline {
             .map(|p| p.name.as_str())
             .unwrap_or("spec");
 
-        let branch = format!("task-{}", task.id);
+        let branch = task.branch_name();
         self.db.update_task_branch(task.id, &branch)?;
 
         self.db.update_task_status(task.id, next, None)?;
@@ -964,9 +957,8 @@ impl Pipeline {
         phase: &PhaseConfig,
         mode: &PipelineMode,
     ) -> Result<()> {
-        let session_dir_rel = format!("store/sessions/task-{}", task.id);
-        tokio::fs::create_dir_all(&session_dir_rel).await.ok();
-        let session_dir = Self::task_session_dir(task.id);
+        tokio::fs::create_dir_all(format!("store/sessions/task-{}", task.id)).await.ok();
+        let session_dir = task_session_dir(task.id);
 
         let work_dir = session_dir.clone();
 
@@ -1309,7 +1301,7 @@ impl Pipeline {
             return Ok(());
         }
 
-        let branch = format!("task-{}", task.id);
+        let branch = task.branch_name();
         let slug = &repo.repo_slug;
 
         // Find the PR number for this branch
@@ -1722,7 +1714,7 @@ minimal changes needed. After editing, do not run the linter yourself — the pi
             return Ok(());
         }
 
-        let session_dir = Self::task_session_dir(task.id);
+        let session_dir = task_session_dir(task.id);
 
         for fix_attempt in 0..2u32 {
             let lint_output_text = format!("{}\n{}", lint_out.stdout, lint_out.stderr)
@@ -1821,7 +1813,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         check_cmd: &str,
         initial_errors: &str,
     ) -> Result<bool> {
-        let session_dir = Self::task_session_dir(task.id);
+        let session_dir = task_session_dir(task.id);
 
         let mut errors = initial_errors.to_string();
 
@@ -1912,11 +1904,8 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             let _ = self.db.log_event_full(Some(task.id), None, pid, "pipeline", "task.completed", &serde_json::json!({ "title": task.title }));
             match mode.integration {
                 IntegrationType::GitPr => {
-                    let branch = format!("task-{}", task.id);
-                    if let Err(e) = self
-                        .db
-                        .enqueue_or_requeue(task.id, &branch, &task.repo_path, 0)
-                    {
+                    let branch = task.branch_name();
+                    if let Err(e) = self.db.enqueue(task.id, &branch, &task.repo_path, 0) {
                         warn!("enqueue for task #{}: {}", task.id, e);
                     } else {
                         info!("task #{} done, queued for integration", task.id);
@@ -1939,7 +1928,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
     fn read_structured_output(&self, task: &Task) {
         if task.repo_path.is_empty() { return; }
-        let branch = format!("task-{}", task.id);
+        let branch = task.branch_name();
         let path = std::path::Path::new(&task.repo_path);
         if !path.join(".git").exists() { return; }
         let out = std::process::Command::new("git")
@@ -1986,7 +1975,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
     fn read_task_deadlines(&self, task: &Task) {
         if task.repo_path.is_empty() || task.project_id == 0 { return; }
-        let branch = format!("task-{}", task.id);
+        let branch = task.branch_name();
         let path = std::path::Path::new(&task.repo_path);
         if !path.join(".git").exists() { return; }
         let out = std::process::Command::new("git")
@@ -2014,7 +2003,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
     fn index_task_documents(&self, task: &Task) {
         if task.repo_path.is_empty() || task.project_id == 0 { return; }
-        let branch = format!("task-{}", task.id);
+        let branch = task.branch_name();
         let path = std::path::Path::new(&task.repo_path);
         if !path.join(".git").exists() { return; }
         // List .md files on the task branch
@@ -2168,7 +2157,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let branch = format!("task-{}", task.id);
+        let branch = task.branch_name();
         let host_mirror = format!("{}/mirrors/{repo_name}.git", self.config.data_dir);
         let container_mirror = format!("/mirrors/{repo_name}.git");
 

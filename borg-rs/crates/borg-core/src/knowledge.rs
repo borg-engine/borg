@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use anyhow::{Context, Result};
 use tracing::{debug, warn};
 
-use crate::db::Db;
+use crate::{db::Db, types::task_branch_name};
 
 // ── Embedding client ─────────────────────────────────────────────────────
 
@@ -167,7 +167,7 @@ pub async fn index_task_embeddings(
     if repo_path.is_empty() {
         return;
     }
-    let branch = format!("task-{}", task_id);
+    let branch = task_branch_name(task_id);
     let path = std::path::Path::new(repo_path);
     if !path.join(".git").exists() {
         return;

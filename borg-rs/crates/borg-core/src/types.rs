@@ -113,6 +113,17 @@ pub struct Task {
     pub revision_count: i64,
 }
 
+/// Returns the git branch name for a task by id.
+pub fn task_branch_name(id: i64) -> String {
+    format!("task-{id}")
+}
+
+impl Task {
+    pub fn branch_name(&self) -> String {
+        task_branch_name(self.id)
+    }
+}
+
 /// A user-facing proposal that can be promoted to a Task.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Proposal {

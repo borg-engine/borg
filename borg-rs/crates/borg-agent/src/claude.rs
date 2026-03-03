@@ -133,17 +133,8 @@ impl ClaudeBackend {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let branch = format!("task-{}", task.id);
-        let gh_token = gh_token.to_string();
-
-        // Docker containers need a GitHub URL, not a local path
-        let repo_url = if !ctx.repo_config.repo_slug.is_empty() && !gh_token.is_empty() {
-            format!("https://x-access-token:{gh_token}@github.com/{}.git", ctx.repo_config.repo_slug)
-        } else if !ctx.repo_config.repo_slug.is_empty() {
-            format!("https://github.com/{}.git", ctx.repo_config.repo_slug)
-        } else {
-            task.repo_path.clone()
-        };
+        let branch = task.branch_name();
+        let gh_token = std::env::var("GH_TOKEN").unwrap_or_default();
 
         let author_name = &self.git_author_name;
         let author_email = &self.git_author_email;
@@ -445,7 +436,7 @@ impl AgentBackend for ClaudeBackend {
                 "event": "container_starting",
                 "image": self.docker_image,
                 "repo": repo_name,
-                "branch": format!("task-{}", task.id),
+                "branch": task.branch_name(),
             })
             .to_string();
             if let Some(tx) = &ctx.stream_tx {
@@ -523,7 +514,7 @@ impl AgentBackend for ClaudeBackend {
                 // Per-branch cache volumes — tasks on different branches get isolated
                 // target dirs, while retries on the same branch reuse the same cache.
                 // Global caches (cargo registry, bun) are shared across all branches.
-                let branch = format!("task-{}", task.id);
+                let branch = task.branch_name();
                 let target_vol = Sandbox::branch_volume_name(&repo_name, &branch, "target");
                 let node_vol = Sandbox::branch_volume_name(&repo_name, &branch, "node-modules");
                 // Warm branch caches from main on first use (async, fire-and-forget)
