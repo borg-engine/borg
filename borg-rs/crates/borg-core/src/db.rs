@@ -139,6 +139,15 @@ pub struct KnowledgeFile {
     pub created_at: String,
 }
 
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ConflictHit {
+    pub project_id: i64,
+    pub project_name: String,
+    pub party_name: String,
+    pub party_role: String,
+    pub matched_field: String,
+}
+
 // ── Timestamp helpers ─────────────────────────────────────────────────────
 
 fn parse_ts(s: &str) -> DateTime<Utc> {
@@ -152,6 +161,18 @@ fn parse_ts(s: &str) -> DateTime<Utc> {
 
 fn now_str() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+fn normalize_party_name(name: &str) -> String {
+    let lower = name.to_lowercase();
+    let stripped: String = lower
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == ' ' { c } else { ' ' })
+        .collect();
+    let tokens: Vec<&str> = stripped.split_whitespace()
+        .filter(|t| !matches!(*t, "inc" | "llc" | "ltd" | "corp" | "co" | "plc" | "the" | "of" | "and"))
+        .collect();
+    tokens.join(" ")
 }
 
 // ── Row mappers ───────────────────────────────────────────────────────────
@@ -359,6 +380,39 @@ impl Db {
         for sql in alters {
             let _ = conn.execute(sql, []);
         }
+
+        // Backfill parties table from existing projects (idempotent)
+        let needs_backfill: bool = conn
+            .query_row("SELECT COUNT(*) = 0 FROM parties", [], |r| r.get(0))
+            .unwrap_or(true);
+        if needs_backfill {
+            let rows: Vec<(i64, String, String)> = conn
+                .prepare(
+                    "SELECT id, client_name, opposing_counsel FROM projects \
+                     WHERE client_name != '' OR opposing_counsel != ''"
+                )
+                .ok()
+                .and_then(|mut s| {
+                    s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                        .ok()
+                        .map(|iter| iter.filter_map(|r| r.ok()).collect())
+                })
+                .unwrap_or_default();
+            let created_at = now_str();
+            for (pid, client, opposing) in rows {
+                for (name, role) in [(&client, "client"), (&opposing, "opposing_counsel")] {
+                    let trimmed = name.trim();
+                    if trimmed.is_empty() { continue; }
+                    let normalized = normalize_party_name(trimmed);
+                    let _ = conn.execute(
+                        "INSERT INTO parties (project_id, name, normalized_name, role, created_at) \
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![pid, trimmed, normalized, role, created_at],
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -777,11 +831,79 @@ impl Db {
 
     pub fn delete_project(&self, id: i64) -> Result<bool> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = conn.execute("DELETE FROM parties WHERE project_id=?1", params![id]);
         let _ = conn.execute("DELETE FROM project_files WHERE project_id=?1", params![id]);
         let affected = conn
             .execute("DELETE FROM projects WHERE id=?1", params![id])
             .context("delete_project")?;
         Ok(affected > 0)
+    }
+
+    // ── Parties / Conflict Checking ────────────────────────────────────────
+
+    pub fn sync_project_parties(&self, project_id: i64, client_name: &str, opposing_counsel: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute("DELETE FROM parties WHERE project_id=?1", params![project_id])?;
+        let created_at = now_str();
+        for (name, role) in [
+            (client_name, "client"),
+            (opposing_counsel, "opposing_counsel"),
+        ] {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let normalized = normalize_party_name(trimmed);
+            conn.execute(
+                "INSERT INTO parties (project_id, name, normalized_name, role, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![project_id, trimmed, normalized, role, created_at],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn check_conflicts(
+        &self,
+        exclude_project_id: Option<i64>,
+        client_name: &str,
+        opposing_counsel: &str,
+    ) -> Result<Vec<ConflictHit>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut hits = Vec::new();
+
+        for (name, field) in [
+            (client_name, "client_name"),
+            (opposing_counsel, "opposing_counsel"),
+        ] {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let normalized = normalize_party_name(trimmed);
+            let pattern = format!("%{normalized}%");
+            let mut stmt = conn.prepare(
+                "SELECT p.project_id, pr.name, p.name, p.role \
+                 FROM parties p \
+                 JOIN projects pr ON pr.id = p.project_id \
+                 WHERE p.normalized_name LIKE ?1 \
+                 AND (?2 IS NULL OR p.project_id != ?2) \
+                 LIMIT 20",
+            )?;
+            let rows = stmt.query_map(params![pattern, exclude_project_id], |row| {
+                Ok(ConflictHit {
+                    project_id: row.get(0)?,
+                    project_name: row.get(1)?,
+                    party_name: row.get(2)?,
+                    party_role: row.get(3)?,
+                    matched_field: field.to_string(),
+                })
+            })?;
+            for r in rows {
+                hits.push(r?);
+            }
+        }
+        Ok(hits)
     }
 
     pub fn list_project_tasks(&self, project_id: i64) -> Result<Vec<Task>> {

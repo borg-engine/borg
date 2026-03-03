@@ -421,16 +421,25 @@ export function useProjects() {
 export interface CreateProjectOptions {
   mode?: string;
   client_name?: string;
+  opposing_counsel?: string;
   jurisdiction?: string;
   matter_type?: string;
   privilege_level?: string;
+}
+
+export interface ConflictHit {
+  project_id: number;
+  project_name: string;
+  party_name: string;
+  party_role: string;
+  matched_field: string;
 }
 
 export async function createProject(
   name: string,
   mode = "general",
   opts: CreateProjectOptions = {}
-): Promise<{ id: number }> {
+): Promise<{ id: number; conflicts?: ConflictHit[] }> {
   const res = await apiFetch("/api/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -438,6 +447,21 @@ export async function createProject(
   });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
+}
+
+export async function checkConflicts(
+  clientName: string,
+  opposingCounsel: string,
+  excludeProjectId?: number
+): Promise<ConflictHit[]> {
+  const params = new URLSearchParams();
+  if (clientName) params.set("client_name", clientName);
+  if (opposingCounsel) params.set("opposing_counsel", opposingCounsel);
+  if (excludeProjectId) params.set("exclude_project_id", String(excludeProjectId));
+  const res = await apiFetch(`/api/projects/conflicts?${params}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.conflicts || [];
 }
 
 export function useProjectFiles(projectId: number | null) {

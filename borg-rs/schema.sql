@@ -176,6 +176,19 @@ CREATE TABLE IF NOT EXISTS project_files (
 );
 CREATE INDEX IF NOT EXISTS idx_project_files_project_id ON project_files(project_id);
 
+-- ── Parties (conflict checking) ──────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS parties (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  normalized_name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'party',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_parties_project ON parties(project_id);
+CREATE INDEX IF NOT EXISTS idx_parties_normalized ON parties(normalized_name);
+
 -- ── Unified event log ─────────────────────────────────────────────────────
 -- Append-only. Never UPDATE or DELETE rows.
 -- kind taxonomy and payload shapes are documented in schema_notes.md.

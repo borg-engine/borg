@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { createProject, createTask, uploadProjectFiles, useProjects } from "@/lib/api";
+import { checkConflicts, createProject, createTask, uploadProjectFiles, useProjects } from "@/lib/api";
+import type { ConflictHit } from "@/lib/api";
 import type { Project } from "@/lib/types";
-import { Scale, X, Paperclip, ChevronDown } from "lucide-react";
+import { AlertTriangle, Scale, X, Paperclip, ChevronDown } from "lucide-react";
 
 const TASK_TYPES = [
   { value: "research_memo", label: "Research Memo" },
@@ -183,10 +184,34 @@ export function LegalTaskCreator() {
   const [deadline, setDeadline] = useState("");
   const [privileged, setPrivileged] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [conflicts, setConflicts] = useState<ConflictHit[]>([]);
+  const [conflictAcked, setConflictAcked] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const conflictTimer = useRef<ReturnType<typeof setTimeout>>(null);
   const queryClient = useQueryClient();
   const { data: allProjects = [] } = useProjects();
+
+  const runConflictCheck = useCallback((client: string, opposing: string) => {
+    if (conflictTimer.current) clearTimeout(conflictTimer.current);
+    conflictTimer.current = setTimeout(async () => {
+      if (!client.trim() && !opposing.trim()) {
+        setConflicts([]);
+        return;
+      }
+      try {
+        const hits = await checkConflicts(client.trim(), opposing.trim());
+        setConflicts(hits);
+        setConflictAcked(false);
+      } catch {
+        setConflicts([]);
+      }
+    }, 500);
+  }, []);
+
+  useEffect(() => {
+    runConflictCheck(clientParty || newMatterClient, opposingParty);
+  }, [clientParty, opposingParty, newMatterClient, runConflictCheck]);
 
   const legalMatters = allProjects.filter(
     (p) => p.mode === "lawborg" || p.mode === "legal"
@@ -204,6 +229,8 @@ export function LegalTaskCreator() {
     setDeadline("");
     setPrivileged(false);
     setPendingFiles([]);
+    setConflicts([]);
+    setConflictAcked(false);
     setError("");
   }
 
@@ -237,6 +264,10 @@ export function LegalTaskCreator() {
       setError("Question presented / key facts is required.");
       return;
     }
+    if (conflicts.length > 0 && !conflictAcked) {
+      setError("Please acknowledge the conflict of interest warning before proceeding.");
+      return;
+    }
 
     setSubmitting(true);
     setError("");
@@ -246,7 +277,8 @@ export function LegalTaskCreator() {
 
       if (selectedMatter === "new") {
         const created = await createProject(newMatterName.trim(), "lawborg", {
-          client_name: newMatterClient.trim() || undefined,
+          client_name: (newMatterClient.trim() || clientParty.trim()) || undefined,
+          opposing_counsel: opposingParty.trim() || undefined,
           jurisdiction: jurisdiction.trim() || undefined,
           matter_type: TASK_TYPES.find((t) => t.value === taskType)?.label,
           privilege_level: privileged ? "attorney_work_product" : undefined,
@@ -474,6 +506,32 @@ export function LegalTaskCreator() {
             </button>
           </div>
         </div>
+
+        {conflicts.length > 0 && !conflictAcked && (
+          <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-amber-400">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Potential Conflict of Interest
+            </div>
+            <div className="space-y-1">
+              {conflicts.map((c, i) => (
+                <p key={i} className="text-[11px] text-amber-300/80">
+                  <span className="font-medium">{c.party_name}</span>
+                  {" "}({c.party_role === "opposing_counsel" ? "opposing" : c.party_role})
+                  {" in "}<span className="font-medium">{c.project_name}</span>
+                  {" — matched via "}{c.matched_field === "client_name" ? "client" : "opposing counsel"}
+                </p>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setConflictAcked(true)}
+              className="mt-2 rounded-md bg-amber-500/20 px-3 py-1 text-[11px] font-medium text-amber-400 ring-1 ring-inset ring-amber-500/20 hover:bg-amber-500/30"
+            >
+              Acknowledge &amp; Continue
+            </button>
+          </div>
+        )}
 
         {error && <p className="mt-3 text-[11px] text-red-400">{error}</p>}
 

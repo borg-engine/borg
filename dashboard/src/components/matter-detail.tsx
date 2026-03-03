@@ -8,9 +8,11 @@ import {
   useTaskStream,
   getProjectChatMessages,
   sendProjectChat,
+  checkConflicts,
   sseUrl,
   tokenReady,
 } from "@/lib/api";
+import type { ConflictHit } from "@/lib/api";
 import type { Project, ProjectTask, ProjectDocument } from "@/lib/types";
 import { StatusBadge } from "./status-badge";
 import { PhaseTracker } from "./phase-tracker";
@@ -20,7 +22,7 @@ import { useDictation } from "@/lib/dictation";
 import { cn } from "@/lib/utils";
 import { retryTask, patchTask } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, Edit2, Check, X, FileText, RotateCcw, Mic, MicOff, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Edit2, Check, X, FileText, RotateCcw, Mic, MicOff, Trash2 } from "lucide-react";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -252,7 +254,15 @@ function MatterHeader({ project, onDelete }: { project: Project; onDelete?: () =
 
 function MetadataPanel({ project, projectId }: { project: Project; projectId: number }) {
   const [open, setOpen] = useState(false);
+  const [conflicts, setConflicts] = useState<ConflictHit[]>([]);
   const { mutate: update } = useUpdateProject(projectId);
+
+  useEffect(() => {
+    if (!project.client_name && !project.opposing_counsel) return;
+    checkConflicts(project.client_name || "", project.opposing_counsel || "", projectId)
+      .then(setConflicts)
+      .catch(() => setConflicts([]));
+  }, [project.client_name, project.opposing_counsel, projectId]);
 
   function save(field: keyof Project) {
     return (value: string) => update({ [field]: value });
@@ -265,26 +275,46 @@ function MetadataPanel({ project, projectId }: { project: Project; projectId: nu
         className="flex w-full items-center gap-2 px-5 py-2 text-left hover:bg-white/[0.02] transition-colors"
       >
         <span className="text-[11px] font-medium text-zinc-500">Matter Details</span>
+        {conflicts.length > 0 && (
+          <AlertTriangle className="h-3 w-3 text-amber-400" />
+        )}
         <span className="ml-auto text-zinc-600">
           {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </span>
       </button>
       {open && (
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-5 pb-4 sm:grid-cols-3">
-          <InlineField label="Client" value={project.client_name} onSave={save("client_name")} placeholder="unset" />
-          <InlineField label="Case Number" value={project.case_number} onSave={save("case_number")} placeholder="unset" />
-          <InlineField label="Jurisdiction" value={project.jurisdiction} onSave={save("jurisdiction")} placeholder="unset" />
-          <InlineField label="Matter Type" value={project.matter_type} onSave={save("matter_type")} placeholder="unset" />
-          <InlineField label="Opposing Counsel" value={project.opposing_counsel} onSave={save("opposing_counsel")} placeholder="unset" />
-          <InlineField label="Deadline" value={project.deadline} onSave={save("deadline")} placeholder="unset" />
-          <InlineField label="Privilege Level" value={project.privilege_level} onSave={save("privilege_level")} placeholder="unset" />
-          <SelectField
-            label="Status"
-            value={project.status}
-            options={["active", "pending", "on_hold", "closed", "archived"]}
-            onSave={save("status")}
-          />
-        </div>
+        <>
+          {conflicts.length > 0 && (
+            <div className="mx-5 mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5">
+              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-amber-400">
+                <AlertTriangle className="h-3 w-3" />
+                Potential Conflict
+              </div>
+              {conflicts.map((c, i) => (
+                <p key={i} className="text-[10px] text-amber-300/80">
+                  <span className="font-medium">{c.party_name}</span>
+                  {" "}({c.party_role === "opposing_counsel" ? "opposing" : c.party_role})
+                  {" in "}<span className="font-medium">{c.project_name}</span>
+                </p>
+              ))}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-5 pb-4 sm:grid-cols-3">
+            <InlineField label="Client" value={project.client_name} onSave={save("client_name")} placeholder="unset" />
+            <InlineField label="Case Number" value={project.case_number} onSave={save("case_number")} placeholder="unset" />
+            <InlineField label="Jurisdiction" value={project.jurisdiction} onSave={save("jurisdiction")} placeholder="unset" />
+            <InlineField label="Matter Type" value={project.matter_type} onSave={save("matter_type")} placeholder="unset" />
+            <InlineField label="Opposing Counsel" value={project.opposing_counsel} onSave={save("opposing_counsel")} placeholder="unset" />
+            <InlineField label="Deadline" value={project.deadline} onSave={save("deadline")} placeholder="unset" />
+            <InlineField label="Privilege Level" value={project.privilege_level} onSave={save("privilege_level")} placeholder="unset" />
+            <SelectField
+              label="Status"
+              value={project.status}
+              options={["active", "pending", "on_hold", "closed", "archived"]}
+              onSave={save("status")}
+            />
+          </div>
+        </>
       )}
     </div>
   );

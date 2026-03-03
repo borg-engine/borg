@@ -136,6 +136,7 @@ pub(crate) struct CreateProjectBody {
     pub name: String,
     pub mode: Option<String>,
     pub client_name: Option<String>,
+    pub opposing_counsel: Option<String>,
     pub jurisdiction: Option<String>,
     pub matter_type: Option<String>,
     pub privilege_level: Option<String>,
@@ -157,6 +158,13 @@ pub(crate) struct UpdateProjectBody {
 #[derive(Deserialize)]
 pub(crate) struct ProjectFilesQuery {
     pub limit: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ConflictQuery {
+    pub client_name: Option<String>,
+    pub opposing_counsel: Option<String>,
+    pub exclude_project_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -854,12 +862,22 @@ pub(crate) async fn create_project(
     let jurisdiction = body.jurisdiction.as_deref().unwrap_or("");
     let matter_type = body.matter_type.as_deref().unwrap_or("");
     let privilege_level = body.privilege_level.as_deref().unwrap_or("");
+    let opposing_counsel = body.opposing_counsel.as_deref().unwrap_or("");
+
+    // Check for conflicts before creating
+    let conflicts = state
+        .db
+        .check_conflicts(None, client_name, opposing_counsel)
+        .map_err(internal)?;
 
     // Insert with empty repo_path first to get the ID
     let id = state
         .db
         .insert_project(name, &mode, "", client_name, jurisdiction, matter_type, privilege_level)
         .map_err(internal)?;
+
+    // Sync parties for future conflict checks
+    let _ = state.db.sync_project_parties(id, client_name, opposing_counsel);
 
     // Auto-init a dedicated git repo for legal projects
     let repo_dir = format!("{}/legal-repos/{}", state.config.data_dir, id);
@@ -881,7 +899,11 @@ pub(crate) async fn create_project(
             .map_err(internal)?;
     }
 
-    Ok((StatusCode::CREATED, Json(json!({ "id": id }))))
+    let mut resp = json!({ "id": id });
+    if !conflicts.is_empty() {
+        resp["conflicts"] = json!(conflicts);
+    }
+    Ok((StatusCode::CREATED, Json(resp)))
 }
 
 pub(crate) async fn get_project(
@@ -921,7 +943,45 @@ pub(crate) async fn update_project(
         )
         .map_err(internal)?;
     let updated = state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
-    Ok(Json(json!(ProjectJson::from(updated))))
+
+    // Re-sync parties when client or opposing counsel change
+    if body.client_name.is_some() || body.opposing_counsel.is_some() {
+        let _ = state.db.sync_project_parties(
+            id,
+            &updated.client_name,
+            &updated.opposing_counsel,
+        );
+    }
+
+    let mut resp = json!(ProjectJson::from(updated));
+
+    // Return conflicts if party fields changed
+    if body.client_name.is_some() || body.opposing_counsel.is_some() {
+        let project = state.db.get_project(id).map_err(internal)?.ok_or(StatusCode::NOT_FOUND)?;
+        let conflicts = state
+            .db
+            .check_conflicts(Some(id), &project.client_name, &project.opposing_counsel)
+            .map_err(internal)?;
+        if !conflicts.is_empty() {
+            resp["conflicts"] = json!(conflicts);
+        }
+    }
+
+    Ok(Json(resp))
+}
+
+pub(crate) async fn check_conflicts(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ConflictQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    let client = params.client_name.as_deref().unwrap_or("");
+    let opposing = params.opposing_counsel.as_deref().unwrap_or("");
+    let exclude = params.exclude_project_id;
+    let conflicts = state
+        .db
+        .check_conflicts(exclude, client, opposing)
+        .map_err(internal)?;
+    Ok(Json(json!({ "conflicts": conflicts })))
 }
 
 pub(crate) async fn delete_project(

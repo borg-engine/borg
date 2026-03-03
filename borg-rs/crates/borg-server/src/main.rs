@@ -711,6 +711,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/projects", get(routes::list_projects))
         .route("/api/projects", post(routes::create_project))
         .route("/api/projects/search", get(routes::search_projects))
+        .route("/api/projects/conflicts", get(routes::check_conflicts))
         .route("/api/projects/:id/files", get(routes::list_project_files))
         .route(
             "/api/projects/:id/files/:file_id/content",
