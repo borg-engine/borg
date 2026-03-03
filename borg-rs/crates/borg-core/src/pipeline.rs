@@ -399,6 +399,7 @@ impl Pipeline {
                         }
                     }
                 }
+                pipeline.stream_manager.remove(task_id).await;
             });
         }
 

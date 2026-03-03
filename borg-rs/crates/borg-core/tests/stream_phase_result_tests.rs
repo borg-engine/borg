@@ -208,6 +208,78 @@ async fn test_multiple_push_phase_result_both_in_history() {
 }
 
 // =============================================================================
+// TaskStreamManager::remove — evicts stream and frees memory
+// =============================================================================
+
+#[tokio::test]
+async fn test_remove_clears_history() {
+    let manager = TaskStreamManager::new();
+    let task_id: i64 = 100;
+    manager.start(task_id).await;
+    manager.push_line(task_id, "some line".to_string()).await;
+
+    manager.remove(task_id).await;
+
+    let (history, rx) = manager.subscribe(task_id).await;
+    assert!(history.is_empty(), "history must be empty after remove");
+    assert!(rx.is_none(), "no live receiver after remove");
+}
+
+#[tokio::test]
+async fn test_remove_nonexistent_is_noop() {
+    let manager = TaskStreamManager::new();
+    // Should not panic.
+    manager.remove(9999).await;
+}
+
+#[tokio::test]
+async fn test_remove_does_not_affect_other_streams() {
+    let manager = TaskStreamManager::new();
+    let task_a: i64 = 110;
+    let task_b: i64 = 111;
+    manager.start(task_a).await;
+    manager.start(task_b).await;
+    manager.push_line(task_b, "task_b_line".to_string()).await;
+
+    manager.remove(task_a).await;
+
+    let (history_b, _) = manager.subscribe(task_b).await;
+    assert!(
+        history_b.iter().any(|l| l.contains("task_b_line")),
+        "task_b stream must be unaffected by remove of task_a"
+    );
+}
+
+#[tokio::test]
+async fn test_push_after_remove_is_noop() {
+    let manager = TaskStreamManager::new();
+    let task_id: i64 = 120;
+    manager.start(task_id).await;
+    manager.remove(task_id).await;
+
+    // Push after remove must not panic and must not re-create the stream.
+    manager.push_line(task_id, "ghost line".to_string()).await;
+    let (history, _) = manager.subscribe(task_id).await;
+    assert!(history.is_empty(), "no stream should exist after remove");
+}
+
+#[tokio::test]
+async fn test_start_after_remove_creates_fresh_stream() {
+    let manager = TaskStreamManager::new();
+    let task_id: i64 = 130;
+    manager.start(task_id).await;
+    manager.push_line(task_id, "old line".to_string()).await;
+    manager.remove(task_id).await;
+
+    manager.start(task_id).await;
+    let (history, _) = manager.subscribe(task_id).await;
+    assert!(
+        history.is_empty(),
+        "fresh start after remove must have empty history"
+    );
+}
+
+// =============================================================================
 // Independent streams — push only affects the specified task
 // =============================================================================
 
