@@ -3056,6 +3056,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
     /// Run `claude --print --model <model>` with prompt on stdin, return stdout.
     async fn run_claude_print(&self, model: &str, prompt: &str) -> Result<String> {
+        const TIMEOUT_S: u64 = 120;
         use tokio::io::AsyncWriteExt;
         let mut child = tokio::process::Command::new("claude")
             .args([
@@ -3069,17 +3070,23 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .env("CLAUDE_CODE_OAUTH_TOKEN", &self.config.oauth_token)
+            .kill_on_drop(true)
             .spawn()
             .context("spawn claude --print")?;
 
         if let Some(mut stdin) = child.stdin.take() {
             stdin.write_all(prompt.as_bytes()).await.ok();
         }
-        let out = child
-            .wait_with_output()
-            .await
-            .context("wait claude --print")?;
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(TIMEOUT_S),
+            child.wait_with_output(),
+        )
+        .await
+        {
+            Ok(Ok(out)) => Ok(String::from_utf8_lossy(&out.stdout).into_owned()),
+            Ok(Err(e)) => Err(e).context("wait claude --print"),
+            Err(_elapsed) => anyhow::bail!("claude --print timed out after {TIMEOUT_S}s"),
+        }
     }
 
     // ── Notify + event broadcast ──────────────────────────────────────────
