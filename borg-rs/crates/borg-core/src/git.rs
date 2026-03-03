@@ -167,4 +167,40 @@ impl Git {
         }
         Ok(())
     }
+
+    /// Create a git worktree for a branch. Returns the worktree path.
+    pub fn create_worktree(&self, branch: &str, start: &str) -> Result<String> {
+        let wt_dir = format!("{}/.worktrees/{}", self.repo_path, branch);
+        // Remove stale worktree if it exists
+        let _ = self.exec(&self.repo_path, &["worktree", "remove", "--force", &wt_dir]);
+        let _ = self.exec(&self.repo_path, &["branch", "-D", branch]);
+        let result = self.exec(
+            &self.repo_path,
+            &["worktree", "add", "-b", branch, &wt_dir, start],
+        )?;
+        if !result.success() {
+            return Err(anyhow!(
+                "git worktree add {wt_dir} failed: {}",
+                result.combined_output()
+            ));
+        }
+        Ok(wt_dir)
+    }
+
+    /// Remove a git worktree.
+    pub fn remove_worktree(&self, wt_path: &str) {
+        let _ = self.exec(&self.repo_path, &["worktree", "remove", "--force", wt_path]);
+    }
+
+    /// Push a branch from a worktree directory.
+    pub fn push_branch_from(&self, wt_path: &str, branch: &str) -> Result<()> {
+        let result = self.exec(wt_path, &["push", "-u", "origin", branch, "--force-with-lease"])?;
+        if !result.success() {
+            return Err(anyhow!(
+                "git push origin {branch} from {wt_path} failed: {}",
+                result.combined_output()
+            ));
+        }
+        Ok(())
+    }
 }

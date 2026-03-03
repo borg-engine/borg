@@ -248,12 +248,23 @@ impl Pipeline {
         }
     }
 
-    /// Return repo to main branch if we're in non-Docker mode.
-    fn return_to_main(&self, task: &Task) {
+    /// Resolve the working directory for a task (worktree if exists, else repo root).
+    fn task_work_dir(&self, task: &Task) -> String {
         if self.sandbox_mode != SandboxMode::Docker && !task.repo_path.is_empty() {
-            let git = Git::new(&task.repo_path);
-            if let Err(e) = git.checkout("main") {
-                warn!("task #{}: return to main: {e}", task.id);
+            let wt = format!("{}/.worktrees/task-{}", task.repo_path, task.id);
+            if std::path::Path::new(&wt).exists() { return wt; }
+        }
+        task.repo_path.clone()
+    }
+
+    /// Clean up worktree for a task (non-Docker mode).
+    fn cleanup_worktree(&self, task: &Task) {
+        if self.sandbox_mode != SandboxMode::Docker && !task.repo_path.is_empty() {
+            let branch = format!("task-{}", task.id);
+            let wt_path = format!("{}/.worktrees/{}", task.repo_path, branch);
+            if std::path::Path::new(&wt_path).exists() {
+                let git = Git::new(&task.repo_path);
+                git.remove_worktree(&wt_path);
             }
         }
     }
@@ -266,7 +277,7 @@ impl Pipeline {
         let current = self.db.get_task(task.id)?.unwrap_or_else(|| task.clone());
         if current.attempt >= current.max_attempts {
             self.db.update_task_status(task.id, "failed", Some(error))?;
-            self.return_to_main(task);
+            self.cleanup_worktree(task);
         } else {
             // After 3 attempts, force a fresh session with a summary of what was tried
             let error_ctx = if current.attempt >= 3 {
@@ -618,9 +629,9 @@ impl Pipeline {
             if let Err(e) = git.fetch_origin() {
                 warn!("task #{}: fetch before branch create: {e}", task.id);
             }
-            git.checkout_new_branch(&branch, "origin/main")
-                .with_context(|| format!("task #{}: create branch {branch}", task.id))?;
-            info!("task #{}: created branch {branch}", task.id);
+            let wt_path = git.create_worktree(&branch, "origin/main")
+                .with_context(|| format!("task #{}: create worktree for {branch}", task.id))?;
+            info!("task #{}: created worktree {wt_path} (branch {branch})", task.id);
         }
 
         self.db.update_task_status(task.id, next, None)?;
@@ -648,11 +659,12 @@ impl Pipeline {
             .to_string();
 
         // Docker: container handles its own clone; work_dir is only used for
-        // local file ops (signal.json, state snapshot). Non-Docker: use repo directly.
+        // local file ops (signal.json, state snapshot).
+        // Non-Docker: use worktree (isolated per-task working copy).
         let work_dir = if self.sandbox_mode == SandboxMode::Docker {
             session_dir.clone()
         } else {
-            task.repo_path.clone()
+            self.task_work_dir(task)
         };
 
         let pending_messages = self
@@ -710,6 +722,7 @@ impl Pipeline {
         {
             warn!("task #{}: write_pipeline_state_snapshot: {e}", task.id);
         }
+        let phase_started_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let result = backend
             .run_phase(task, phase, ctx)
             .await
@@ -717,6 +730,7 @@ impl Pipeline {
                 error!("backend.run_phase for task #{}: {e}", task.id);
                 PhaseOutput::failed(String::new())
             });
+        let phase_completed_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         if let Some(ref sid) = result.new_session_id {
             if let Err(e) = self.db.update_task_session(task.id, sid) {
@@ -736,6 +750,8 @@ impl Pipeline {
             &result.output,
             &result.raw_stream,
             exit_code,
+            &phase_started_at,
+            &phase_completed_at,
         ) {
             warn!("task #{}: insert_task_output: {e}", task.id);
         }
@@ -766,7 +782,7 @@ impl Pipeline {
             };
             self.db
                 .update_task_status(task.id, "failed", Some(&reason))?;
-            self.return_to_main(task);
+            self.cleanup_worktree(task);
             return Ok(());
         }
 
@@ -788,7 +804,7 @@ impl Pipeline {
                 task_id: Some(task.id),
                 message: format!("task #{} blocked: {}", task.id, reason),
             });
-            self.return_to_main(task);
+            self.cleanup_worktree(task);
             return Ok(());
         }
 
@@ -900,7 +916,7 @@ impl Pipeline {
         phase: &PhaseConfig,
         mode: &PipelineMode,
     ) -> Result<()> {
-        let work_dir = task.repo_path.clone();
+        let work_dir = self.task_work_dir(task);
 
         let test_cmd = self.repo_config(task).test_cmd;
         if test_cmd.is_empty() {
@@ -913,14 +929,27 @@ impl Pipeline {
 
         // Compile check first (if derivable from test command)
         if let Some(check_cmd) = Self::derive_compile_check(&test_cmd) {
+            let started_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let out = if use_docker {
                 self.run_test_in_container(task, &check_cmd).await?
             } else {
                 self.run_test_command(&work_dir, &check_cmd).await?
             };
+            let completed_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             if out.exit_code != 0 {
                 let error_msg = format!("{}\n{}", out.stdout, out.stderr);
                 info!("task #{} validate: compile check failed", task.id);
+                if let Err(e) = self.db.insert_task_output(
+                    task.id,
+                    "validate",
+                    error_msg.trim(),
+                    "",
+                    out.exit_code as i64,
+                    &started_at,
+                    &completed_at,
+                ) {
+                    warn!("task #{}: insert_task_output(validate): {e}", task.id);
+                }
                 let retry_status = if phase.retry_phase.is_empty() {
                     &phase.name
                 } else {
@@ -932,6 +961,7 @@ impl Pipeline {
         }
 
         // Run the full test suite
+        let validate_started_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let out = if use_docker {
             self.run_test_in_container(task, &test_cmd).await?
         } else {
@@ -943,18 +973,30 @@ impl Pipeline {
                 },
             }
         };
+        let validate_completed_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let full_output = format!("{}\n{}", out.stdout, out.stderr);
+        if let Err(e) = self.db.insert_task_output(
+            task.id,
+            "validate",
+            full_output.trim(),
+            "",
+            out.exit_code as i64,
+            &validate_started_at,
+            &validate_completed_at,
+        ) {
+            warn!("task #{}: insert_task_output(validate): {e}", task.id);
+        }
         if out.exit_code == 0 {
             info!("task #{} validate: all tests pass", task.id);
             self.advance_phase(task, phase, mode)?;
         } else {
-            let error_msg = format!("{}\n{}", out.stdout, out.stderr);
             info!("task #{} validate: tests failed", task.id);
             let retry_status = if phase.retry_phase.is_empty() {
                 &phase.name
             } else {
                 &phase.retry_phase
             };
-            self.fail_or_retry(task, retry_status, error_msg.trim())?;
+            self.fail_or_retry(task, retry_status, full_output.trim())?;
         }
 
         Ok(())
@@ -1041,7 +1083,7 @@ impl Pipeline {
             return Ok(());
         }
 
-        let work_dir = task.repo_path.clone();
+        let work_dir = self.task_work_dir(task);
 
         let lint_cmd = match self.repo_lint_cmd(&task.repo_path, &work_dir) {
             Some(cmd) => cmd,
@@ -1098,6 +1140,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
             let ctx = self.make_context(task, work_dir.clone(), session_dir.clone(), Vec::new());
 
+            let lint_fix_started_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let agent_result = match self.resolve_backend(task) {
                 Some(b) => {
                     if let Err(e) = self
@@ -1126,6 +1169,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             if let Some(ref sid) = agent_result.new_session_id {
                 self.db.update_task_session(task.id, sid).ok();
             }
+            let lint_fix_completed_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             self.db
                 .insert_task_output(
                     task.id,
@@ -1133,6 +1177,8 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                     &agent_result.output,
                     &agent_result.raw_stream,
                     if agent_result.success { 0 } else { 1 },
+                    &lint_fix_started_at,
+                    &lint_fix_completed_at,
                 )
                 .ok();
 
@@ -1202,6 +1248,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
             let ctx = self.make_context(task, work_dir.to_string(), session_dir.clone(), Vec::new());
 
+            let compile_fix_started_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let result = match self.resolve_backend(task) {
                 Some(b) => b.run_phase(task, &fix_phase, ctx).await.unwrap_or_else(|e| {
                     error!("compile-fix agent for task #{}: {e}", task.id);
@@ -1213,8 +1260,17 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             if let Some(ref sid) = result.new_session_id {
                 self.db.update_task_session(task.id, sid).ok();
             }
+            let compile_fix_completed_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             self.db
-                .insert_task_output(task.id, &fix_phase.name, &result.output, &result.raw_stream, if result.success { 0 } else { 1 })
+                .insert_task_output(
+                    task.id,
+                    &fix_phase.name,
+                    &result.output,
+                    &result.raw_stream,
+                    if result.success { 0 } else { 1 },
+                    &compile_fix_started_at,
+                    &compile_fix_completed_at,
+                )
                 .ok();
 
             let git = Git::new(&task.repo_path);
@@ -1250,17 +1306,17 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             self.read_task_deadlines(task);
             self.index_task_documents(task);
 
-            // Non-Docker: push the task branch to remote before enqueuing.
+            // Non-Docker: push the task branch from its worktree, then clean up.
             if self.sandbox_mode != SandboxMode::Docker && !task.repo_path.is_empty() {
                 let branch = format!("task-{}", task.id);
+                let wt_path = format!("{}/.worktrees/{}", task.repo_path, branch);
                 let git = Git::new(&task.repo_path);
-                match git.push_branch(&branch) {
+                let push_dir = if std::path::Path::new(&wt_path).exists() { &wt_path } else { &task.repo_path };
+                match git.push_branch_from(push_dir, &branch) {
                     Ok(()) => info!("task #{}: pushed branch {branch}", task.id),
                     Err(e) => warn!("task #{}: push branch {branch}: {e}", task.id),
                 }
-                if let Err(e) = git.checkout("main") {
-                    warn!("task #{}: checkout main after push: {e}", task.id);
-                }
+                git.remove_worktree(&wt_path);
             }
 
             self.db.update_task_status(task.id, "done", None)?;
