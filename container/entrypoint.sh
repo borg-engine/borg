@@ -65,12 +65,19 @@ if [ -n "$REPO_URL" ]; then
     CLONE_START=$(date +%s%3N)
     log_event "{\"type\":\"container_event\",\"event\":\"clone_started\",\"repo\":\"${REPO_URL}\",\"branch\":\"${BRANCH}\"}"
 
-    rm -rf "$REPO_DIR"
+    # Clone to temp dir first, then move into repo dir (which may have mounted volumes)
+    CLONE_TMP=$(mktemp -d /workspace/clone.XXXXXX)
     CLONE_ARGS=(--depth 50 --single-branch)
     if [ -n "$MIRROR_PATH" ] && [ -d "$MIRROR_PATH" ]; then
         CLONE_ARGS+=(--reference "$MIRROR_PATH")
     fi
-    git clone "${CLONE_ARGS[@]}" "$REPO_URL" "$REPO_DIR"
+    git clone "${CLONE_ARGS[@]}" "$REPO_URL" "$CLONE_TMP/src"
+    # Move cloned contents into repo dir (preserves mounted volumes like target/)
+    find "$REPO_DIR" -mindepth 1 -maxdepth 1 ! -name target ! -name node_modules -exec rm -rf {} + 2>/dev/null || true
+    shopt -s dotglob
+    mv "$CLONE_TMP/src"/* "$CLONE_TMP/src"/.* "$REPO_DIR/" 2>/dev/null || true
+    shopt -u dotglob
+    rm -rf "$CLONE_TMP"
     cd "$REPO_DIR"
     if [ -n "$BRANCH" ]; then
         git checkout -b "$BRANCH" "$BASE"
