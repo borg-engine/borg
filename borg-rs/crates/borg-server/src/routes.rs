@@ -191,8 +191,6 @@ pub(crate) struct TaskOutputJson {
     pub phase: String,
     pub output: String,
     pub exit_code: i64,
-    pub started_at: Option<String>,
-    pub completed_at: Option<String>,
     pub created_at: String,
 }
 
@@ -204,8 +202,6 @@ impl From<TaskOutput> for TaskOutputJson {
             phase: o.phase,
             output: o.output,
             exit_code: o.exit_code,
-            started_at: o.started_at.map(|t| t.to_rfc3339()),
-            completed_at: o.completed_at.map(|t| t.to_rfc3339()),
             created_at: o.created_at.to_rfc3339(),
         }
     }
@@ -415,17 +411,7 @@ fn get_custom_modes(db: &Db) -> Vec<PipelineMode> {
         Ok(Some(v)) => v,
         _ => return Vec::new(),
     };
-    let modes: Vec<PipelineMode> = serde_json::from_str(&raw).unwrap_or_default();
-    modes
-        .into_iter()
-        .filter(|m| match m.validate_phase_graph() {
-            Ok(()) => true,
-            Err(e) => {
-                tracing::warn!("skipping invalid custom mode '{}': {e}", m.name);
-                false
-            }
-        })
-        .collect()
+    serde_json::from_str::<Vec<PipelineMode>>(&raw).unwrap_or_default()
 }
 
 fn save_custom_modes(db: &Db, modes: &[PipelineMode]) -> Result<(), StatusCode> {
@@ -1192,7 +1178,7 @@ pub(crate) async fn search_documents(
     }
 
     // Semantic search (when requested and embeddings exist)
-    if query.semantic && state.db.embedding_count().unwrap_or(0) > 0 {
+    if query.semantic && state.db.embedding_count() > 0 {
         if let Ok(query_emb) = state.embed_client.embed_single(&query.q).await {
             if let Ok(sem_results) = state.db.search_embeddings(&query_emb, query.limit as usize, query.project_id) {
                 for r in sem_results.iter().filter(|r| r.score > 0.5) {
@@ -1968,7 +1954,7 @@ pub(crate) async fn get_project_file_content(
         .header("content-type", "application/octet-stream")
         .header("content-disposition", format!("attachment; filename=\"{safe_name}\""))
         .body(axum::body::Body::from(bytes))
-        .map_err(internal)?)
+        .unwrap())
 }
 
 pub(crate) async fn upload_project_files(
@@ -2929,10 +2915,6 @@ pub(crate) async fn upsert_custom_mode(
         return Err(StatusCode::CONFLICT);
     }
     if mode.phases.is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    if let Err(e) = mode.validate_phase_graph() {
-        tracing::warn!("upsert_custom_mode rejected invalid mode '{}': {e}", name);
         return Err(StatusCode::BAD_REQUEST);
     }
 
