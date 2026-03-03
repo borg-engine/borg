@@ -98,15 +98,17 @@ impl Sandbox {
     /// 3. `--bind X X`       — per writable_dir (worktree, session dir)
     /// 4. `--bind /tmp /tmp` — shared /tmp (needed by compilers, git, etc.)
     /// 5. `--unshare-pid`    — isolated PID namespace
-    /// 6. `--new-session`    — setsid (detach terminal)
-    /// 7. `--die-with-parent`— auto-cleanup
-    /// 8. `--proc /proc`     — fresh procfs for PID namespace
-    /// 9. `--chdir`          — working directory inside sandbox
-    /// 10. `--`              — command separator
+    /// 6. `--unshare-net`    — isolated network namespace (when !allow_network)
+    /// 7. `--new-session`    — setsid (detach terminal)
+    /// 8. `--die-with-parent`— auto-cleanup
+    /// 9. `--proc /proc`     — fresh procfs for PID namespace
+    /// 10. `--chdir`         — working directory inside sandbox
+    /// 11. `--`              — command separator
     pub fn bwrap_args(
         writable_dirs: &[&str],
         working_dir: &str,
         command: &[String],
+        allow_network: bool,
     ) -> Vec<String> {
         let mut args: Vec<String> = Vec::new();
 
@@ -122,15 +124,12 @@ impl Sandbox {
 
         args.extend(["--bind", "/tmp", "/tmp"].map(str::to_string));
 
+        args.push("--unshare-pid".into());
+        if !allow_network {
+            args.push("--unshare-net".into());
+        }
         args.extend(
-            [
-                "--unshare-pid",
-                "--new-session",
-                "--die-with-parent",
-                "--proc",
-                "/proc",
-            ]
-            .map(str::to_string),
+            ["--new-session", "--die-with-parent", "--proc", "/proc"].map(str::to_string),
         );
 
         args.extend(["--chdir", working_dir].map(str::to_string));
@@ -145,8 +144,13 @@ impl Sandbox {
     ///
     /// Env vars set on the returned `Command` are inherited by the sandboxed
     /// process (bwrap passes them through by default).
-    pub fn bwrap_command(writable_dirs: &[&str], working_dir: &str, command: &[String]) -> Command {
-        let args = Self::bwrap_args(writable_dirs, working_dir, command);
+    pub fn bwrap_command(
+        writable_dirs: &[&str],
+        working_dir: &str,
+        command: &[String],
+        allow_network: bool,
+    ) -> Command {
+        let args = Self::bwrap_args(writable_dirs, working_dir, command, allow_network);
         let mut cmd = Command::new("bwrap");
         cmd.args(args);
         cmd

@@ -441,7 +441,7 @@ impl AgentBackend for ClaudeBackend {
                 let git_dir = std::path::Path::new(&task.repo_path).join(".git");
                 let git_dir_str = git_dir.to_string_lossy().to_string();
                 let writable: Vec<&str> = vec![ctx.worktree_path.as_str(), ctx.session_dir.as_str(), &git_dir_str];
-                Sandbox::bwrap_command(&writable, &ctx.worktree_path, &full_cmd)
+                Sandbox::bwrap_command(&writable, &ctx.worktree_path, &full_cmd, false)
                     .kill_on_drop(true)
                     .env("HOME", &ctx.session_dir)
                     .env("RUSTUP_HOME", &rustup_home)
