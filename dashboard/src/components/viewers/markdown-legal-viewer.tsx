@@ -5,7 +5,7 @@ import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { apiBase, authHeaders, tokenReady } from "@/lib/api";
+import { apiBase, authHeaders, tokenReady, useTemplates } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -247,6 +247,8 @@ export function MarkdownLegalViewer({ projectId, taskId, path }: MarkdownLegalVi
   const [exporting, setExporting] = useState(false);
   const [exportToc, setExportToc] = useState(false);
   const [exportNumbered, setExportNumbered] = useState(false);
+  const [exportTemplate, setExportTemplate] = useState<number | null>(null);
+  const { data: templates = [] } = useTemplates("template");
   const contentRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -273,6 +275,7 @@ export function MarkdownLegalViewer({ projectId, taskId, path }: MarkdownLegalVi
       if (selectedSha) params.set("ref_name", selectedSha);
       if (exportToc) params.set("toc", "true");
       if (exportNumbered) params.set("number_sections", "true");
+      if (exportTemplate) params.set("template_id", String(exportTemplate));
       const url = `${apiBase()}/api/projects/${projectId}/documents/${taskId}/export?${params}`;
       const res = await fetch(url, { headers: authHeaders() });
       if (!res.ok) {
@@ -435,8 +438,23 @@ export function MarkdownLegalViewer({ projectId, taskId, path }: MarkdownLegalVi
             </svg>
           </button>
           {exportOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded border border-white/[0.1] bg-zinc-900 shadow-xl">
+            <div className="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded border border-white/[0.1] bg-zinc-900 shadow-xl">
               <div className="border-b border-white/[0.06] px-3 py-2 space-y-1.5">
+                {templates.length > 0 && (
+                  <div>
+                    <label className="text-[10px] text-zinc-500 block mb-0.5">Template</label>
+                    <select
+                      value={exportTemplate ?? ""}
+                      onChange={(e) => setExportTemplate(e.target.value ? Number(e.target.value) : null)}
+                      className="w-full rounded border border-white/[0.08] bg-zinc-800 px-1.5 py-1 text-[11px] text-zinc-300 outline-none focus:border-blue-500/40"
+                    >
+                      <option value="">None (default styling)</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>{t.file_name}{t.description ? ` — ${t.description}` : ""}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <label className="flex items-center gap-2 text-[11px] text-zinc-400 cursor-pointer">
                   <input type="checkbox" checked={exportToc} onChange={(e) => setExportToc(e.target.checked)} className="rounded" />
                   Table of Contents
@@ -457,6 +475,7 @@ export function MarkdownLegalViewer({ projectId, taskId, path }: MarkdownLegalVi
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-zinc-300 transition-colors hover:bg-white/[0.06]"
               >
                 Export as DOCX
+                {exportTemplate && <span className="text-[9px] text-violet-400 ml-auto">with template</span>}
               </button>
             </div>
           )}

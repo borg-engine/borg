@@ -26,7 +26,7 @@ import { BorgingIndicator } from "./borging";
 import { ChatMarkdown } from "./chat-markdown";
 import { useDictation } from "@/lib/dictation";
 import { cn } from "@/lib/utils";
-import { retryTask, patchTask, approveTask, rejectTask, requestRevision, getRevisionHistory, useFullModes } from "@/lib/api";
+import { retryTask, patchTask, approveTask, rejectTask, requestRevision, getRevisionHistory, useFullModes, useTemplates } from "@/lib/api";
 import type { RevisionHistory } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ChevronDown, ChevronUp, Edit2, Check, X, FileText, RotateCcw, Mic, MicOff, Trash2 } from "lucide-react";
@@ -212,13 +212,18 @@ function formatDuration(secs: number): string {
 function MatterHeader({ project, onDelete }: { project: Project; onDelete?: () => void }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exportingAll, setExportingAll] = useState(false);
+  const [exportMenu, setExportMenu] = useState(false);
+  const [exportTemplateId, setExportTemplateId] = useState<number | null>(null);
+  const { data: templates = [] } = useTemplates("template");
 
   async function exportAll(format: "pdf" | "docx") {
+    setExportMenu(false);
     setExportingAll(true);
     try {
       const { apiBase, authHeaders, tokenReady } = await import("@/lib/api");
       await tokenReady;
       const params = new URLSearchParams({ format, toc: "true" });
+      if (exportTemplateId) params.set("template_id", String(exportTemplateId));
       const res = await fetch(`${apiBase()}/api/projects/${project.id}/export-all?${params}`, {
         headers: authHeaders(),
       });
@@ -278,14 +283,41 @@ function MatterHeader({ project, onDelete }: { project: Project; onDelete?: () =
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={() => exportAll("docx")}
-            disabled={exportingAll}
-            className="rounded border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 hover:border-blue-500/30 hover:text-blue-400 transition-colors disabled:opacity-50"
-            title="Export all documents as DOCX (ZIP)"
-          >
-            {exportingAll ? "Exporting..." : "Export All"}
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setExportMenu(v => !v)}
+              disabled={exportingAll}
+              className="rounded border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500 hover:border-blue-500/30 hover:text-blue-400 transition-colors disabled:opacity-50"
+              title="Export all documents"
+            >
+              {exportingAll ? "Exporting..." : "Export All"}
+            </button>
+            {exportMenu && (
+              <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded border border-white/[0.1] bg-zinc-900 shadow-xl">
+                {templates.length > 0 && (
+                  <div className="border-b border-white/[0.06] px-3 py-2">
+                    <label className="text-[9px] text-zinc-500 block mb-0.5">Template</label>
+                    <select
+                      value={exportTemplateId ?? ""}
+                      onChange={(e) => setExportTemplateId(e.target.value ? Number(e.target.value) : null)}
+                      className="w-full rounded border border-white/[0.08] bg-zinc-800 px-1.5 py-1 text-[10px] text-zinc-300 outline-none"
+                    >
+                      <option value="">None (default)</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>{t.file_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <button onClick={() => exportAll("docx")} className="flex w-full items-center px-3 py-2 text-left text-[11px] text-zinc-300 hover:bg-white/[0.06]">
+                  Export as DOCX (ZIP)
+                </button>
+                <button onClick={() => exportAll("pdf")} className="flex w-full items-center px-3 py-2 text-left text-[11px] text-zinc-300 hover:bg-white/[0.06]">
+                  Export as PDF (ZIP)
+                </button>
+              </div>
+            )}
+          </div>
           {onDelete && (
             confirmDelete ? (
               <div className="flex items-center gap-1.5">
