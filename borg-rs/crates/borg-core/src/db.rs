@@ -1344,6 +1344,98 @@ impl Db {
         Ok(())
     }
 
+    // ── Embeddings ────────────────────────────────────────────────────────
+
+    pub fn upsert_embedding(
+        &self,
+        project_id: Option<i64>,
+        task_id: Option<i64>,
+        chunk_text: &str,
+        file_path: &str,
+        embedding: &[f32],
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let hash = crate::knowledge::hash_chunk(chunk_text);
+        let blob = crate::knowledge::embedding_to_bytes(embedding);
+        conn.execute(
+            "INSERT INTO embeddings (project_id, task_id, chunk_text, chunk_hash, file_path, embedding, dims) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+             ON CONFLICT(chunk_hash) DO UPDATE SET embedding = excluded.embedding",
+            params![project_id, task_id, chunk_text, hash, file_path, blob, embedding.len() as i64],
+        )
+        .context("upsert_embedding")?;
+        Ok(())
+    }
+
+    pub fn remove_task_embeddings(&self, task_id: i64) -> Result<usize> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let n = conn
+            .execute(
+                "DELETE FROM embeddings WHERE task_id = ?1",
+                params![task_id],
+            )
+            .context("remove_task_embeddings")?;
+        Ok(n)
+    }
+
+    pub fn search_embeddings(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        project_id: Option<i64>,
+    ) -> Result<Vec<crate::knowledge::EmbeddingSearchResult>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match project_id {
+            Some(pid) => (
+                "SELECT id, project_id, task_id, chunk_text, file_path, embedding FROM embeddings WHERE project_id = ?1".to_string(),
+                vec![Box::new(pid) as Box<dyn rusqlite::types::ToSql>],
+            ),
+            None => (
+                "SELECT id, project_id, task_id, chunk_text, file_path, embedding FROM embeddings".to_string(),
+                vec![],
+            ),
+        };
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt
+            .query_map(params_refs.as_slice(), |row: &rusqlite::Row| {
+                Ok((
+                    row.get::<_, Option<i64>>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Vec<u8>>(5)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("search_embeddings query")?;
+
+        let mut results: Vec<crate::knowledge::EmbeddingSearchResult> = rows
+            .into_iter()
+            .map(|(pid, tid, text, path, blob)| {
+                let emb = crate::knowledge::bytes_to_embedding(&blob);
+                let score = crate::knowledge::cosine_similarity(query_embedding, &emb);
+                crate::knowledge::EmbeddingSearchResult {
+                    chunk_text: text,
+                    file_path: path,
+                    project_id: pid,
+                    task_id: tid,
+                    score,
+                }
+            })
+            .collect();
+
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(limit);
+        Ok(results)
+    }
+
+    pub fn embedding_count(&self) -> i64 {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.query_row("SELECT COUNT(*) FROM embeddings", [], |r: &rusqlite::Row| r.get(0))
+            .unwrap_or(0)
+    }
+
     pub fn get_top_scored_proposals(&self, threshold: i64, limit: i64) -> Result<Vec<Proposal>> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare(

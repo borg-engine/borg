@@ -433,6 +433,8 @@ pub struct PhaseContext {
     pub knowledge_dir: String,
     /// Docker bridge network name for agent containers. None = use --network host.
     pub agent_network: Option<String>,
+    /// Prior research chunks from the knowledge graph (injected for lawborg tasks).
+    pub prior_research: Vec<String>,
 }
 
 /// A single in-container test/lint/compile result emitted by the entrypoint.

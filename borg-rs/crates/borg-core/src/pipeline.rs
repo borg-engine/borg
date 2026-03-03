@@ -16,6 +16,7 @@ use crate::{
     config::Config,
     db::Db,
     git::Git,
+    knowledge::EmbeddingClient,
     modes::get_mode,
     sandbox::{Sandbox, SandboxMode},
     stream::TaskStreamManager,
@@ -47,6 +48,7 @@ pub struct Pipeline {
     seeding_active: std::sync::atomic::AtomicBool,
     /// Whether the borg-agent-net Docker bridge network was successfully created at startup.
     pub agent_network_available: bool,
+    pub embed_client: EmbeddingClient,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +125,7 @@ impl Pipeline {
             last_agent_dispatch: Mutex::new(HashMap::new()),
             seeding_active: std::sync::atomic::AtomicBool::new(false),
             agent_network_available,
+            embed_client: EmbeddingClient::from_env(),
         };
         (p, rx)
     }
@@ -240,6 +243,7 @@ impl Pipeline {
             } else {
                 None
             },
+            prior_research: Vec::new(),
         }
     }
 
@@ -515,6 +519,14 @@ impl Pipeline {
             PhaseType::LintFix => self.run_lint_fix_phase(&task, &phase, &mode).await?,
         }
 
+        // Async embedding indexing for completed tasks
+        if phase.next == "done" && !task.repo_path.is_empty() {
+            let db = Arc::clone(&self.db);
+            let embed = &self.embed_client;
+            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
+            crate::knowledge::index_task_embeddings(&db, embed, task.id, pid, &task.repo_path).await;
+        }
+
         Ok(())
     }
 
@@ -625,6 +637,18 @@ impl Pipeline {
         let mut ctx = self.make_context(task, wt_path.clone(), session_dir, pending_messages);
         let had_pending = !ctx.pending_messages.is_empty();
         let test_cmd = ctx.repo_config.test_cmd.clone();
+
+        // Inject prior research from knowledge graph for lawborg tasks
+        if task.mode == "lawborg" || task.mode == "legal" {
+            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
+            let query = format!("{} {}", task.title, task.description);
+            let results = crate::knowledge::get_prior_research(
+                &self.db, &self.embed_client, &query, pid, 5,
+            ).await;
+            ctx.prior_research = results.into_iter().map(|r| {
+                format!("[{}] {}", r.file_path, r.chunk_text)
+            }).collect();
+        }
 
         // Wire live NDJSON stream for the dashboard LiveTerminal.
         let (stream_tx, mut stream_rx) = tokio::sync::mpsc::unbounded_channel::<String>();

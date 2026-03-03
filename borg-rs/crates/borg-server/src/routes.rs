@@ -1109,6 +1109,8 @@ pub(crate) struct FtsSearchQuery {
     project_id: Option<i64>,
     #[serde(default = "default_search_limit")]
     limit: i64,
+    #[serde(default)]
+    semantic: bool,
 }
 fn default_search_limit() -> i64 { 50 }
 
@@ -1140,10 +1142,11 @@ pub(crate) async fn search_documents(
     if query.q.trim().is_empty() {
         return Ok(Json(json!([])));
     }
-    let results = state.db.fts_search(&query.q, query.project_id, query.limit).map_err(internal)?;
-    // Enrich with project names
+
+    // FTS5 keyword search
+    let fts_results = state.db.fts_search(&query.q, query.project_id, query.limit).map_err(internal)?;
     let mut items: Vec<Value> = Vec::new();
-    for r in results {
+    for r in &fts_results {
         let project_name = state.db.get_project(r.project_id)
             .ok()
             .flatten()
@@ -1157,8 +1160,28 @@ pub(crate) async fn search_documents(
             "title_snippet": r.title_snippet,
             "content_snippet": r.content_snippet,
             "rank": r.rank,
+            "source": "keyword",
         }));
     }
+
+    // Semantic search (when requested and embeddings exist)
+    if query.semantic && state.db.embedding_count() > 0 {
+        if let Ok(query_emb) = state.embed_client.embed_single(&query.q).await {
+            if let Ok(sem_results) = state.db.search_embeddings(&query_emb, query.limit as usize, query.project_id) {
+                for r in sem_results.iter().filter(|r| r.score > 0.5) {
+                    items.push(json!({
+                        "project_id": r.project_id,
+                        "task_id": r.task_id,
+                        "file_path": r.file_path,
+                        "content_snippet": if r.chunk_text.len() > 200 { &r.chunk_text[..200] } else { &r.chunk_text },
+                        "score": r.score,
+                        "source": "semantic",
+                    }));
+                }
+            }
+        }
+    }
+
     Ok(Json(json!(items)))
 }
 
@@ -2176,6 +2199,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 knowledge_files: Vec::new(),
                 knowledge_dir: String::new(),
                 agent_network: None,
+                prior_research: Vec::new(),
             };
 
             tokio::fs::create_dir_all(&ctx.session_dir).await.ok();

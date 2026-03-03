@@ -303,3 +303,19 @@ CREATE TABLE IF NOT EXISTS knowledge_files (
   project_id INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ── Vector embeddings (knowledge graph) ────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS embeddings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER REFERENCES projects(id),
+  task_id INTEGER REFERENCES pipeline_tasks(id),
+  chunk_text TEXT NOT NULL,
+  chunk_hash TEXT NOT NULL UNIQUE,
+  file_path TEXT NOT NULL DEFAULT '',
+  embedding BLOB NOT NULL,
+  dims INTEGER NOT NULL DEFAULT 768,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_embeddings_project ON embeddings(project_id);
+CREATE INDEX IF NOT EXISTS idx_embeddings_task ON embeddings(task_id);

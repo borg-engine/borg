@@ -4,6 +4,7 @@ pub mod config;
 pub mod db;
 pub mod git;
 pub mod ipc;
+pub mod knowledge;
 pub mod modes;
 pub mod observer;
 pub mod pipeline;

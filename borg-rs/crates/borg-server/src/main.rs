@@ -53,6 +53,7 @@ pub struct AppState {
     pub force_restart: Arc<std::sync::atomic::AtomicBool>,
     pub chat_rate: Arc<std::sync::Mutex<HashMap<String, std::time::Instant>>>,
     pub triage_running: Arc<std::sync::atomic::AtomicBool>,
+    pub embed_client: borg_core::knowledge::EmbeddingClient,
 }
 
 impl AppState {
@@ -673,6 +674,7 @@ async fn main() -> anyhow::Result<()> {
         force_restart,
         chat_rate: Arc::new(std::sync::Mutex::new(HashMap::new())),
         triage_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        embed_client: borg_core::knowledge::EmbeddingClient::from_env(),
     });
 
     let dashboard_dir = config.dashboard_dist_dir.clone();

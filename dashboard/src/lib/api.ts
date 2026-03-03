@@ -577,12 +577,14 @@ export function useUpcomingDeadlines(limit = 50) {
 
 export interface FtsSearchResult {
   project_id: number;
-  project_name: string;
+  project_name?: string;
   task_id: number;
   file_path: string;
-  title_snippet: string;
+  title_snippet?: string;
   content_snippet: string;
-  rank: number;
+  rank?: number;
+  score?: number;
+  source?: "keyword" | "semantic";
 }
 
 // ── Audit ─────────────────────────────────────────────────────────────
@@ -606,9 +608,10 @@ export function useProjectAudit(projectId: number | null) {
   });
 }
 
-export async function searchDocuments(query: string, projectId?: number): Promise<FtsSearchResult[]> {
+export async function searchDocuments(query: string, projectId?: number, semantic = true): Promise<FtsSearchResult[]> {
   const params = new URLSearchParams({ q: query });
   if (projectId) params.set("project_id", String(projectId));
+  if (semantic) params.set("semantic", "true");
   return fetchJson(`/api/search?${params}`);
 }
 

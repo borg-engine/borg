@@ -43,6 +43,13 @@ pub fn build_instruction(task: &Task, phase: &PhaseConfig, ctx: &PhaseContext, f
         s.push_str(&phase.error_instruction.replace("{ERROR}", &task.last_error));
     }
 
+    if !ctx.prior_research.is_empty() {
+        s.push_str("\n\n---\n\n## Prior Research (from knowledge graph)\nThe following relevant excerpts were found from prior tasks. Use them to avoid duplicating research:\n\n");
+        for (i, chunk) in ctx.prior_research.iter().enumerate() {
+            s.push_str(&format!("{}. {}\n\n", i + 1, chunk));
+        }
+    }
+
     if !ctx.pending_messages.is_empty() {
         s.push_str("\n\n---\nThe following messages were sent by the user or director while this task was queued:\n");
         for (role, content) in &ctx.pending_messages {
