@@ -81,7 +81,7 @@ if [ -n "$REPO_URL" ]; then
     cd "$REPO_DIR"
     if [ -n "$BRANCH" ]; then
         # Fetch the task branch if it exists on remote
-        git fetch origin "$BRANCH" 2>/dev/null || true
+        git fetch --depth 50 origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" 2>/dev/null || true
         if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
             git checkout -b "$BRANCH" "origin/$BRANCH"
         else
