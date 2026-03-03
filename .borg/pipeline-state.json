@@ -1,0 +1,10 @@
+{
+  "task_id": 130,
+  "task_title": "Test `parse_test_result()` marker extraction in `claude.rs`",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-130",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-03T02:12:13.824934891Z"
+}
