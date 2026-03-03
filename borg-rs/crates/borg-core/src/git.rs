@@ -203,4 +203,19 @@ impl Git {
         }
         Ok(())
     }
+
+    /// Rebase the current branch in a worktree onto origin/main.
+    pub fn rebase_onto_main(&self, wt_path: &str) -> Result<()> {
+        let _ = self.exec(wt_path, &["fetch", "origin", "main"]);
+        let result = self.exec(wt_path, &["rebase", "origin/main"])?;
+        if !result.success() {
+            // Abort the failed rebase so the branch isn't left in a broken state
+            let _ = self.exec(wt_path, &["rebase", "--abort"]);
+            return Err(anyhow!(
+                "git rebase origin/main failed: {}",
+                result.combined_output()
+            ));
+        }
+        Ok(())
+    }
 }

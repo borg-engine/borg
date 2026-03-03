@@ -1013,8 +1013,15 @@ impl Pipeline {
             return self.run_rebase_phase_docker(task, phase).await;
         }
 
-        // Non-Docker rebase: advance (push + enqueue happens in advance_phase).
-        info!("task #{} rebase: non-Docker mode, advancing", task.id);
+        // Non-Docker rebase: rebase the worktree branch onto origin/main, then advance.
+        let work_dir = self.task_work_dir(task);
+        let git = Git::new(&task.repo_path);
+        if let Err(e) = git.rebase_onto_main(&work_dir) {
+            warn!("task #{} rebase: {e}", task.id);
+            self.fail_or_retry(task, "rebase", &e.to_string())?;
+            return Ok(());
+        }
+        info!("task #{} rebase: rebased onto origin/main", task.id);
         self.advance_phase(task, phase, mode)?;
         Ok(())
     }
