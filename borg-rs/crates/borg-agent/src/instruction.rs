@@ -87,7 +87,11 @@ pub fn build_knowledge_section(files: &[KnowledgeFile], knowledge_dir: &str) -> 
     );
     for file in files {
         if file.inline {
-            let path = format!("{}/{}", knowledge_dir, file.file_name);
+            let path = if !file.stored_path.is_empty() {
+                file.stored_path.clone()
+            } else {
+                format!("{}/{}", knowledge_dir, file.file_name)
+            };
             let content = std::fs::read_to_string(&path).unwrap_or_default();
             let content = content.trim();
             if content.is_empty() {

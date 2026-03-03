@@ -1572,7 +1572,11 @@ pub(crate) async fn export_project_document(
     let template_path = if let Some(tid) = q.template_id {
         let kf = state.db.list_knowledge_files().map_err(internal)?;
         kf.iter().find(|f| f.id == tid).map(|f| {
-            format!("{}/knowledge/{}", state.config.data_dir, f.file_name)
+            if !f.stored_path.is_empty() {
+                f.stored_path.clone()
+            } else {
+                format!("{}/knowledge/{}", state.config.data_dir, f.file_name)
+            }
         })
     } else {
         None
@@ -1703,7 +1707,11 @@ pub(crate) async fn export_all_project_documents(
     let template_path = q.template_id.and_then(|tid| {
         state.db.list_knowledge_files().ok().and_then(|kf| {
             kf.iter().find(|f| f.id == tid).map(|f| {
-                format!("{}/knowledge/{}", state.config.data_dir, f.file_name)
+                if !f.stored_path.is_empty() {
+                    f.stored_path.clone()
+                } else {
+                    format!("{}/knowledge/{}", state.config.data_dir, f.file_name)
+                }
             })
         })
     });
@@ -3441,12 +3449,18 @@ pub(crate) async fn upload_knowledge(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let dest = format!("{knowledge_dir}/{file_name}");
+    let unique_name = format!(
+        "{}_{}_{}",
+        Utc::now().timestamp_millis(),
+        rand_suffix(),
+        file_name
+    );
+    let dest = format!("{knowledge_dir}/{unique_name}");
     std::fs::write(&dest, &file_bytes).map_err(internal)?;
 
     let id = state
         .db
-        .insert_knowledge_file(&file_name, &description, file_bytes.len() as i64, inline)
+        .insert_knowledge_file(&file_name, &dest, &description, file_bytes.len() as i64, inline)
         .map_err(internal)?;
 
     Ok(Json(json!({ "id": id, "file_name": file_name })))
@@ -3469,8 +3483,13 @@ pub(crate) async fn delete_knowledge(
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, StatusCode> {
     if let Ok(Some(file)) = state.db.get_knowledge_file(id) {
-        if let Some(safe_path) = safe_knowledge_path(&state.config.data_dir, &file.file_name) {
-            let _ = std::fs::remove_file(&safe_path);
+        let path = if !file.stored_path.is_empty() {
+            Some(std::path::PathBuf::from(&file.stored_path))
+        } else {
+            safe_knowledge_path(&state.config.data_dir, &file.file_name)
+        };
+        if let Some(p) = path {
+            let _ = std::fs::remove_file(&p);
         }
     }
     state.db.delete_knowledge_file(id).map_err(internal)?;
@@ -3501,8 +3520,12 @@ pub(crate) async fn get_knowledge_content(
         .get_knowledge_file(id)
         .map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let path = safe_knowledge_path(&state.config.data_dir, &file.file_name)
-        .ok_or(StatusCode::BAD_REQUEST)?;
+    let path = if !file.stored_path.is_empty() {
+        std::path::PathBuf::from(&file.stored_path)
+    } else {
+        safe_knowledge_path(&state.config.data_dir, &file.file_name)
+            .ok_or(StatusCode::BAD_REQUEST)?
+    };
     let bytes = std::fs::read(&path).map_err(|_| StatusCode::NOT_FOUND)?;
     let disp = format!(
         "attachment; filename=\"{}\"",

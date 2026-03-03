@@ -147,6 +147,7 @@ pub struct ProjectFileRow {
 pub struct KnowledgeFile {
     pub id: i64,
     pub file_name: String,
+    pub stored_path: String,
     pub description: String,
     pub size_bytes: i64,
     pub inline: bool,
@@ -226,6 +227,7 @@ fn row_to_knowledge(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeFile> 
         category: row.get::<_, Option<String>>(7)?.unwrap_or_else(|| "general".to_string()),
         jurisdiction: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
         project_id: row.get::<_, Option<i64>>(9)?,
+        stored_path: row.get::<_, Option<String>>(10)?.unwrap_or_default(),
     })
 }
 
@@ -466,6 +468,7 @@ impl Db {
             "ALTER TABLE pipeline_tasks ADD COLUMN review_status TEXT",
             "ALTER TABLE pipeline_tasks ADD COLUMN revision_count INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE project_files ADD COLUMN extracted_text TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE knowledge_files ADD COLUMN stored_path TEXT NOT NULL DEFAULT ''",
         ];
         for sql in alters {
             let _ = conn.execute(sql, []);
@@ -1327,7 +1330,7 @@ impl Db {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare(
             "SELECT id, file_name, description, size_bytes, inline, created_at, \
-                    tags, category, jurisdiction, project_id \
+                    tags, category, jurisdiction, project_id, stored_path \
              FROM knowledge_files ORDER BY created_at",
         )?;
         let rows = stmt.query_map([], row_to_knowledge)?;
@@ -1340,7 +1343,7 @@ impl Db {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.query_row(
             "SELECT id, file_name, description, size_bytes, inline, created_at, \
-                    tags, category, jurisdiction, project_id \
+                    tags, category, jurisdiction, project_id, stored_path \
              FROM knowledge_files WHERE id=?1",
             params![id],
             row_to_knowledge,
@@ -1353,7 +1356,7 @@ impl Db {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn.prepare(
             "SELECT id, file_name, description, size_bytes, inline, created_at, \
-                    tags, category, jurisdiction, project_id \
+                    tags, category, jurisdiction, project_id, stored_path \
              FROM knowledge_files \
              WHERE (?1 IS NULL OR category = ?1) AND (?2 IS NULL OR jurisdiction = ?2 OR jurisdiction = '') \
              ORDER BY category, file_name",
@@ -1367,15 +1370,16 @@ impl Db {
     pub fn insert_knowledge_file(
         &self,
         file_name: &str,
+        stored_path: &str,
         description: &str,
         size_bytes: i64,
         inline: bool,
     ) -> Result<i64> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute(
-            "INSERT INTO knowledge_files (file_name, description, size_bytes, inline) \
-             VALUES (?1, ?2, ?3, ?4)",
-            params![file_name, description, size_bytes, inline as i64],
+            "INSERT INTO knowledge_files (file_name, stored_path, description, size_bytes, inline) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![file_name, stored_path, description, size_bytes, inline as i64],
         )?;
         Ok(conn.last_insert_rowid())
     }
