@@ -212,6 +212,10 @@ export interface Settings {
   ingestion_queue_backend: string;
   sqs_queue_url: string;
   sqs_region: string;
+  search_backend: string;
+  opensearch_url: string;
+  opensearch_index: string;
+  opensearch_username: string;
 }
 
 export function useSettings() {
@@ -267,6 +271,63 @@ export async function dismissProposal(id: number): Promise<void> {
 
 export async function triageProposals(): Promise<{ scored: number }> {
   const res = await apiFetch("/api/proposals/triage", { method: "POST" });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export interface PlanTodo {
+  id: number;
+  title: string;
+  details: string;
+  status: "todo" | "doing" | "blocked" | "done";
+  priority: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export function usePlanTodos() {
+  return useQuery<{ items: PlanTodo[] }>({
+    queryKey: ["plan_todos"],
+    queryFn: () => fetchJson("/api/plan/todos"),
+    staleTime: 30_000,
+  });
+}
+
+export async function createPlanTodo(body: {
+  title: string;
+  details?: string;
+  status?: "todo" | "doing" | "blocked" | "done";
+  priority?: number;
+}): Promise<PlanTodo> {
+  const res = await apiFetch("/api/plan/todos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function patchPlanTodo(
+  id: number,
+  patch: Partial<Pick<PlanTodo, "title" | "details" | "status" | "priority">>,
+): Promise<PlanTodo> {
+  const res = await apiFetch(`/api/plan/todos/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function deletePlanTodo(id: number): Promise<void> {
+  const res = await apiFetch(`/api/plan/todos/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+export async function seedProdPlanTodos(): Promise<{ seeded: boolean; items: PlanTodo[] }> {
+  const res = await apiFetch("/api/plan/todos/seed-prod", { method: "POST" });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }

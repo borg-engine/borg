@@ -351,6 +351,34 @@ export function SettingsPanel() {
             value={effective.sqs_region}
             onChange={(v) => update("sqs_region", v)}
           />
+          <SelectField
+            label="Search Backend"
+            desc="Keyword search engine for project documents"
+            value={effective.search_backend}
+            onChange={(v) => update("search_backend", v)}
+            options={[
+              { value: "sqlite", label: "SQLite FTS (default)" },
+              { value: "opensearch", label: "OpenSearch" },
+            ]}
+          />
+          <TextField
+            label="OpenSearch URL"
+            desc="Base URL for OpenSearch cluster"
+            value={effective.opensearch_url}
+            onChange={(v) => update("opensearch_url", v)}
+          />
+          <TextField
+            label="OpenSearch Index"
+            desc="Index name for project file documents"
+            value={effective.opensearch_index}
+            onChange={(v) => update("opensearch_index", v)}
+          />
+          <TextField
+            label="OpenSearch Username"
+            desc="Optional username for basic auth"
+            value={effective.opensearch_username}
+            onChange={(v) => update("opensearch_username", v)}
+          />
         </Section>
 
         {/* Per-Repo Settings */}
