@@ -1,6 +1,7 @@
 mod auth;
 mod ingestion;
 mod logging;
+mod opensearch;
 mod routes;
 mod storage;
 
@@ -58,6 +59,7 @@ pub struct AppState {
     pub embed_client: borg_core::knowledge::EmbeddingClient,
     pub file_storage: Arc<storage::FileStorage>,
     pub ingestion_queue: Arc<ingestion::IngestionQueue>,
+    pub opensearch: Option<Arc<opensearch::OpenSearchClient>>,
 }
 
 impl AppState {
@@ -168,6 +170,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Arc::new(config);
     let file_storage = Arc::new(storage::FileStorage::from_config(&config).await?);
     let ingestion_queue = Arc::new(ingestion::IngestionQueue::from_config(&config).await?);
+    let opensearch = opensearch::OpenSearchClient::from_config(&config).map(Arc::new);
 
     match &*ingestion_queue {
         ingestion::IngestionQueue::Disabled => info!("ingestion queue backend: disabled"),
@@ -702,14 +705,16 @@ async fn main() -> anyhow::Result<()> {
         embed_client: borg_core::knowledge::EmbeddingClient::from_env(),
         file_storage: Arc::clone(&file_storage),
         ingestion_queue: Arc::clone(&ingestion_queue),
+        opensearch: opensearch.clone(),
     });
 
     {
         let queue = Arc::clone(&state.ingestion_queue);
         let db = Arc::clone(&state.db);
         let storage = Arc::clone(&state.file_storage);
+        let search = state.opensearch.clone();
         tokio::spawn(async move {
-            queue.run_worker(db, storage).await;
+            queue.run_worker(db, storage, search).await;
         });
     }
 

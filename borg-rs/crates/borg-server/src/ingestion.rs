@@ -9,6 +9,7 @@ use borg_core::db::Db;
 use serde_json::json;
 
 use crate::storage::FileStorage;
+use crate::opensearch::OpenSearchClient;
 
 #[derive(Clone)]
 pub enum IngestionQueue {
@@ -90,7 +91,12 @@ impl IngestionQueue {
         }
     }
 
-    pub async fn run_worker(self: Arc<Self>, db: Arc<Db>, storage: Arc<FileStorage>) {
+    pub async fn run_worker(
+        self: Arc<Self>,
+        db: Arc<Db>,
+        storage: Arc<FileStorage>,
+        search: Option<Arc<OpenSearchClient>>,
+    ) {
         let (queue_url, client) = match self.as_ref() {
             Self::Disabled => return,
             Self::Sqs { queue_url, client } => (queue_url.clone(), client.clone()),
@@ -120,7 +126,7 @@ impl IngestionQueue {
                     continue;
                 }
 
-                let processed = process_message(body, &db, &storage).await;
+                let processed = process_message(body, &db, &storage, search.as_deref()).await;
                 if processed {
                     let _ = client
                         .delete_message()
@@ -143,7 +149,12 @@ struct ProjectFileIngestMsg {
     mime_type: String,
 }
 
-async fn process_message(body: &str, db: &Db, storage: &FileStorage) -> bool {
+async fn process_message(
+    body: &str,
+    db: &Db,
+    storage: &FileStorage,
+    search: Option<&OpenSearchClient>,
+) -> bool {
     let parsed = serde_json::from_str::<ProjectFileIngestMsg>(body);
     let Ok(msg) = parsed else {
         tracing::warn!("ingestion worker received non-json message");
@@ -190,6 +201,22 @@ async fn process_message(body: &str, db: &Db, storage: &FileStorage) -> bool {
     if let Err(e) = db.fts_index_document(msg.project_id, 0, &msg.file_name, &msg.file_name, &text) {
         tracing::warn!("ingestion worker fts index failed: {e}");
         return false;
+    }
+    if let Some(os) = search {
+        let doc_id = format!("project-{}-file-{}", msg.project_id, msg.file_id);
+        if let Err(e) = os
+            .index_document(
+                &doc_id,
+                msg.project_id,
+                0,
+                &msg.file_name,
+                &msg.file_name,
+                &text,
+            )
+            .await
+        {
+            tracing::warn!("ingestion worker opensearch index failed: {e}");
+        }
     }
 
     tracing::info!(

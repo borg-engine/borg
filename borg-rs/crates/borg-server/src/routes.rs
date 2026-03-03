@@ -349,6 +349,10 @@ pub(crate) const SETTINGS_KEYS: &[&str] = &[
     "ingestion_queue_backend",
     "sqs_queue_url",
     "sqs_region",
+    "search_backend",
+    "opensearch_url",
+    "opensearch_index",
+    "opensearch_username",
 ];
 
 pub(crate) const SETTINGS_DEFAULTS: &[(&str, &str)] = &[
@@ -387,6 +391,10 @@ pub(crate) const SETTINGS_DEFAULTS: &[(&str, &str)] = &[
     ("ingestion_queue_backend", "disabled"),
     ("sqs_queue_url", ""),
     ("sqs_region", "us-east-1"),
+    ("search_backend", "sqlite"),
+    ("opensearch_url", ""),
+    ("opensearch_index", "borg-project-files"),
+    ("opensearch_username", ""),
 ];
 
 // ── Shared helper functions ───────────────────────────────────────────────
@@ -1219,25 +1227,59 @@ pub(crate) async fn search_documents(
         return Ok(Json(json!([])));
     }
 
-    // FTS5 keyword search
-    let fts_results = state.db.fts_search(&query.q, query.project_id, query.limit).map_err(internal)?;
     let mut items: Vec<Value> = Vec::new();
-    for r in &fts_results {
-        let project_name = state.db.get_project(r.project_id)
-            .ok()
-            .flatten()
-            .map(|p| p.name.clone())
-            .unwrap_or_default();
-        items.push(json!({
-            "project_id": r.project_id,
-            "project_name": project_name,
-            "task_id": r.task_id,
-            "file_path": r.file_path,
-            "title_snippet": r.title_snippet,
-            "content_snippet": r.content_snippet,
-            "rank": r.rank,
-            "source": "keyword",
-        }));
+
+    // Keyword search backend: OpenSearch when configured, otherwise SQLite FTS5.
+    let mut used_fts_fallback = true;
+    if let Some(opensearch) = &state.opensearch {
+        match opensearch.search(&query.q, query.project_id, query.limit).await {
+            Ok(os_results) => {
+                used_fts_fallback = false;
+                for r in os_results {
+                    let project_name = state
+                        .db
+                        .get_project(r.project_id)
+                        .ok()
+                        .flatten()
+                        .map(|p| p.name.clone())
+                        .unwrap_or_default();
+                    items.push(json!({
+                        "project_id": r.project_id,
+                        "project_name": project_name,
+                        "task_id": r.task_id,
+                        "file_path": r.file_path,
+                        "title_snippet": r.title_snippet,
+                        "content_snippet": r.content_snippet,
+                        "score": r.score,
+                        "source": "keyword",
+                    }));
+                }
+            }
+            Err(e) => {
+                tracing::warn!("opensearch query failed, falling back to sqlite fts: {e}");
+            }
+        }
+    }
+
+    if used_fts_fallback {
+        let fts_results = state.db.fts_search(&query.q, query.project_id, query.limit).map_err(internal)?;
+        for r in &fts_results {
+            let project_name = state.db.get_project(r.project_id)
+                .ok()
+                .flatten()
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
+            items.push(json!({
+                "project_id": r.project_id,
+                "project_name": project_name,
+                "task_id": r.task_id,
+                "file_path": r.file_path,
+                "title_snippet": r.title_snippet,
+                "content_snippet": r.content_snippet,
+                "rank": r.rank,
+                "source": "keyword",
+            }));
+        }
     }
 
     // Semantic search (when requested and embeddings exist)
@@ -2093,6 +2135,7 @@ pub(crate) async fn upload_project_files(
         // Extract text from uploaded files in background (legacy mode when queue is disabled)
         let db = state.db.clone();
         let storage = state.file_storage.clone();
+        let opensearch = state.opensearch.clone();
         let project_id = id;
         tokio::spawn(async move {
             for file in db.list_project_files(project_id).unwrap_or_default() {
@@ -2105,6 +2148,18 @@ pub(crate) async fn upload_project_files(
                     if !text.is_empty() {
                         let _ = db.update_project_file_text(file.id, &text);
                         let _ = db.fts_index_document(project_id, 0, &file.file_name, &file.file_name, &text);
+                        if let Some(os) = &opensearch {
+                            let _ = os
+                                .index_document(
+                                    &format!("project-{}-file-{}", project_id, file.id),
+                                    project_id,
+                                    0,
+                                    &file.file_name,
+                                    &file.file_name,
+                                    &text,
+                                )
+                                .await;
+                        }
                         tracing::info!("extracted {} chars from {}", text.len(), file.file_name);
                     }
                 }
@@ -2177,6 +2232,18 @@ pub(crate) async fn reextract_project_file(
         state.db.update_project_file_text(file_id, &text).map_err(internal)?;
         state.db.fts_index_document(project_id, 0, &file.file_name, &file.file_name, &text)
             .map_err(internal)?;
+        if let Some(os) = &state.opensearch {
+            let _ = os
+                .index_document(
+                    &format!("project-{}-file-{}", project_id, file_id),
+                    project_id,
+                    0,
+                    &file.file_name,
+                    &file.file_name,
+                    &text,
+                )
+                .await;
+        }
     }
     Ok(Json(json!({
         "id": file_id,
@@ -4193,6 +4260,7 @@ pub(crate) async fn import_cloud_files(
         if matches!(state.ingestion_queue.as_ref(), IngestionQueue::Disabled) {
             // Kick off text extraction in-process when queue is disabled
             let db2 = state.db.clone();
+            let opensearch = state.opensearch.clone();
             let mime2 = mime.clone();
             let bytes2 = bytes.clone();
             let proj_id = id;
@@ -4202,6 +4270,18 @@ pub(crate) async fn import_cloud_files(
                     if !text.is_empty() {
                         let _ = db2.update_project_file_text(file_id, &text);
                         let _ = db2.fts_index_document(proj_id, 0, &fname, &fname, &text);
+                        if let Some(os) = &opensearch {
+                            let _ = os
+                                .index_document(
+                                    &format!("project-{}-file-{}", proj_id, file_id),
+                                    proj_id,
+                                    0,
+                                    &fname,
+                                    &fname,
+                                    &text,
+                                )
+                                .await;
+                        }
                     }
                 }
             });

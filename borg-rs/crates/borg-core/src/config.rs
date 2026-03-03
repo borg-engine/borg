@@ -114,6 +114,13 @@ pub struct Config {
     pub ingestion_queue_backend: String, // "disabled" | "sqs"
     pub sqs_queue_url: String,
     pub sqs_region: String,
+
+    // Search backend
+    pub search_backend: String, // "sqlite" | "opensearch"
+    pub opensearch_url: String,
+    pub opensearch_index: String,
+    pub opensearch_username: String,
+    pub opensearch_password: String,
 }
 
 impl Config {
@@ -665,6 +672,10 @@ impl Config {
             ),
             ("sqs_queue_url", self.sqs_queue_url.clone()),
             ("sqs_region", self.sqs_region.clone()),
+            ("search_backend", self.search_backend.clone()),
+            ("opensearch_url", self.opensearch_url.clone()),
+            ("opensearch_index", self.opensearch_index.clone()),
+            ("opensearch_username", self.opensearch_username.clone()),
         ];
         let conn_guard = db.raw_conn();
         let conn = conn_guard.lock().unwrap_or_else(|e| e.into_inner());
@@ -739,6 +750,10 @@ impl Config {
         c.ingestion_queue_backend = get_str("ingestion_queue_backend", &c.ingestion_queue_backend);
         c.sqs_queue_url = get_str("sqs_queue_url", &c.sqs_queue_url);
         c.sqs_region = get_str("sqs_region", &c.sqs_region);
+        c.search_backend = get_str("search_backend", &c.search_backend);
+        c.opensearch_url = get_str("opensearch_url", &c.opensearch_url);
+        c.opensearch_index = get_str("opensearch_index", &c.opensearch_index);
+        c.opensearch_username = get_str("opensearch_username", &c.opensearch_username);
         c.build_cmd = get_str("build_cmd", &c.build_cmd);
         c.self_update_enabled = get_bool("self_update_enabled", c.self_update_enabled);
         c.continuous_mode = get_bool("continuous_mode", c.continuous_mode);
@@ -915,6 +930,11 @@ impl Config {
             ingestion_queue_backend: get_str("INGESTION_QUEUE_BACKEND", &dotenv, "disabled"),
             sqs_queue_url: get_str("SQS_QUEUE_URL", &dotenv, ""),
             sqs_region: get_str("SQS_REGION", &dotenv, get_str("AWS_REGION", &dotenv, "us-east-1").as_str()),
+            search_backend: get_str("SEARCH_BACKEND", &dotenv, "sqlite"),
+            opensearch_url: get_str("OPENSEARCH_URL", &dotenv, ""),
+            opensearch_index: get_str("OPENSEARCH_INDEX", &dotenv, "borg-project-files"),
+            opensearch_username: get_str("OPENSEARCH_USERNAME", &dotenv, ""),
+            opensearch_password: get_str("OPENSEARCH_PASSWORD", &dotenv, ""),
         })
     }
 }
