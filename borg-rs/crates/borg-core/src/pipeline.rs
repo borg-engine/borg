@@ -1187,7 +1187,7 @@ impl Pipeline {
             }
         }
 
-        self.advance_phase(task, phase, mode)?;
+        self.advance_phase(task, phase, mode).await?;
         Ok(())
     }
 
@@ -1215,7 +1215,7 @@ impl Pipeline {
 
         let test_cmd = self.repo_config(task).test_cmd;
         if test_cmd.is_empty() {
-            self.advance_phase(task, phase, mode)?;
+            self.advance_phase(task, phase, mode).await?;
             info!("task #{} validate: no test command, skipping", task.id);
             return Ok(());
         }
@@ -1276,7 +1276,7 @@ impl Pipeline {
         }
         if out.exit_code == 0 {
             info!("task #{} validate: all tests pass", task.id);
-            self.advance_phase(task, phase, mode)?;
+            self.advance_phase(task, phase, mode).await?;
         } else {
             info!("task #{} validate: tests failed", task.id);
             let retry_status = if phase.retry_phase.is_empty() {
@@ -1695,7 +1695,7 @@ and report what went wrong.",
     ) -> Result<()> {
         // In Docker mode, lint is handled inside the container by the entrypoint.
         if self.sandbox_mode == SandboxMode::Docker {
-            self.advance_phase(task, phase, mode)?;
+            self.advance_phase(task, phase, mode).await?;
             return Ok(());
         }
 
@@ -1704,7 +1704,7 @@ and report what went wrong.",
         let lint_cmd = match self.repo_lint_cmd(&task.repo_path, &wt_path) {
             Some(cmd) => cmd,
             None => {
-                self.advance_phase(task, phase, mode)?;
+                self.advance_phase(task, phase, mode).await?;
                 info!("task #{} lint_fix: no lint command, skipping", task.id);
                 return Ok(());
             },
@@ -1717,7 +1717,7 @@ minimal changes needed. After editing, do not run the linter yourself — the pi
 
         let mut lint_out = self.run_test_command(&wt_path, &lint_cmd).await?;
         if lint_out.exit_code == 0 {
-            self.advance_phase(task, phase, mode)?;
+            self.advance_phase(task, phase, mode).await?;
             info!("task #{} lint_fix: already clean", task.id);
             return Ok(());
         }
@@ -1772,7 +1772,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                         "task #{}: no backend, skipping lint fix attempt {}",
                         task.id, fix_attempt
                     );
-                    self.advance_phase(task, phase, mode)?;
+                    self.advance_phase(task, phase, mode).await?;
                     return Ok(());
                 },
             };
@@ -1797,7 +1797,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
             lint_out = self.run_test_command(&wt_path, &lint_cmd).await?;
             if lint_out.exit_code == 0 {
-                self.advance_phase(task, phase, mode)?;
+                self.advance_phase(task, phase, mode).await?;
                 info!(
                     "task #{} lint_fix: clean after {} fix attempt(s)",
                     task.id,
@@ -1899,14 +1899,13 @@ Make only the minimal changes the linter requires. Do not refactor or change log
     // ── Phase transition ──────────────────────────────────────────────────
 
     /// Advance a task to the next phase, or enqueue for integration when done.
-    fn advance_phase(&self, task: &Task, phase: &PhaseConfig, mode: &PipelineMode) -> Result<()> {
+    async fn advance_phase(&self, task: &Task, phase: &PhaseConfig, mode: &PipelineMode) -> Result<()> {
         let next = phase.next.as_str();
         if next == "done" {
-            self.read_structured_output(task);
-            self.read_task_deadlines(task);
-            self.index_task_documents(task);
-
-            self.db.update_task_status(task.id, "done", Some(""))?;
+            self.read_structured_output(task).await;
+            self.read_task_deadlines(task).await;
+            self.index_task_documents(task).await;
+            self.db.update_task_status(task.id, "done", None)?;
             let _ = self.db.mark_task_completed(task.id);
             let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
             let _ = self.db.log_event_full(Some(task.id), None, pid, "pipeline", "task.completed", &serde_json::json!({ "title": task.title }));
@@ -1937,15 +1936,16 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         Ok(())
     }
 
-    fn read_structured_output(&self, task: &Task) {
+    async fn read_structured_output(&self, task: &Task) {
         if task.repo_path.is_empty() { return; }
         let branch = format!("task-{}", task.id);
         let path = std::path::Path::new(&task.repo_path);
         if !path.join(".git").exists() { return; }
-        let out = std::process::Command::new("git")
+        let out = tokio::process::Command::new("git")
             .args(["-C", &task.repo_path, "show", &format!("{branch}:structured.json")])
             .stderr(std::process::Stdio::null())
-            .output();
+            .output()
+            .await;
         if let Ok(output) = out {
             if output.status.success() {
                 let data = String::from_utf8_lossy(&output.stdout);
@@ -1984,15 +1984,16 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         }
     }
 
-    fn read_task_deadlines(&self, task: &Task) {
+    async fn read_task_deadlines(&self, task: &Task) {
         if task.repo_path.is_empty() || task.project_id == 0 { return; }
         let branch = format!("task-{}", task.id);
         let path = std::path::Path::new(&task.repo_path);
         if !path.join(".git").exists() { return; }
-        let out = std::process::Command::new("git")
+        let out = tokio::process::Command::new("git")
             .args(["-C", &task.repo_path, "show", &format!("{branch}:deadlines.json")])
             .stderr(std::process::Stdio::null())
-            .output();
+            .output()
+            .await;
         if let Ok(output) = out {
             if output.status.success() {
                 let data = String::from_utf8_lossy(&output.stdout);
@@ -2012,29 +2013,29 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         }
     }
 
-    fn index_task_documents(&self, task: &Task) {
+    async fn index_task_documents(&self, task: &Task) {
         if task.repo_path.is_empty() || task.project_id == 0 { return; }
         let branch = format!("task-{}", task.id);
         let path = std::path::Path::new(&task.repo_path);
         if !path.join(".git").exists() { return; }
-        // List .md files on the task branch
-        let out = std::process::Command::new("git")
+        let out = tokio::process::Command::new("git")
             .args(["-C", &task.repo_path, "ls-tree", "-r", "--name-only", &branch])
             .stderr(std::process::Stdio::null())
-            .output();
+            .output()
+            .await;
         let files = match out {
             Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
             _ => return,
         };
-        // Clear old index for this task
         let _ = self.db.fts_remove_task(task.id);
         let mut count = 0;
         for file in files.lines() {
             if !file.ends_with(".md") { continue; }
-            let show = std::process::Command::new("git")
+            let show = tokio::process::Command::new("git")
                 .args(["-C", &task.repo_path, "show", &format!("{branch}:{file}")])
                 .stderr(std::process::Stdio::null())
-                .output();
+                .output()
+                .await;
             if let Ok(o) = show {
                 if o.status.success() {
                     let content = String::from_utf8_lossy(&o.stdout);
