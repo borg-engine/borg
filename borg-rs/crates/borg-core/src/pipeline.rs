@@ -1691,7 +1691,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
     pub async fn check_integration(self: &Arc<Self>) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
         let last = self.db.get_ts("last_release_ts");
-        let min_interval = if self.config.continuous_mode {
+        let backlog = self.db.count_queued_integration().unwrap_or(0);
+        // When there's a backlog, use a short 10s interval to drain it steadily
+        let min_interval = if backlog > 0 {
+            10i64
+        } else if self.config.continuous_mode {
             60i64
         } else {
             self.config.release_interval_mins as i64 * 60
