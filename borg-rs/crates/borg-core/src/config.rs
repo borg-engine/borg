@@ -334,6 +334,130 @@ fn parse_watched_repos(
     repos
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Call parse_watched_repos with an empty pipeline_repo so the primary-repo
+    // entry (which calls slug_from_remote) is never added.
+    fn parse(watched_raw: &str) -> Vec<RepoConfig> {
+        parse_watched_repos(watched_raw, "", "", "", "sweborg")
+    }
+
+    #[test]
+    fn test_empty_watched_raw_no_primary_returns_empty() {
+        assert!(parse("").is_empty());
+    }
+
+    #[test]
+    fn test_pipe_separated_entries_all_parsed() {
+        let repos = parse("/repo/a:cmd_a::::owner/a|/repo/b:cmd_b::::owner/b");
+        assert_eq!(repos.len(), 2);
+        assert_eq!(repos[0].path, "/repo/a");
+        assert_eq!(repos[1].path, "/repo/b");
+    }
+
+    #[test]
+    fn test_all_six_fields_parsed() {
+        let repos = parse("/repo/a:test_cmd:prompt.md:mymode:lint.sh:owner/repo");
+        assert_eq!(repos.len(), 1);
+        let r = &repos[0];
+        assert_eq!(r.path, "/repo/a");
+        assert_eq!(r.test_cmd, "test_cmd");
+        assert_eq!(r.prompt_file, "prompt.md");
+        assert_eq!(r.mode, "mymode");
+        assert_eq!(r.lint_cmd, "lint.sh");
+        assert_eq!(r.repo_slug, "owner/repo");
+    }
+
+    #[test]
+    fn test_manual_suffix_sets_auto_merge_false_and_strips_suffix() {
+        let repos = parse("/repo/a:just test!manual::::owner/repo");
+        assert_eq!(repos.len(), 1);
+        let r = &repos[0];
+        assert!(!r.auto_merge, "!manual should set auto_merge=false");
+        assert_eq!(r.test_cmd, "just test", "!manual suffix must be stripped");
+    }
+
+    #[test]
+    fn test_no_manual_suffix_sets_auto_merge_true() {
+        let repos = parse("/repo/a:just test::::owner/repo");
+        assert!(repos[0].auto_merge);
+    }
+
+    #[test]
+    fn test_default_mode_sweborg_when_field3_absent() {
+        // Fewer than 4 colon-separated fields → parts.get(3) is None → "sweborg"
+        let repos = parse("/repo/a:cmd_a");
+        assert_eq!(repos[0].mode, "sweborg");
+    }
+
+    #[test]
+    fn test_empty_field3_yields_empty_mode_not_sweborg() {
+        // Field 3 explicitly empty string (4+ colons) → mode is ""
+        let repos = parse("/repo/a:cmd_a::::");
+        assert_eq!(repos[0].mode, "");
+    }
+
+    #[test]
+    fn test_explicit_mode_overrides_default() {
+        let repos = parse("/repo/a:cmd_a:prompt.md:lawborg::owner/a");
+        assert_eq!(repos[0].mode, "lawborg");
+    }
+
+    #[test]
+    fn test_slug_override_bypasses_slug_from_remote() {
+        let repos = parse("/repo/a:::::my-org/my-repo");
+        assert_eq!(repos[0].repo_slug, "my-org/my-repo");
+    }
+
+    #[test]
+    fn test_entry_matching_pipeline_repo_is_skipped() {
+        // pipeline_repo = "/repo/borg"; the watched entry with the same path is skipped
+        let repos = parse_watched_repos(
+            "/repo/borg:cmd::::slug",
+            "/repo/borg",
+            "",
+            "",
+            "sweborg",
+        );
+        assert_eq!(repos.len(), 1, "duplicate path must be skipped");
+        assert!(repos[0].is_self, "only the primary entry should remain");
+    }
+
+    #[test]
+    fn test_primary_repo_added_first_with_is_self_true() {
+        let repos = parse_watched_repos(
+            "/repo/other:cmd::::other/slug",
+            "/repo/main",
+            "just test",
+            "lint.sh",
+            "sweborg",
+        );
+        assert_eq!(repos.len(), 2);
+        assert!(repos[0].is_self);
+        assert_eq!(repos[0].path, "/repo/main");
+        assert_eq!(repos[0].test_cmd, "just test");
+        assert_eq!(repos[0].lint_cmd, "lint.sh");
+        assert!(!repos[1].is_self);
+        assert_eq!(repos[1].path, "/repo/other");
+    }
+
+    #[test]
+    fn test_empty_pipe_entries_are_skipped() {
+        let repos = parse("|/repo/a:cmd::::owner/a||");
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].path, "/repo/a");
+    }
+
+    #[test]
+    fn test_is_self_false_for_watched_repos() {
+        let repos = parse("/repo/a:cmd::::owner/a");
+        assert!(!repos[0].is_self);
+        assert!(repos[0].auto_merge);
+    }
+}
+
 impl Config {
     /// System prompt for chat-facing agents (Telegram, Discord, WhatsApp, web).
     pub fn chat_system_prompt(&self) -> String {
