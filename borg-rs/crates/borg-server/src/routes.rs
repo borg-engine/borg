@@ -33,6 +33,19 @@ pub(crate) fn internal(e: impl std::fmt::Display) -> StatusCode {
     StatusCode::INTERNAL_SERVER_ERROR
 }
 
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'?' | b'&' | b'#' | b' ' | b'%' | b'+' => {
+                out.push_str(&format!("%{b:02X}"));
+            }
+            _ => out.push(b as char),
+        }
+    }
+    out
+}
+
 fn base64_decode(input: &str) -> anyhow::Result<Vec<u8>> {
     let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
     let mut out = Vec::with_capacity(clean.len() * 3 / 4);
@@ -1223,7 +1236,7 @@ async fn git_show_file(repo_path: &str, slug: &str, ref_name: &str, path: &str) 
             tokio::process::Command::new("gh")
                 .args([
                     "api",
-                    &format!("repos/{slug}/contents/{path}?ref={ref_name}"),
+                    &format!("repos/{slug}/contents/{}?ref={}", percent_encode(path), percent_encode(ref_name)),
                     "--jq",
                     ".content",
                 ])
@@ -3655,6 +3668,63 @@ async fn container_id_from_stream(state: &AppState, task_id: i64) -> Option<Stri
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::percent_encode;
+
+    #[test]
+    fn percent_encode_safe_chars_unchanged() {
+        assert_eq!(percent_encode("src/main.rs"), "src/main.rs");
+        assert_eq!(percent_encode("refs/heads/my-branch"), "refs/heads/my-branch");
+        assert_eq!(percent_encode("abc123_.-~"), "abc123_.-~");
+    }
+
+    #[test]
+    fn percent_encode_question_mark() {
+        assert_eq!(percent_encode("file?raw=1"), "file%3Fraw=1");
+    }
+
+    #[test]
+    fn percent_encode_ampersand() {
+        assert_eq!(percent_encode("a&b"), "a%26b");
+    }
+
+    #[test]
+    fn percent_encode_hash() {
+        assert_eq!(percent_encode("file#section"), "file%23section");
+    }
+
+    #[test]
+    fn percent_encode_space() {
+        assert_eq!(percent_encode("my file.txt"), "my%20file.txt");
+    }
+
+    #[test]
+    fn percent_encode_percent() {
+        assert_eq!(percent_encode("50%off"), "50%25off");
+    }
+
+    #[test]
+    fn percent_encode_plus() {
+        assert_eq!(percent_encode("a+b"), "a%2Bb");
+    }
+
+    #[test]
+    fn percent_encode_url_construction() {
+        let path = "file?raw=1";
+        let ref_name = "branch&extra=1";
+        let url = format!("repos/owner/repo/contents/{}?ref={}", percent_encode(path), percent_encode(ref_name));
+        assert_eq!(url, "repos/owner/repo/contents/file%3Fraw=1?ref=branch%26extra=1");
+    }
+
+    #[test]
+    fn percent_encode_ref_with_hash() {
+        let ref_name = "sha#abc";
+        let url = format!("repos/owner/repo/contents/file?ref={}", percent_encode(ref_name));
+        assert_eq!(url, "repos/owner/repo/contents/file?ref=sha%23abc");
+    }
 }
 
 pub(crate) async fn get_task_container(
