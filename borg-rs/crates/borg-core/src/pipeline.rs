@@ -1894,7 +1894,42 @@ and report what went wrong.",
                         .and_then(|o| o.stdout.trim().parse().ok())
                         .unwrap_or(1); // default conservative: treat unknown as stale
 
-                    if behind_by > 0 {
+                    let mb_out = self
+                        .gh(&[
+                            "pr",
+                            "view",
+                            &entry.branch,
+                            "--repo",
+                            slug,
+                            "--json",
+                            "mergeable",
+                            "--jq",
+                            ".mergeable",
+                        ])
+                        .await;
+                    let mb_out = match mb_out {
+                        Ok(o) => o,
+                        Err(e) => { warn!("gh pr view mergeable {}: {e}", entry.branch); continue; }
+                    };
+                    let mb = mb_out.stdout.trim().to_string();
+                    let mut force_merge = false;
+
+                    if mb == "UNKNOWN" {
+                        let retries = self.db.get_unknown_retries(entry.id).unwrap_or(0);
+                        if retries >= 5 {
+                            warn!(
+                                "Task #{} {}: mergeability UNKNOWN after {} retries, forcing merge",
+                                entry.task_id, entry.branch, retries
+                            );
+                            self.db.reset_unknown_retries(entry.id)?;
+                            force_merge = true;
+                        } else {
+                            self.db.increment_unknown_retries(entry.id)?;
+                            continue;
+                        }
+                    }
+
+                    if behind_by > 0 && !force_merge {
                         info!(
                             "Task #{} {}: behind main by {}, sending to rebase",
                             entry.task_id, entry.branch, behind_by
@@ -2797,7 +2832,7 @@ and report what went wrong.",
     // ── Auto-promote + auto-triage ────────────────────────────────────────
 
     pub fn maybe_auto_promote_proposals(&self) {
-        let active = self.db.active_task_count();
+        let active = self.db.active_task_count().unwrap_or(0);
         let max = self.config.pipeline_max_backlog as i64;
         if active >= max {
             return;
@@ -2867,7 +2902,7 @@ and report what went wrong.",
         if now - self.db.get_ts("last_triage_ts") < TRIAGE_INTERVAL_S {
             return;
         }
-        if self.db.count_unscored_proposals() == 0 {
+        if self.db.count_unscored_proposals().unwrap_or(0) == 0 {
             return;
         }
         self.db.set_ts("last_triage_ts", now);
