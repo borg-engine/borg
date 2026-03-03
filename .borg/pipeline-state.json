@@ -1,0 +1,10 @@
+{
+  "task_id": 147,
+  "task_title": "SSE authentication token leaked in HTTP access logs via query parameter",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-147",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-03T03:06:02.052315751Z"
+}
