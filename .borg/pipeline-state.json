@@ -1,0 +1,10 @@
+{
+  "task_id": 133,
+  "task_title": "Test `resolve_backend()` override chain in `pipeline.rs`",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-133",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-03T02:24:16.238317227Z"
+}
