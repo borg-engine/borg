@@ -1683,7 +1683,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 .await?;
 
             if create_out.exit_code != 0 {
-                let err = &create_out.stderr[..create_out.stderr.len().min(300)];
+                let err = truncate_chars(&create_out.stderr, 300);
                 if err.contains("No commits between") {
                     info!(
                         "Task #{} {}: no commits vs main, marking merged",
@@ -1816,7 +1816,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                         self.db.update_queue_status(entry.id, "queued")?;
                     }
                     Ok(out) if out.exit_code != 0 => {
-                        let err = &out.stderr[..out.stderr.len().min(200)];
+                        let err = truncate_chars(&out.stderr, 200);
                         warn!("gh pr merge {}: {}", entry.branch, err);
                         if err.contains("not mergeable")
                             || err.contains("cannot be cleanly created")
@@ -2986,6 +2986,38 @@ fn extract_field(block: &str, field: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn truncate_chars(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_chars_multibyte() {
+        // Each char is 3 bytes; byte-slicing at 4 would panic
+        let s = "こんにちは world";
+        assert_eq!(truncate_chars(s, 4), "こんにち");
+    }
+
+    #[test]
+    fn test_truncate_chars_within_limit() {
+        assert_eq!(truncate_chars("hello", 100), "hello");
+    }
+
+    #[test]
+    fn test_truncate_chars_empty() {
+        assert_eq!(truncate_chars("", 10), "");
+    }
+
+    #[test]
+    fn test_truncate_chars_exact_boundary() {
+        assert_eq!(truncate_chars("abc", 3), "abc");
+        assert_eq!(truncate_chars("abc", 2), "ab");
+    }
 }
 
 fn looks_like_field_key(line: &str) -> bool {
