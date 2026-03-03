@@ -415,7 +415,17 @@ fn get_custom_modes(db: &Db) -> Vec<PipelineMode> {
         Ok(Some(v)) => v,
         _ => return Vec::new(),
     };
-    serde_json::from_str::<Vec<PipelineMode>>(&raw).unwrap_or_default()
+    let modes: Vec<PipelineMode> = serde_json::from_str(&raw).unwrap_or_default();
+    modes
+        .into_iter()
+        .filter(|m| match m.validate_phase_graph() {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!("skipping invalid custom mode '{}': {e}", m.name);
+                false
+            }
+        })
+        .collect()
 }
 
 fn save_custom_modes(db: &Db, modes: &[PipelineMode]) -> Result<(), StatusCode> {
@@ -2919,6 +2929,10 @@ pub(crate) async fn upsert_custom_mode(
         return Err(StatusCode::CONFLICT);
     }
     if mode.phases.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if let Err(e) = mode.validate_phase_graph() {
+        tracing::warn!("upsert_custom_mode rejected invalid mode '{}': {e}", name);
         return Err(StatusCode::BAD_REQUEST);
     }
 
