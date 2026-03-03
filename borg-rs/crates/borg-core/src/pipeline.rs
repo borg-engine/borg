@@ -3005,3 +3005,155 @@ fn looks_like_field_key(line: &str) -> bool {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{config::Config, db::Db};
+    use chrono::Utc;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    fn open_db() -> Arc<Db> {
+        let mut db = Db::open(":memory:").expect("open in-memory db");
+        db.migrate().expect("migrate");
+        Arc::new(db)
+    }
+
+    fn minimal_config() -> Arc<Config> {
+        Arc::new(Config {
+            telegram_token: String::new(),
+            oauth_token: String::new(),
+            assistant_name: String::new(),
+            trigger_pattern: String::new(),
+            data_dir: String::new(),
+            container_image: String::new(),
+            model: String::new(),
+            credentials_path: String::new(),
+            session_max_age_hours: 0,
+            max_consecutive_errors: 0,
+            pipeline_repo: String::new(),
+            pipeline_test_cmd: String::new(),
+            pipeline_lint_cmd: String::new(),
+            backend: String::new(),
+            pipeline_admin_chat: String::new(),
+            release_interval_mins: 0,
+            continuous_mode: false,
+            chat_collection_window_ms: 0,
+            chat_cooldown_ms: 0,
+            agent_timeout_s: 0,
+            max_chat_agents: 0,
+            chat_rate_limit: 0,
+            pipeline_max_agents: 0,
+            web_bind: String::new(),
+            web_port: 0,
+            dashboard_dist_dir: String::new(),
+            container_setup: String::new(),
+            container_memory_mb: 0,
+            container_cpus: 0.0,
+            sandbox_backend: String::new(),
+            pipeline_max_backlog: 0,
+            pipeline_seed_cooldown_s: 0,
+            proposal_promote_threshold: 0,
+            pipeline_tick_s: 0,
+            remote_check_interval_s: 0,
+            mirror_refresh_interval_s: 0,
+            pipeline_agent_cooldown_s: 0,
+            git_author_name: String::new(),
+            git_author_email: String::new(),
+            git_committer_name: String::new(),
+            git_committer_email: String::new(),
+            git_via_borg: false,
+            git_claude_coauthor: false,
+            git_user_coauthor: String::new(),
+            watched_repos: Vec::new(),
+            build_cmd: String::new(),
+            self_update_enabled: false,
+            codex_api_key: String::new(),
+            codex_credentials_path: String::new(),
+            discord_token: String::new(),
+            wa_auth_dir: String::new(),
+            wa_disabled: false,
+            observer_config: String::new(),
+        })
+    }
+
+    fn make_pipeline(db: Arc<Db>) -> Pipeline {
+        let (pipeline, _rx) = Pipeline::new(
+            db,
+            HashMap::new(),
+            minimal_config(),
+            SandboxMode::Direct,
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            false,
+        );
+        pipeline
+    }
+
+    fn insert_task(db: &Db, attempt: i64, max_attempts: i64, session_id: &str) -> Task {
+        let task = Task {
+            id: 0,
+            title: "test task".into(),
+            description: "desc".into(),
+            repo_path: "/repo".into(),
+            branch: "task-1".into(),
+            status: "impl".into(),
+            attempt,
+            max_attempts,
+            last_error: String::new(),
+            created_by: "test".into(),
+            notify_chat: String::new(),
+            created_at: Utc::now(),
+            session_id: session_id.into(),
+            mode: "sweborg".into(),
+            backend: String::new(),
+            project_id: 0,
+        };
+        let id = db.insert_task(&task).expect("insert_task");
+        db.get_task(id).unwrap().unwrap()
+    }
+
+    // First failure (attempt 0 → 1): attempt < 3 so session is preserved.
+    #[test]
+    fn test_fail_or_retry_first_attempt_keeps_session() {
+        let db = open_db();
+        let task = insert_task(&db, 0, 5, "sess-abc");
+        let pipeline = make_pipeline(Arc::clone(&db));
+
+        pipeline.fail_or_retry(&task, "retry", "first error").unwrap();
+
+        let updated = db.get_task(task.id).unwrap().unwrap();
+        assert_eq!(updated.attempt, 1);
+        assert_eq!(updated.status, "retry");
+        assert_eq!(updated.session_id, "sess-abc", "session must not be cleared before attempt 3");
+    }
+
+    // Third failure (attempt 2 → 3): attempt >= 3 triggers session clear.
+    #[test]
+    fn test_fail_or_retry_third_attempt_clears_session() {
+        let db = open_db();
+        let task = insert_task(&db, 2, 5, "sess-abc");
+        let pipeline = make_pipeline(Arc::clone(&db));
+
+        pipeline.fail_or_retry(&task, "retry", "third error").unwrap();
+
+        let updated = db.get_task(task.id).unwrap().unwrap();
+        assert_eq!(updated.attempt, 3);
+        assert_eq!(updated.status, "retry");
+        assert!(updated.session_id.is_empty(), "session must be cleared at attempt 3");
+    }
+
+    // Final failure (attempt max-1 → max): status becomes "failed", not re-enqueued.
+    #[test]
+    fn test_fail_or_retry_exhausted_sets_failed_status() {
+        let db = open_db();
+        let task = insert_task(&db, 4, 5, "sess-abc");
+        let pipeline = make_pipeline(Arc::clone(&db));
+
+        pipeline.fail_or_retry(&task, "retry", "final error").unwrap();
+
+        let updated = db.get_task(task.id).unwrap().unwrap();
+        assert_eq!(updated.attempt, 5);
+        assert_eq!(updated.status, "failed", "exhausted attempts must set status to failed");
+    }
+}
