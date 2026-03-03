@@ -237,24 +237,35 @@ fn do_quarantine(
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
-    let mut dest = format!("{quarantine_dir}/{basename}.{ts}");
-    let mut counter = 0u32;
-    while std::path::Path::new(&dest).exists() || std::fs::symlink_metadata(&dest).is_ok() {
-        if counter >= MAX_QUARANTINE_COUNTER {
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.subsec_nanos())
-                .unwrap_or(0);
-            let pid = std::process::id();
-            dest = format!("{quarantine_dir}/{basename}.{ts}.{pid}.{nanos}");
-            break;
+    // Atomically claim a unique destination via O_CREAT|O_EXCL, looping on
+    // AlreadyExists to avoid the check-then-act TOCTOU window.
+    let dest = 'claim: {
+        let mut counter = 0u32;
+        loop {
+            let candidate = if counter == 0 {
+                format!("{quarantine_dir}/{basename}.{ts}")
+            } else {
+                format!("{quarantine_dir}/{basename}.{ts}.{counter}")
+            };
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&candidate) {
+                Ok(_sentinel) => break 'claim candidate, // sentinel dropped here, file still exists
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    counter += 1;
+                    continue;
+                },
+                Err(e) => {
+                    warn!("ipc: claim quarantine dest {candidate:?}: {e} — attempting remove");
+                    let _ = std::fs::remove_file(full_path);
+                    return IpcReadResult::Quarantined(reason.to_string());
+                },
+            }
         }
-        counter += 1;
-        dest = format!("{quarantine_dir}/{basename}.{ts}.{counter}");
-    }
+    };
 
+    // dest now exists as an empty sentinel; rename atomically replaces it.
     if let Err(e) = std::fs::rename(full_path, &dest) {
         warn!("ipc: rename {full_path:?} → {dest:?}: {e} — attempting remove");
+        let _ = std::fs::remove_file(&dest); // clean up unclaimed sentinel
         if let Err(re) = std::fs::remove_file(full_path) {
             warn!("ipc: remove {full_path:?}: {re}");
         }
