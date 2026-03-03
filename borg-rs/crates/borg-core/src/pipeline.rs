@@ -1841,11 +1841,11 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 }
             }
 
-            // Check rebase status via GitHub compare API
+            // Check if branch is behind main (needs rebase)
             let behind = self
                 .gh(&[
                     "api",
-                    &format!("repos/{slug}/compare/{}...main", entry.branch),
+                    &format!("repos/{slug}/compare/main...{}", entry.branch),
                     "--jq",
                     ".behind_by",
                 ])
