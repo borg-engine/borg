@@ -42,10 +42,14 @@ pub fn extract_phase_result(text: &str) -> Option<&str> {
     last_content
 }
 
-fn derive_compile_check(test_cmd: &str) -> Option<String> {
+pub fn derive_compile_check(test_cmd: &str) -> Option<String> {
     let trimmed = test_cmd.trim();
-    if trimmed.contains("cargo test") {
+    if trimmed.is_empty() {
+        None
+    } else if trimmed.contains("cargo test") {
         Some(format!("{trimmed} --no-run"))
+    } else if trimmed.contains("bun test") || trimmed.contains("bun run test") {
+        Some("tsc --noEmit".to_string())
     } else {
         None
     }
