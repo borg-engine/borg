@@ -1,10 +1,10 @@
 {
-  "task_id": 170,
-  "task_title": "Fix failing tests on main",
+  "task_id": 173,
+  "task_title": "Test resolve_tilde and parse_dotenv config helpers",
   "phase": "implement",
-  "worktree_path": "/home/shulgin/borg/.worktrees/task-170",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-173",
   "pr_url": null,
   "pending_approvals": [],
   "phase_history": [],
-  "generated_at": "2026-03-03T04:16:18.459563364Z"
+  "generated_at": "2026-03-03T04:30:39.667924876Z"
 }
