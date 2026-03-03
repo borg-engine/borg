@@ -1,0 +1,10 @@
+{
+  "task_id": 131,
+  "task_title": "Test `build_instruction()` repo-prompt resolution priority in `instruction.rs`",
+  "phase": "implement",
+  "worktree_path": "/home/shulgin/borg/.worktrees/task-131",
+  "pr_url": null,
+  "pending_approvals": [],
+  "phase_history": [],
+  "generated_at": "2026-03-03T02:15:34.170048414Z"
+}
