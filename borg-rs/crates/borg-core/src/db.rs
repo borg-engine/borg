@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
@@ -214,6 +214,21 @@ pub struct CloudConnection {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ThemeTerm {
+    pub term: String,
+    pub occurrences: i64,
+    pub document_count: i64,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ThemeSummary {
+    pub documents_scanned: i64,
+    pub tokens_scanned: i64,
+    pub keywords: Vec<ThemeTerm>,
+    pub phrases: Vec<ThemeTerm>,
+}
+
 // ── Timestamp helpers ─────────────────────────────────────────────────────
 
 fn parse_ts(s: &str) -> DateTime<Utc> {
@@ -255,6 +270,54 @@ fn normalize_party_name(name: &str) -> String {
         .filter(|t| !matches!(*t, "inc" | "llc" | "ltd" | "corp" | "co" | "plc" | "the" | "of" | "and"))
         .collect();
     tokens.join(" ")
+}
+
+fn is_stopword(token: &str) -> bool {
+    matches!(
+        token,
+        "a" | "an" | "and" | "are" | "as" | "at" | "be" | "been" | "being" | "but" | "by"
+            | "can" | "could" | "did" | "do" | "does" | "for" | "from" | "had" | "has"
+            | "have" | "if" | "in" | "into" | "is" | "it" | "its" | "may" | "might" | "must"
+            | "not" | "of" | "on" | "or" | "our" | "shall" | "should" | "that" | "the"
+            | "their" | "there" | "these" | "they" | "this" | "those" | "to" | "under"
+            | "upon" | "was" | "were" | "will" | "with" | "would" | "you" | "your"
+    )
+}
+
+fn tokenize_for_themes(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() {
+            current.push(ch.to_ascii_lowercase());
+            if current.len() >= 40 {
+                out.push(current.clone());
+                current.clear();
+            }
+        } else if !current.is_empty() {
+            if current.len() >= 3 && !is_stopword(&current) {
+                out.push(current.clone());
+            }
+            current.clear();
+        }
+    }
+    if !current.is_empty() && current.len() >= 3 && !is_stopword(&current) {
+        out.push(current);
+    }
+    out
+}
+
+fn push_theme_term(
+    out: &mut Vec<ThemeTerm>,
+    term: String,
+    occurrences: i64,
+    document_count: i64,
+) {
+    out.push(ThemeTerm {
+        term,
+        occurrences,
+        document_count,
+    });
 }
 
 fn row_to_cloud_connection(row: &rusqlite::Row<'_>) -> rusqlite::Result<CloudConnection> {
@@ -1380,6 +1443,123 @@ impl Db {
             )
             .context("total_project_file_bytes")?;
         Ok(total)
+    }
+
+    pub fn summarize_themes(
+        &self,
+        project_id: Option<i64>,
+        limit: i64,
+        min_document_count: i64,
+    ) -> Result<ThemeSummary> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut keyword_counts: HashMap<String, i64> = HashMap::new();
+        let mut keyword_docs: HashMap<String, i64> = HashMap::new();
+        let mut phrase_counts: HashMap<String, i64> = HashMap::new();
+        let mut phrase_docs: HashMap<String, i64> = HashMap::new();
+        let mut documents_scanned = 0i64;
+        let mut tokens_scanned = 0i64;
+
+        let sql = if project_id.is_some() {
+            "SELECT extracted_text FROM project_files WHERE project_id = ?1 AND extracted_text != ''"
+        } else {
+            "SELECT extracted_text FROM project_files WHERE extracted_text != ''"
+        };
+        let mut stmt = conn.prepare(sql).context("summarize_themes prepare")?;
+        if let Some(pid) = project_id {
+            let rows = stmt.query_map(params![pid], |r| r.get::<_, String>(0))?;
+            for row in rows {
+                let text = row?;
+                documents_scanned += 1;
+                let tokens = tokenize_for_themes(&text);
+                tokens_scanned += tokens.len() as i64;
+                if tokens.is_empty() {
+                    continue;
+                }
+                let mut seen_keywords: HashSet<String> = HashSet::new();
+                let mut seen_phrases: HashSet<String> = HashSet::new();
+                for token in &tokens {
+                    *keyword_counts.entry(token.clone()).or_insert(0) += 1;
+                    seen_keywords.insert(token.clone());
+                }
+                for term in seen_keywords {
+                    *keyword_docs.entry(term).or_insert(0) += 1;
+                }
+                for pair in tokens.windows(2) {
+                    let phrase = format!("{} {}", pair[0], pair[1]);
+                    *phrase_counts.entry(phrase.clone()).or_insert(0) += 1;
+                    seen_phrases.insert(phrase);
+                }
+                for phrase in seen_phrases {
+                    *phrase_docs.entry(phrase).or_insert(0) += 1;
+                }
+            }
+        } else {
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            for row in rows {
+                let text = row?;
+                documents_scanned += 1;
+                let tokens = tokenize_for_themes(&text);
+                tokens_scanned += tokens.len() as i64;
+                if tokens.is_empty() {
+                    continue;
+                }
+                let mut seen_keywords: HashSet<String> = HashSet::new();
+                let mut seen_phrases: HashSet<String> = HashSet::new();
+                for token in &tokens {
+                    *keyword_counts.entry(token.clone()).or_insert(0) += 1;
+                    seen_keywords.insert(token.clone());
+                }
+                for term in seen_keywords {
+                    *keyword_docs.entry(term).or_insert(0) += 1;
+                }
+                for pair in tokens.windows(2) {
+                    let phrase = format!("{} {}", pair[0], pair[1]);
+                    *phrase_counts.entry(phrase.clone()).or_insert(0) += 1;
+                    seen_phrases.insert(phrase);
+                }
+                for phrase in seen_phrases {
+                    *phrase_docs.entry(phrase).or_insert(0) += 1;
+                }
+            }
+        }
+
+        let min_doc = min_document_count.max(1);
+        let mut keywords = Vec::new();
+        for (term, occurrences) in keyword_counts {
+            let doc_count = keyword_docs.get(&term).copied().unwrap_or(0);
+            if doc_count >= min_doc {
+                push_theme_term(&mut keywords, term, occurrences, doc_count);
+            }
+        }
+        keywords.sort_by(|a, b| {
+            b.document_count
+                .cmp(&a.document_count)
+                .then_with(|| b.occurrences.cmp(&a.occurrences))
+                .then_with(|| a.term.cmp(&b.term))
+        });
+        keywords.truncate(limit.max(1) as usize);
+
+        let mut phrases = Vec::new();
+        for (term, occurrences) in phrase_counts {
+            let doc_count = phrase_docs.get(&term).copied().unwrap_or(0);
+            if doc_count >= min_doc {
+                push_theme_term(&mut phrases, term, occurrences, doc_count);
+            }
+        }
+        phrases.sort_by(|a, b| {
+            b.document_count
+                .cmp(&a.document_count)
+                .then_with(|| b.occurrences.cmp(&a.occurrences))
+                .then_with(|| a.term.cmp(&b.term))
+        });
+        phrases.truncate(limit.max(1) as usize);
+
+        Ok(ThemeSummary {
+            documents_scanned,
+            tokens_scanned,
+            keywords,
+            phrases,
+        })
     }
 
     // ── Cloud connections ─────────────────────────────────────────────────

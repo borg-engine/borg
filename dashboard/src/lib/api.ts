@@ -798,6 +798,19 @@ export interface FtsSearchResult {
   source?: "keyword" | "semantic";
 }
 
+export interface ThemeTerm {
+  term: string;
+  occurrences: number;
+  document_count: number;
+}
+
+export interface ThemeSummary {
+  documents_scanned: number;
+  tokens_scanned: number;
+  keywords: ThemeTerm[];
+  phrases: ThemeTerm[];
+}
+
 // ── Audit ─────────────────────────────────────────────────────────────
 
 export interface AuditEvent {
@@ -824,6 +837,27 @@ export async function searchDocuments(query: string, projectId?: number, semanti
   if (projectId) params.set("project_id", String(projectId));
   if (semantic) params.set("semantic", "true");
   return fetchJson(`/api/search?${params}`);
+}
+
+export async function summarizeProjectThemes(
+  projectId: number,
+  opts: { limit?: number; minDocs?: number } = {},
+): Promise<ThemeSummary> {
+  const params = new URLSearchParams();
+  if (opts.limit) params.set("limit", String(opts.limit));
+  if (opts.minDocs) params.set("min_docs", String(opts.minDocs));
+  const qs = params.toString();
+  return fetchJson(`/api/projects/${projectId}/themes${qs ? `?${qs}` : ""}`);
+}
+
+export async function summarizeWorkspaceThemes(
+  opts: { limit?: number; minDocs?: number } = {},
+): Promise<ThemeSummary> {
+  const params = new URLSearchParams();
+  if (opts.limit) params.set("limit", String(opts.limit));
+  if (opts.minDocs) params.set("min_docs", String(opts.minDocs));
+  const qs = params.toString();
+  return fetchJson(`/api/themes${qs ? `?${qs}` : ""}`);
 }
 
 export function useProjectTasks(projectId: number | null) {

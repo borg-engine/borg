@@ -1173,6 +1173,16 @@ pub(crate) struct FtsSearchQuery {
 }
 fn default_search_limit() -> i64 { 50 }
 
+#[derive(Deserialize)]
+pub(crate) struct ThemeQuery {
+    #[serde(default = "default_theme_limit")]
+    limit: i64,
+    #[serde(default = "default_theme_min_docs")]
+    min_docs: i64,
+}
+fn default_theme_limit() -> i64 { 30 }
+fn default_theme_min_docs() -> i64 { 2 }
+
 // ── Audit ────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -1276,6 +1286,32 @@ pub(crate) async fn search_documents(
     }
 
     Ok(Json(json!(items)))
+}
+
+pub(crate) async fn summarize_project_themes(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Query(q): Query<ThemeQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.db.get_project(id).map_err(internal)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let summary = state
+        .db
+        .summarize_themes(Some(id), q.limit.clamp(5, 200), q.min_docs.clamp(1, 1000))
+        .map_err(internal)?;
+    Ok(Json(json!(summary)))
+}
+
+pub(crate) async fn summarize_workspace_themes(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<ThemeQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    let summary = state
+        .db
+        .summarize_themes(None, q.limit.clamp(5, 200), q.min_docs.clamp(1, 1000))
+        .map_err(internal)?;
+    Ok(Json(json!(summary)))
 }
 
 /// Read a file from git: tries local `git show ref:path` first, falls back to `gh api`.
