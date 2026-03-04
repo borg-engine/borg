@@ -307,6 +307,24 @@ impl Pipeline {
         });
         if current.attempt >= current.max_attempts {
             self.db.update_task_status(task.id, "failed", Some(error))?;
+            let project_id = if task.project_id > 0 {
+                Some(task.project_id)
+            } else {
+                None
+            };
+            let _ = self.db.log_event_full(
+                Some(task.id),
+                None,
+                project_id,
+                "pipeline",
+                "task.failed_max_attempts",
+                &serde_json::json!({
+                    "phase": retry_status,
+                    "attempt": current.attempt,
+                    "max_attempts": current.max_attempts,
+                    "error": error,
+                }),
+            );
         } else {
             // After 3 attempts, force a fresh session with a summary of what was tried
             let error_ctx = if current.attempt >= 3 {
@@ -315,12 +333,46 @@ impl Pipeline {
                     "task #{} attempt {} — clearing session for fresh start",
                     task.id, current.attempt
                 );
+                let project_id = if task.project_id > 0 {
+                    Some(task.project_id)
+                } else {
+                    None
+                };
+                let _ = self.db.log_event_full(
+                    Some(task.id),
+                    None,
+                    project_id,
+                    "pipeline",
+                    "task.session_reset_for_retry",
+                    &serde_json::json!({
+                        "phase": retry_status,
+                        "attempt": current.attempt,
+                    }),
+                );
                 self.build_retry_summary(task.id, error)
             } else {
                 error.to_string()
             };
             self.db
                 .update_task_status(task.id, retry_status, Some(&error_ctx))?;
+            let project_id = if task.project_id > 0 {
+                Some(task.project_id)
+            } else {
+                None
+            };
+            let _ = self.db.log_event_full(
+                Some(task.id),
+                None,
+                project_id,
+                "pipeline",
+                "task.retry_scheduled",
+                &serde_json::json!({
+                    "phase": retry_status,
+                    "attempt": current.attempt,
+                    "max_attempts": current.max_attempts,
+                    "error": error,
+                }),
+            );
         }
         Ok(())
     }
@@ -592,6 +644,22 @@ impl Pipeline {
                 info!(
                     "task #{} status changed from '{}' to '{}' before dispatch; skipping stale snapshot",
                     task.id, task.status, latest.status
+                );
+                let project_id = if latest.project_id > 0 {
+                    Some(latest.project_id)
+                } else {
+                    None
+                };
+                let _ = self.db.log_event_full(
+                    Some(task.id),
+                    None,
+                    project_id,
+                    "pipeline",
+                    "task.dispatch_stale_snapshot_skipped",
+                    &serde_json::json!({
+                        "snapshot_status": task.status,
+                        "latest_status": latest.status,
+                    }),
                 );
                 return Ok(());
             }
