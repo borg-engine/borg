@@ -40,10 +40,14 @@ pub fn extract_phase_result(text: &str) -> Option<&str> {
 
 pub fn derive_compile_check(test_cmd: &str) -> Option<String> {
     let trimmed = test_cmd.trim();
-    if trimmed.contains("cargo test") {
-        Some(format!("{trimmed} --no-run"))
+    if !trimmed.starts_with("cargo test") {
+        return None;
+    }
+    let already_has_no_run = trimmed.split_whitespace().any(|arg| arg == "--no-run");
+    if already_has_no_run {
+        Some(trimmed.to_string())
     } else {
-        None
+        Some(format!("{trimmed} --no-run"))
     }
 }
 

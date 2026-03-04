@@ -48,7 +48,7 @@ fn make_ctx() -> PhaseContext {
         },
         data_dir: String::new(),
         session_dir: String::new(),
-        worktree_path: "/nonexistent".to_string(),
+        work_dir: "/nonexistent".to_string(),
         oauth_token: String::new(),
         model: String::new(),
         pending_messages: vec![],
@@ -63,6 +63,7 @@ fn make_ctx() -> PhaseContext {
         agent_network: None,
         prior_research: vec![],
         revision_count: 0,
+        experimental_domains: false,
     }
 }
 
