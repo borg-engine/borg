@@ -6,7 +6,9 @@ import {
   fetchProjectFileText,
   getProjectChatMessages,
   importProjectCloudFiles,
+  listProjectUploadSessions,
   reextractProjectFile,
+  retryProjectUploadSession,
   sendProjectChat,
   uploadProjectFiles,
   useProjectCloudConnections,
@@ -17,6 +19,7 @@ import {
   searchDocuments,
 } from "@/lib/api";
 import type { CloudBrowseItem, CloudConnection, FtsSearchResult } from "@/lib/api";
+import type { UploadSession } from "@/lib/api";
 import { Eye, FileText, Mic, MicOff, ArrowLeft, Search, RotateCw, Folder } from "lucide-react";
 import { FilePreviewModal, isPreviewable } from "./file-preview-modal";
 import type { ProjectFile, ProjectDocument } from "@/lib/types";
@@ -217,6 +220,9 @@ export function ProjectsPanel() {
   const [cloudSelected, setCloudSelected] = useState<Record<string, CloudBrowseItem>>({});
   const [cloudImporting, setCloudImporting] = useState(false);
   const [cloudBreadcrumbs, setCloudBreadcrumbs] = useState<Array<{ id?: string; name: string }>>([{ name: "Root" }]);
+  const [uploadSessions, setUploadSessions] = useState<UploadSession[]>([]);
+  const [uploadSessionCounts, setUploadSessionCounts] = useState<Record<string, number>>({});
+  const [uploadSessionsLoading, setUploadSessionsLoading] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageInput, setMessageInput] = useState("");
@@ -263,6 +269,32 @@ export function ProjectsPanel() {
     getProjectChatMessages(activeProjectId)
       .then(setMessages)
       .catch(() => setMessages([]));
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    if (!activeProjectId) {
+      setUploadSessions([]);
+      setUploadSessionCounts({});
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      setUploadSessionsLoading(true);
+      try {
+        const data = await listProjectUploadSessions(activeProjectId, 30);
+        if (cancelled) return;
+        setUploadSessions(data.sessions || []);
+        setUploadSessionCounts(data.counts || {});
+      } finally {
+        if (!cancelled) setUploadSessionsLoading(false);
+      }
+    };
+    load();
+    const t = setInterval(load, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
   }, [activeProjectId]);
 
   const projectThread = activeProjectId ? `project:${activeProjectId}` : null;
@@ -382,6 +414,18 @@ export function ProjectsPanel() {
       setSending(false);
     } finally {
       clearTimeout(timeout);
+    }
+  }
+
+  async function retryUploadSession(sessionId: number) {
+    if (!activeProjectId) return;
+    try {
+      await retryProjectUploadSession(activeProjectId, sessionId);
+      const data = await listProjectUploadSessions(activeProjectId, 30);
+      setUploadSessions(data.sessions || []);
+      setUploadSessionCounts(data.counts || {});
+    } catch {
+      // no-op
     }
   }
 
@@ -692,6 +736,33 @@ export function ProjectsPanel() {
                 {files.length === 0 && (
                   <div className="px-2 py-2 text-[11px] text-zinc-600">No files uploaded yet.</div>
                 )}
+              </div>
+              <div className="mt-3 rounded border border-white/[0.06] bg-black/20 p-2">
+                <div className="mb-2 text-[11px] font-medium text-zinc-400">Upload Sessions</div>
+                <div className="mb-2 text-[11px] text-zinc-500">
+                  uploading: {uploadSessionCounts.uploading ?? 0} · processing: {uploadSessionCounts.processing ?? 0} · failed: {uploadSessionCounts.failed ?? 0} · done: {uploadSessionCounts.done ?? 0}
+                </div>
+                <div className="max-h-28 space-y-1 overflow-y-auto">
+                  {uploadSessions.slice(0, 8).map((s) => (
+                    <div key={s.id} className="flex items-center justify-between rounded border border-white/[0.06] px-2 py-1 text-[11px]">
+                      <span className="truncate pr-2 text-zinc-400">#{s.id} {s.file_name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-500">{s.status}</span>
+                        {s.status === "failed" && (
+                          <button
+                            onClick={() => retryUploadSession(s.id)}
+                            className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-300 hover:bg-amber-500/10"
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {!uploadSessionsLoading && uploadSessions.length === 0 && (
+                    <div className="text-[11px] text-zinc-600">No active upload sessions.</div>
+                  )}
+                </div>
               </div>
               <div className="mt-3 rounded border border-white/[0.06] bg-black/20 p-2">
                 <div className="mb-2 text-[11px] font-medium text-zinc-400">Cloud Storage</div>
