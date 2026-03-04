@@ -633,6 +633,113 @@ export async function uploadProjectFiles(
   return res.json();
 }
 
+export interface UploadSession {
+  id: number;
+  project_id: number;
+  file_name: string;
+  mime_type: string;
+  file_size: number;
+  chunk_size: number;
+  total_chunks: number;
+  uploaded_bytes: number;
+  is_zip: boolean;
+  status: "uploading" | "processing" | "done" | "failed";
+  stored_path: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UploadSessionStatus {
+  session: UploadSession;
+  uploaded_chunks: number;
+  total_chunks: number;
+  missing_chunks: number;
+  next_missing_chunk: number | null;
+  missing_ranges: Array<[number, number]>;
+}
+
+export async function createProjectUploadSession(
+  projectId: number,
+  input: {
+    file_name: string;
+    mime_type?: string;
+    file_size: number;
+    chunk_size: number;
+    total_chunks: number;
+    is_zip?: boolean;
+  },
+): Promise<{ session_id: number; project_id: number; status: string; file_name: string; total_chunks: number; chunk_size: number }> {
+  const res = await apiFetch(`/api/projects/${projectId}/uploads/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function uploadProjectUploadChunk(
+  projectId: number,
+  sessionId: number,
+  chunkIndex: number,
+  chunk: Blob,
+): Promise<{ session_id: number; uploaded_bytes: number; file_size: number; status: string }> {
+  await tokenReady;
+  const res = await fetch(
+    `${apiBase()}/api/projects/${projectId}/uploads/sessions/${sessionId}/chunks/${chunkIndex}`,
+    {
+      method: "PUT",
+      headers: authHeaders(),
+      body: chunk,
+    },
+  );
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function getProjectUploadSessionStatus(
+  projectId: number,
+  sessionId: number,
+): Promise<UploadSessionStatus> {
+  return fetchJson(`/api/projects/${projectId}/uploads/sessions/${sessionId}`);
+}
+
+export async function completeProjectUploadSession(
+  projectId: number,
+  sessionId: number,
+): Promise<{ session_id: number; status: string }> {
+  const res = await apiFetch(`/api/projects/${projectId}/uploads/sessions/${sessionId}/complete`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function retryProjectUploadSession(
+  projectId: number,
+  sessionId: number,
+): Promise<{ session_id: number; status: string }> {
+  const res = await apiFetch(`/api/projects/${projectId}/uploads/sessions/${sessionId}/retry`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function listProjectUploadSessions(
+  projectId: number,
+  limit = 100,
+): Promise<{ sessions: UploadSession[]; counts: Record<string, number> }> {
+  return fetchJson(`/api/projects/${projectId}/uploads/sessions?limit=${limit}`);
+}
+
+export async function getUploadOverview(
+  limit = 100,
+): Promise<{ sessions: UploadSession[]; counts: Record<string, number> }> {
+  return fetchJson(`/api/uploads/overview?limit=${limit}`);
+}
+
 export interface CloudConnection {
   id: number;
   provider: "dropbox" | "google_drive" | "onedrive" | string;
