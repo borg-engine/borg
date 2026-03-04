@@ -28,8 +28,6 @@ use crate::{ingestion::IngestionQueue, storage::FileStorage, AppState};
 
 pub(crate) mod tasks;
 pub(crate) use tasks::*;
-pub(crate) mod plan;
-pub(crate) use plan::*;
 
 // ── Error helper ──────────────────────────────────────────────────────────
 

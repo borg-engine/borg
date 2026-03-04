@@ -835,12 +835,6 @@ async fn main() -> anyhow::Result<()> {
         // Settings
         .route("/api/settings", get(routes::get_settings))
         .route("/api/settings", put(routes::put_settings))
-        // Plan todos
-        .route("/api/plan/todos", get(routes::list_plan_todos))
-        .route("/api/plan/todos", post(routes::create_plan_todo))
-        .route("/api/plan/todos/bulk_upsert", post(routes::bulk_upsert_plan_todos))
-        .route("/api/plan/todos/:id", put(routes::patch_plan_todo))
-        .route("/api/plan/todos/:id", delete(routes::delete_plan_todo))
         // Focus
         .route("/api/focus", get(routes::get_focus))
         .route("/api/focus", post(routes::post_focus))
