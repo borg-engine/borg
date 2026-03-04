@@ -48,9 +48,60 @@ export function authHeaders(): Record<string, string> {
   return authToken ? { Authorization: `Bearer ${authToken}` } : {};
 }
 
-export function sseUrl(path: string): string {
-  const url = `${apiBase()}${path}`;
-  return authToken ? `${url}${url.includes("?") ? "&" : "?"}token=${authToken}` : url;
+// AuthEventSource replaces native EventSource with a fetch-based connection
+// that sends the token in Authorization header instead of a query parameter.
+export class AuthEventSource {
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onmessage: ((e: { data: string }) => void) | null = null;
+
+  private controller = new AbortController();
+
+  constructor(path: string) {
+    this._connect(path);
+  }
+
+  private async _connect(path: string) {
+    if (this.controller.signal.aborted) return;
+    try {
+      const res = await fetch(`${apiBase()}${path}`, {
+        headers: authHeaders(),
+        signal: this.controller.signal,
+      });
+      if (!res.ok || !res.body) {
+        this.onerror?.();
+        return;
+      }
+      this.onopen?.();
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let data = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.startsWith("data:")) {
+            data = line.slice(5).trimStart();
+          } else if (line === "" && data) {
+            this.onmessage?.({ data });
+            data = "";
+          }
+          // ignore comment lines (e.g. ": ping" keep-alives)
+        }
+      }
+      if (!this.controller.signal.aborted) this.onerror?.();
+    } catch {
+      if (!this.controller.signal.aborted) this.onerror?.();
+    }
+  }
+
+  close() {
+    this.controller.abort();
+  }
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -462,7 +513,7 @@ export async function createTask(
 export function useLogs() {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [connected, setConnected] = useState(false);
-  const esRef = useRef<EventSource | null>(null);
+  const esRef = useRef<AuthEventSource | null>(null);
   const invalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retriesRef = useRef(0);
@@ -470,9 +521,8 @@ export function useLogs() {
 
   const connect = useCallback(() => {
     if (esRef.current) esRef.current.close();
-    // Wait for auth token before opening SSE (EventSource can't set headers)
     tokenReady.then(() => {
-      const es = new EventSource(sseUrl("/api/logs"));
+      const es = new AuthEventSource("/api/logs");
       esRef.current = es;
 
       es.onopen = () => {
@@ -1095,7 +1145,7 @@ export function useTaskStream(taskId: number | null, active: boolean) {
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
-  const esRef = useRef<EventSource | null>(null);
+  const esRef = useRef<AuthEventSource | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear events immediately when switching tasks
@@ -1117,7 +1167,7 @@ export function useTaskStream(taskId: number | null, active: boolean) {
 
     tokenReady.then(() => {
       if (cancelled) return;
-      const es = new EventSource(sseUrl(`/api/tasks/${taskId}/stream`));
+      const es = new AuthEventSource(`/api/tasks/${taskId}/stream`);
       esRef.current = es;
       setStreaming(true);
 

@@ -17,6 +17,8 @@ import {
   useProjectFiles,
   useProjects,
   searchDocuments,
+  AuthEventSource,
+  tokenReady,
 } from "@/lib/api";
 import type { CloudBrowseItem, CloudConnection, FtsSearchResult } from "@/lib/api";
 import type { UploadSession } from "@/lib/api";
@@ -228,6 +230,7 @@ export function ProjectsPanel() {
   const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
   const dictation = useDictation(messageInput, setMessageInput);
+  const esRef = useRef<AuthEventSource | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const totalBytes = useMemo(
@@ -272,10 +275,40 @@ export function ProjectsPanel() {
   }, [activeProjectId]);
 
   useEffect(() => {
-    if (!activeProjectId) {
-      setUploadSessions([]);
-      setUploadSessionCounts({});
-      return;
+    if (!activeProjectId) return;
+    const threadKey = `project:${activeProjectId}`;
+    sseRetriesRef.current = 0;
+
+    function connectSSE() {
+      if (esRef.current) esRef.current.close();
+      tokenReady.then(() => {
+        const es = new AuthEventSource("/api/chat/events");
+        esRef.current = es;
+
+        es.onopen = () => { sseRetriesRef.current = 0; };
+
+        es.onmessage = (e) => {
+          try {
+            const msg: ChatMessage = JSON.parse(e.data);
+            if ((msg.thread ?? "") !== threadKey) return;
+            setMessages((prev) => [...prev, msg]);
+            if (msg.role === "assistant") setSending(false);
+          } catch {
+            // ignore malformed event
+          }
+        };
+
+        es.onerror = () => {
+          es.close();
+          esRef.current = null;
+          setSending(false);
+          if (sseRetriesRef.current < 5) {
+            const delay = Math.min(1000 * Math.pow(2, sseRetriesRef.current), 30000);
+            sseRetriesRef.current++;
+            sseRetryTimerRef.current = setTimeout(connectSSE, delay);
+          }
+        };
+      });
     }
     let cancelled = false;
     const load = async () => {
