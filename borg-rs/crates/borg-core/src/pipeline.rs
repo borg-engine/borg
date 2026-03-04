@@ -1017,9 +1017,35 @@ impl Pipeline {
                 },
                 Ok(o) => {
                     let err = o.stderr.trim().chars().take(300).collect::<String>();
+                    let err_lc = err.to_ascii_lowercase();
+                    if err_lc.contains("expected head sha")
+                        || err_lc.contains("head ref")
+                    {
+                        // GitHub branch-tip race; retry on next tick instead of spawning an agent.
+                        info!("task #{} rebase: head SHA race, will retry update-branch on next tick", task.id);
+                        return Ok(());
+                    }
+                    if err_lc.contains("could not resolve host")
+                        || err_lc.contains("temporary failure in name resolution")
+                        || err_lc.contains("network is unreachable")
+                    {
+                        warn!("task #{} rebase: GitHub DNS/network unavailable; skipping agent spawn", task.id);
+                        self.fail_or_retry(task, "rebase", &err)?;
+                        return Ok(());
+                    }
                     warn!("task #{} rebase: update-branch failed, spawning agent: {err}", task.id);
                 },
                 Err(e) => {
+                    let es = e.to_string();
+                    let err_lc = es.to_ascii_lowercase();
+                    if err_lc.contains("could not resolve host")
+                        || err_lc.contains("temporary failure in name resolution")
+                        || err_lc.contains("network is unreachable")
+                    {
+                        warn!("task #{} rebase: GitHub DNS/network unavailable; skipping agent spawn", task.id);
+                        self.fail_or_retry(task, "rebase", &es)?;
+                        return Ok(());
+                    }
                     warn!("task #{} rebase: update-branch error, spawning agent: {e}", task.id);
                 },
             }
