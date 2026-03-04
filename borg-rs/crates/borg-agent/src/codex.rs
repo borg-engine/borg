@@ -18,6 +18,10 @@ pub struct CodexBackend {
     pub model: String,
     pub reasoning_effort: String,
     pub codex_bin: String,
+    pub git_author_name: String,
+    pub git_author_email: String,
+    pub git_committer_name: String,
+    pub git_committer_email: String,
 }
 
 impl CodexBackend {
@@ -27,6 +31,10 @@ impl CodexBackend {
             model: model.into(),
             reasoning_effort: "medium".into(),
             codex_bin: "codex".into(),
+            git_author_name: "Borg".into(),
+            git_author_email: "borg@localhost".into(),
+            git_committer_name: "Borg".into(),
+            git_committer_email: "borg@localhost".into(),
         }
     }
 
@@ -37,6 +45,28 @@ impl CodexBackend {
 
     pub fn with_bin(mut self, bin: impl Into<String>) -> Self {
         self.codex_bin = bin.into();
+        self
+    }
+
+    pub fn with_git_identity(
+        mut self,
+        author_name: &str,
+        author_email: &str,
+        committer_name: &str,
+        committer_email: &str,
+    ) -> Self {
+        if !author_name.is_empty() {
+            self.git_author_name = author_name.into();
+        }
+        if !author_email.is_empty() {
+            self.git_author_email = author_email.into();
+        }
+        if !committer_name.is_empty() {
+            self.git_committer_name = committer_name.into();
+        }
+        if !committer_email.is_empty() {
+            self.git_committer_email = committer_email.into();
+        }
         self
     }
 
@@ -100,6 +130,10 @@ impl AgentBackend for CodexBackend {
             .current_dir(&ctx.work_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        cmd.env("GIT_AUTHOR_NAME", &self.git_author_name);
+        cmd.env("GIT_AUTHOR_EMAIL", &self.git_author_email);
+        cmd.env("GIT_COMMITTER_NAME", &self.git_committer_name);
+        cmd.env("GIT_COMMITTER_EMAIL", &self.git_committer_email);
         if !self.api_key.is_empty() {
             cmd.env("OPENAI_API_KEY", &self.api_key);
         }
@@ -112,6 +146,7 @@ impl AgentBackend for CodexBackend {
         let stream_tx = ctx.stream_tx.clone();
 
         let mut output_lines = Vec::new();
+        let mut had_fatal_stderr = false;
         let mut stdout_reader = BufReader::new(stdout).lines();
         let mut stderr_reader = BufReader::new(stderr).lines();
 
@@ -132,6 +167,7 @@ impl AgentBackend for CodexBackend {
                     if let Ok(Some(l)) = line {
                         if !l.is_empty() {
                             if Self::is_warning_stderr(&l) {
+                                had_fatal_stderr = true;
                                 warn!(task_id = task.id, phase = %phase.name, "codex stderr: {}", l);
                             } else {
                                 debug!(task_id = task.id, phase = %phase.name, "codex stderr: {}", l);
@@ -145,6 +181,7 @@ impl AgentBackend for CodexBackend {
         while let Ok(Some(l)) = stderr_reader.next_line().await {
             if !l.is_empty() {
                 if Self::is_warning_stderr(&l) {
+                    had_fatal_stderr = true;
                     warn!(task_id = task.id, phase = %phase.name, "codex stderr: {}", l);
                 } else {
                     debug!(task_id = task.id, phase = %phase.name, "codex stderr: {}", l);
@@ -161,7 +198,7 @@ impl AgentBackend for CodexBackend {
         info!(
             task_id = task.id,
             phase = %phase.name,
-            success = exit_status.success(),
+            success = exit_status.success() && !had_fatal_stderr,
             output_len = output.len(),
             "codex subprocess finished"
         );
@@ -170,7 +207,7 @@ impl AgentBackend for CodexBackend {
             output,
             new_session_id: None,
             raw_stream: String::new(),
-            success: exit_status.success(),
+            success: exit_status.success() && !had_fatal_stderr,
             signal_json: None,
             ran_in_docker: false,
             container_test_results: Vec::new(),

@@ -56,6 +56,7 @@ pub struct Pipeline {
     last_session_prune_secs: std::sync::atomic::AtomicI64,
     startup_heads: HashMap<String, String>,
     in_flight: Mutex<HashSet<i64>>,
+    in_flight_repos: Mutex<HashSet<String>>,
     /// Per-task last agent dispatch timestamp (epoch seconds) for rate limiting.
     last_agent_dispatch: Mutex<HashMap<i64, i64>>,
     /// Prevents overlapping seed runs (seeding is spawned in background).
@@ -137,6 +138,7 @@ impl Pipeline {
             last_session_prune_secs: std::sync::atomic::AtomicI64::new(0),
             startup_heads,
             in_flight: Mutex::new(HashSet::new()),
+            in_flight_repos: Mutex::new(HashSet::new()),
             last_agent_dispatch: Mutex::new(HashMap::new()),
             seeding_active: std::sync::atomic::AtomicBool::new(false),
             agent_network_available,
@@ -362,37 +364,51 @@ impl Pipeline {
         let mut dispatched = 0usize;
 
         for task in tasks {
-            let mut guard = self.in_flight.lock().await;
-            if guard.len() >= max_agents {
+            let mut id_guard = self.in_flight.lock().await;
+            if id_guard.len() >= max_agents {
                 break;
             }
-            if guard.contains(&task.id) {
+            if id_guard.contains(&task.id) {
                 continue;
             }
-            guard.insert(task.id);
-            drop(guard);
+            let mut repo_guard = self.in_flight_repos.lock().await;
+            if repo_guard.contains(&task.repo_path) {
+                continue;
+            }
+            id_guard.insert(task.id);
+            repo_guard.insert(task.repo_path.clone());
+            drop(repo_guard);
+            drop(id_guard);
 
             dispatched += 1;
             let pipeline = Arc::clone(&self);
             let inner_pipeline = Arc::clone(&self);
             let task_id = task.id;
+            let task_repo = task.repo_path.clone();
             let task_for_recovery = task.clone();
             tokio::spawn(async move {
                 // Drop guard ensures in_flight slot is released even if this future is cancelled.
                 struct InFlightGuard {
                     pipeline: Arc<Pipeline>,
                     task_id: i64,
+                    task_repo: String,
                 }
                 impl Drop for InFlightGuard {
                     fn drop(&mut self) {
                         let pipeline = Arc::clone(&self.pipeline);
                         let task_id = self.task_id;
+                        let task_repo = self.task_repo.clone();
                         tokio::spawn(async move {
                             pipeline.in_flight.lock().await.remove(&task_id);
+                            pipeline.in_flight_repos.lock().await.remove(&task_repo);
                         });
                     }
                 }
-                let _guard = InFlightGuard { pipeline: Arc::clone(&pipeline), task_id };
+                let _guard = InFlightGuard {
+                    pipeline: Arc::clone(&pipeline),
+                    task_id,
+                    task_repo,
+                };
 
                 let handle = tokio::spawn(async move {
                     Arc::clone(&inner_pipeline)
@@ -544,62 +560,6 @@ impl Pipeline {
                 // Do not dispatch to any backend — just return.
                 return Ok(());
             }
-        }
-
-        // Async embedding indexing for completed tasks
-        if phase.next == "done" && !task.repo_path.is_empty() {
-            let db = Arc::clone(&self.db);
-            let embed = &self.embed_client;
-            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
-            crate::knowledge::index_task_embeddings(&db, embed, task.id, pid, &task.repo_path).await;
-        }
-
-        // Async embedding indexing for completed tasks
-        if phase.next == "done" && !task.repo_path.is_empty() {
-            let db = Arc::clone(&self.db);
-            let embed = &self.embed_client;
-            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
-            crate::knowledge::index_task_embeddings(&db, embed, task.id, pid, &task.repo_path).await;
-        }
-
-        // Async embedding indexing for completed tasks
-        if phase.next == "done" && !task.repo_path.is_empty() {
-            let db = Arc::clone(&self.db);
-            let embed = &self.embed_client;
-            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
-            crate::knowledge::index_task_embeddings(&db, embed, task.id, pid, &task.repo_path).await;
-        }
-
-        // Async embedding indexing for completed tasks
-        if phase.next == "done" && !task.repo_path.is_empty() {
-            let db = Arc::clone(&self.db);
-            let embed = &self.embed_client;
-            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
-            crate::knowledge::index_task_embeddings(&db, embed, task.id, pid, &task.repo_path).await;
-        }
-
-        // Async embedding indexing for completed tasks
-        if phase.next == "done" && !task.repo_path.is_empty() {
-            let db = Arc::clone(&self.db);
-            let embed = &self.embed_client;
-            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
-            crate::knowledge::index_task_embeddings(&db, embed, task.id, pid, &task.repo_path).await;
-        }
-
-        // Async embedding indexing for completed tasks
-        if phase.next == "done" && !task.repo_path.is_empty() {
-            let db = Arc::clone(&self.db);
-            let embed = &self.embed_client;
-            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
-            crate::knowledge::index_task_embeddings(&db, embed, task.id, pid, &task.repo_path).await;
-        }
-
-        // Async embedding indexing for completed tasks
-        if phase.next == "done" && !task.repo_path.is_empty() {
-            let db = Arc::clone(&self.db);
-            let embed = &self.embed_client;
-            let pid = if task.project_id > 0 { Some(task.project_id) } else { None };
-            crate::knowledge::index_task_embeddings(&db, embed, task.id, pid, &task.repo_path).await;
         }
 
         // Async embedding indexing for completed tasks

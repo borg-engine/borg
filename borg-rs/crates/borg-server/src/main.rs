@@ -231,7 +231,13 @@ async fn main() -> anyhow::Result<()> {
             "codex".into(),
             Arc::new(
                 CodexBackend::new(config.codex_api_key.clone(), codex_model)
-                    .with_reasoning_effort(codex_reasoning_effort),
+                    .with_reasoning_effort(codex_reasoning_effort)
+                    .with_git_identity(
+                        &config.git_author_name,
+                        &config.git_author_email,
+                        &config.git_committer_name,
+                        &config.git_committer_email,
+                    ),
             ),
         );
     }
