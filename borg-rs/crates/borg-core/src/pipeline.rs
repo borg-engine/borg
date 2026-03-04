@@ -749,6 +749,9 @@ impl Pipeline {
             PhaseType::Validate => self.run_validate_phase(&task, &phase, &mode).await?,
             PhaseType::Rebase => self.run_rebase_phase(&task, &phase, &mode).await?,
             PhaseType::LintFix => self.run_lint_fix_phase(&task, &phase, &mode).await?,
+            PhaseType::ComplianceCheck => {
+                self.run_compliance_check_phase(&task, &phase, &mode).await?
+            }
             PhaseType::HumanReview => {
                 // Task sits in this status until a human acts via the API.
                 // Do not dispatch to any backend — just return.
@@ -833,6 +836,75 @@ impl Pipeline {
             message: format!("task #{} started branch {}", task.id, branch),
         });
 
+        Ok(())
+    }
+
+    async fn run_compliance_check_phase(
+        &self,
+        task: &Task,
+        phase: &PhaseConfig,
+        _mode: &PipelineMode,
+    ) -> Result<()> {
+        let outputs = self.db.get_task_outputs(task.id).unwrap_or_default();
+        let latest_text = outputs
+            .iter()
+            .rev()
+            .find(|o| !o.output.trim().is_empty())
+            .map(|o| o.output.as_str())
+            .unwrap_or("");
+        let profile = if phase.compliance_profile.trim().is_empty() {
+            "uk_sra"
+        } else {
+            phase.compliance_profile.trim()
+        };
+        let enforcement = if phase.compliance_enforcement.trim().is_empty() {
+            "warn"
+        } else {
+            phase.compliance_enforcement.trim()
+        };
+
+        let findings = run_compliance_pack(profile, latest_text);
+        let mut report = String::new();
+        report.push_str("# Compliance Check\n\n");
+        report.push_str(&format!("- Profile: `{profile}`\n- Enforcement: `{enforcement}`\n"));
+        if findings.is_empty() {
+            report.push_str("\nResult: PASS. No compliance findings.\n");
+        } else {
+            report.push_str("\nResult: FINDINGS\n\n");
+            for f in &findings {
+                report.push_str(&format!("- {f}\n"));
+            }
+            report.push_str("\nRecommended remediation: add a `Regulatory Considerations` section with source links and an as-of date.\n");
+        }
+
+        let success = findings.is_empty() || enforcement != "block";
+        let exit_code = if success { 0 } else { 1 };
+        if let Err(e) =
+            self.db
+                .insert_task_output(task.id, &phase.name, &report, "", exit_code)
+        {
+            warn!("task #{}: insert_task_output({}): {e}", task.id, phase.name);
+        }
+
+        if findings.is_empty() {
+            self.db.update_task_status(task.id, &phase.next, None)?;
+            return Ok(());
+        }
+
+        if enforcement == "block" {
+            self.db
+                .update_task_status(task.id, "pending_review", Some(&report))?;
+            self.emit(PipelineEvent::Phase {
+                task_id: Some(task.id),
+                message: format!(
+                    "task #{} blocked by compliance check ({profile}) — moved to pending_review",
+                    task.id
+                ),
+            });
+            return Ok(());
+        }
+
+        self.db.update_task_status(task.id, &phase.next, None)?;
         Ok(())
     }
 
@@ -1329,9 +1401,6 @@ impl Pipeline {
             .args([
                 "clone",
                 "--no-tags",
-                "--single-branch",
-                "--branch",
-                branch,
                 &task.repo_path,
                 &work_dir_s,
             ])
@@ -1345,7 +1414,7 @@ impl Pipeline {
         }
 
         let fetch = tokio::process::Command::new("git")
-            .args(["fetch", "origin", "main"])
+            .args(["fetch", "origin", "main:refs/remotes/origin/main"])
             .current_dir(&work_dir_s)
             .output()
             .await
@@ -1353,6 +1422,18 @@ impl Pipeline {
         if !fetch.status.success() {
             let err = String::from_utf8_lossy(&fetch.stderr).to_string();
             self.fail_or_retry(task, "rebase", &format!("fetch failed: {err}"))?;
+            return Ok(());
+        }
+
+        let checkout = tokio::process::Command::new("git")
+            .args(["checkout", branch])
+            .current_dir(&work_dir_s)
+            .output()
+            .await
+            .context("git checkout branch for rebase")?;
+        if !checkout.status.success() {
+            let err = String::from_utf8_lossy(&checkout.stderr).to_string();
+            self.fail_or_retry(task, "rebase", &format!("checkout failed: {err}"))?;
             return Ok(());
         }
 
@@ -3196,6 +3277,51 @@ fn extract_blocks(text: &str, start_marker: &str, end_marker: &str) -> Vec<Strin
         }
     }
     blocks
+}
+
+fn run_compliance_pack(profile: &str, text: &str) -> Vec<String> {
+    if text.trim().is_empty() {
+        return vec!["No prior phase output found to evaluate.".to_string()];
+    }
+
+    let lower = text.to_lowercase();
+    let mut findings = Vec::new();
+
+    if !lower.contains("regulatory considerations") {
+        findings.push("Missing `Regulatory Considerations` section.".to_string());
+    }
+    if !(lower.contains("as of ") || lower.contains("as-of")) {
+        findings.push("Missing an explicit as-of date for regulatory statements.".to_string());
+    }
+    if !(lower.contains("http://") || lower.contains("https://")) {
+        findings.push("Missing source URLs for regulatory references.".to_string());
+    }
+
+    match profile {
+        "uk_sra" => {
+            if !(lower.contains("sra") || lower.contains("solicitors regulation authority")) {
+                findings.push("UK profile selected but no SRA reference found.".to_string());
+            }
+        }
+        "us_prof_resp" => {
+            if !(lower.contains("model rule")
+                || lower.contains("professional conduct")
+                || lower.contains("state bar"))
+            {
+                findings.push(
+                    "US profile selected but no Model Rules/state professional-conduct reference found."
+                        .to_string(),
+                );
+            }
+        }
+        _ => {
+            findings.push(format!(
+                "Unknown compliance profile `{profile}` (supported: uk_sra, us_prof_resp)."
+            ));
+        }
+    }
+
+    findings
 }
 
 fn extract_field(block: &str, field: &str) -> Option<String> {

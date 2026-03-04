@@ -39,6 +39,8 @@ pub enum PhaseType {
     LintFix,
     /// Halts the pipeline until a human approves, rejects, or requests revision.
     HumanReview,
+    /// Runs deterministic regulatory QA checks over prior phase output.
+    ComplianceCheck,
 }
 
 impl Default for PhaseType {
@@ -237,6 +239,13 @@ pub struct PhaseConfig {
 
     /// Phase to loop back to on validation failure (Validate phases only).
     pub retry_phase: String,
+
+    /// Compliance pack ID for ComplianceCheck phases (e.g. "uk_sra", "us_prof_resp").
+    #[serde(default)]
+    pub compliance_profile: String,
+    /// Enforcement mode for ComplianceCheck: "warn" (default) or "block".
+    #[serde(default)]
+    pub compliance_enforcement: String,
 }
 
 /// Configuration for a seed scan mode.
@@ -308,6 +317,8 @@ impl Default for PhaseConfig {
             fresh_session: false,
             fix_instruction: String::new(),
             retry_phase: String::new(),
+            compliance_profile: String::new(),
+            compliance_enforcement: "warn".into(),
         }
     }
 }

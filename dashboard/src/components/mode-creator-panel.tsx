@@ -159,6 +159,34 @@ export function ModeCreatorPanel() {
                 onRemove={(i) => dispatch({ type: "REMOVE_PHASE", index: i })}
                 onMove={(from, to) => dispatch({ type: "MOVE_PHASE", from, to })}
               />
+              {!isReadOnly && mode.phases.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: "ADD_COMPLIANCE_PHASE",
+                        afterIndex: selectedPhaseIndex ?? mode.phases.length - 1,
+                        profile: "uk_sra",
+                      })
+                    }
+                    className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[11px] text-zinc-300 hover:bg-white/[0.08]"
+                  >
+                    + UK SRA Check
+                  </button>
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: "ADD_COMPLIANCE_PHASE",
+                        afterIndex: selectedPhaseIndex ?? mode.phases.length - 1,
+                        profile: "us_prof_resp",
+                      })
+                    }
+                    className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[11px] text-zinc-300 hover:bg-white/[0.08]"
+                  >
+                    + US Ethics Check
+                  </button>
+                </div>
+              )}
               {selectedPhase && selectedPhaseIndex !== null && (
                 <PhaseDetail
                   phase={selectedPhase}

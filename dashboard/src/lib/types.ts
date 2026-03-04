@@ -128,7 +128,14 @@ export interface PipelineMode {
   experimental?: boolean;
 }
 
-export type PhaseType = "setup" | "agent" | "rebase" | "lint_fix" | "human_review" | "validate";
+export type PhaseType =
+  | "setup"
+  | "agent"
+  | "rebase"
+  | "lint_fix"
+  | "human_review"
+  | "validate"
+  | "compliance_check";
 export type IntegrationType = "git_pr" | "git_branch" | "none";
 export type SeedOutputType = "task" | "proposal";
 
@@ -152,6 +159,8 @@ export interface PhaseConfigFull {
   fresh_session: boolean;
   fix_instruction: string;
   retry_phase: string;
+  compliance_profile: string;
+  compliance_enforcement: "warn" | "block" | string;
 }
 
 export interface SeedConfigFull {
