@@ -278,6 +278,23 @@ impl Pipeline {
                 "stuck loop detected in phase '{retry_status}' (same failure signature repeated {repeat_count}x): {error}"
             );
             self.db.update_task_status(task.id, "blocked", Some(&reason))?;
+            let project_id = if task.project_id > 0 {
+                Some(task.project_id)
+            } else {
+                None
+            };
+            let _ = self.db.log_event_full(
+                Some(task.id),
+                None,
+                project_id,
+                "pipeline",
+                "task.stuck_loop_detected",
+                &serde_json::json!({
+                    "phase": retry_status,
+                    "repeat_count": repeat_count,
+                    "error": error,
+                }),
+            );
             return Ok(());
         }
 
