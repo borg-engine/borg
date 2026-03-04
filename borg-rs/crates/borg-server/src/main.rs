@@ -62,6 +62,7 @@ pub struct AppState {
     pub ingestion_queue: Arc<ingestion::IngestionQueue>,
     pub opensearch: Option<Arc<opensearch::OpenSearchClient>>,
     pub upload_processing_sem: Arc<Semaphore>,
+    pub upload_processing_limit: usize,
 }
 
 impl AppState {
@@ -696,6 +697,12 @@ async fn main() -> anyhow::Result<()> {
 
     let stream_manager = Arc::clone(&pipeline.stream_manager);
 
+    let upload_processing_limit = std::env::var("UPLOAD_PROCESSING_CONCURRENCY")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(2);
+
     let state = Arc::new(AppState {
         db,
         config: Arc::clone(&config),
@@ -715,7 +722,8 @@ async fn main() -> anyhow::Result<()> {
         file_storage: Arc::clone(&file_storage),
         ingestion_queue: Arc::clone(&ingestion_queue),
         opensearch: opensearch.clone(),
-        upload_processing_sem: Arc::new(Semaphore::new(2)),
+        upload_processing_sem: Arc::new(Semaphore::new(upload_processing_limit)),
+        upload_processing_limit,
     });
 
     {

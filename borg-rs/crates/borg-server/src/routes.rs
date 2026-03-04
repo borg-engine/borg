@@ -2295,6 +2295,10 @@ pub(crate) async fn get_upload_overview(
     Ok(Json(json!({
         "sessions": sessions,
         "counts": counts,
+        "processing_capacity": {
+            "total": state.upload_processing_limit,
+            "available": state.upload_processing_sem.available_permits(),
+        },
     })))
 }
 
