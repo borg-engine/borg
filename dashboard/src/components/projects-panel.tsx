@@ -6,7 +6,9 @@ import {
   fetchProjectFileText,
   getProjectChatMessages,
   importProjectCloudFiles,
+  listProjectUploadSessions,
   reextractProjectFile,
+  summarizeProjectThemes,
   sendProjectChat,
   uploadProjectFiles,
   useProjectCloudConnections,
@@ -16,7 +18,7 @@ import {
   useProjects,
   searchDocuments,
 } from "@/lib/api";
-import type { CloudBrowseItem, CloudConnection, FtsSearchResult } from "@/lib/api";
+import type { CloudBrowseItem, CloudConnection, FtsSearchResult, ThemeSummary, UploadSession } from "@/lib/api";
 import { Eye, FileText, Mic, MicOff, ArrowLeft, Search, RotateCw, Folder } from "lucide-react";
 import { FilePreviewModal, isPreviewable } from "./file-preview-modal";
 import type { ProjectFile, ProjectDocument } from "@/lib/types";

@@ -185,7 +185,6 @@ CREATE TABLE IF NOT EXISTS project_files (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_project_files_project_id ON project_files(project_id);
-CREATE INDEX IF NOT EXISTS idx_project_files_hash ON project_files(project_id, content_hash);
 
 -- Durable resumable uploads for large file and zip ingestion.
 CREATE TABLE IF NOT EXISTS upload_sessions (

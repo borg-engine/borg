@@ -535,6 +535,35 @@ async fn build_project_context(
     }
     remaining -= context.len();
 
+    if let Ok(themes) = db.summarize_themes(Some(project.id), 12, 2) {
+        if !themes.keywords.is_empty() || !themes.phrases.is_empty() {
+            let kw = themes
+                .keywords
+                .iter()
+                .take(8)
+                .map(|k| k.term.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let ph = themes
+                .phrases
+                .iter()
+                .take(6)
+                .map(|p| p.term.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let summary = format!(
+                "Corpus theme summary (precomputed):\n- documents_scanned: {}\n- keywords: {}\n- phrases: {}\n\n",
+                themes.documents_scanned,
+                if kw.is_empty() { "n/a" } else { &kw },
+                if ph.is_empty() { "n/a" } else { &ph },
+            );
+            if summary.len() < remaining {
+                context.push_str(&summary);
+                remaining -= summary.len();
+            }
+        }
+    }
+
     for file in files {
         if remaining < 256 {
             break;

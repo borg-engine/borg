@@ -1441,7 +1441,12 @@ impl Pipeline {
         }
 
         let fetch = tokio::process::Command::new("git")
-            .args(["fetch", "origin", "main:refs/remotes/origin/main"])
+            .args([
+                "fetch",
+                "origin",
+                "main:refs/remotes/origin/main",
+                &format!("{branch}:refs/remotes/origin/{branch}"),
+            ])
             .current_dir(&work_dir_s)
             .output()
             .await
