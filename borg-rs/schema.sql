@@ -185,6 +185,34 @@ CREATE TABLE IF NOT EXISTS project_files (
 );
 CREATE INDEX IF NOT EXISTS idx_project_files_project_id ON project_files(project_id);
 
+-- Durable resumable uploads for large file and zip ingestion.
+CREATE TABLE IF NOT EXISTS upload_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+  file_size INTEGER NOT NULL DEFAULT 0,
+  chunk_size INTEGER NOT NULL DEFAULT 0,
+  total_chunks INTEGER NOT NULL DEFAULT 0,
+  uploaded_bytes INTEGER NOT NULL DEFAULT 0,
+  is_zip INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'uploading', -- uploading | processing | done | failed
+  stored_path TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_upload_sessions_project ON upload_sessions(project_id, status, id);
+
+CREATE TABLE IF NOT EXISTS upload_session_chunks (
+  session_id INTEGER NOT NULL REFERENCES upload_sessions(id) ON DELETE CASCADE,
+  chunk_index INTEGER NOT NULL,
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY(session_id, chunk_index)
+);
+CREATE INDEX IF NOT EXISTS idx_upload_chunks_session ON upload_session_chunks(session_id, chunk_index);
+
 -- ── Parties (conflict checking) ──────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS parties (

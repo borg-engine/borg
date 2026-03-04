@@ -215,6 +215,24 @@ pub struct CloudConnection {
 }
 
 #[derive(Debug, serde::Serialize, Clone)]
+pub struct UploadSession {
+    pub id: i64,
+    pub project_id: i64,
+    pub file_name: String,
+    pub mime_type: String,
+    pub file_size: i64,
+    pub chunk_size: i64,
+    pub total_chunks: i64,
+    pub uploaded_bytes: i64,
+    pub is_zip: bool,
+    pub status: String,
+    pub stored_path: String,
+    pub error: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
 pub struct ThemeTerm {
     pub term: String,
     pub occurrences: i64,
@@ -331,6 +349,26 @@ fn row_to_cloud_connection(row: &rusqlite::Row<'_>) -> rusqlite::Result<CloudCon
         account_email: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
         account_id: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
         created_at: row.get::<_, String>(8).map(|s| parse_ts(&s))?,
+    })
+}
+
+fn row_to_upload_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<UploadSession> {
+    let is_zip: i64 = row.get(8)?;
+    Ok(UploadSession {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        file_name: row.get(2)?,
+        mime_type: row.get(3)?,
+        file_size: row.get(4)?,
+        chunk_size: row.get(5)?,
+        total_chunks: row.get(6)?,
+        uploaded_bytes: row.get(7)?,
+        is_zip: is_zip != 0,
+        status: row.get(9)?,
+        stored_path: row.get::<_, Option<String>>(10)?.unwrap_or_default(),
+        error: row.get::<_, Option<String>>(11)?.unwrap_or_default(),
+        created_at: row.get::<_, Option<String>>(12)?.unwrap_or_default(),
+        updated_at: row.get::<_, Option<String>>(13)?.unwrap_or_default(),
     })
 }
 
@@ -1445,6 +1483,104 @@ impl Db {
         Ok(total)
     }
 
+    pub fn create_upload_session(
+        &self,
+        project_id: i64,
+        file_name: &str,
+        mime_type: &str,
+        file_size: i64,
+        chunk_size: i64,
+        total_chunks: i64,
+        is_zip: bool,
+    ) -> Result<i64> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let now = now_str();
+        conn.execute(
+            "INSERT INTO upload_sessions \
+             (project_id, file_name, mime_type, file_size, chunk_size, total_chunks, uploaded_bytes, is_zip, status, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, 'uploading', ?8, ?8)",
+            params![
+                project_id,
+                file_name,
+                mime_type,
+                file_size,
+                chunk_size,
+                total_chunks,
+                if is_zip { 1 } else { 0 },
+                now
+            ],
+        )
+        .context("create_upload_session")?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_upload_session(&self, session_id: i64) -> Result<Option<UploadSession>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.query_row(
+            "SELECT id, project_id, file_name, mime_type, file_size, chunk_size, total_chunks, \
+                    uploaded_bytes, is_zip, status, stored_path, error, created_at, updated_at \
+             FROM upload_sessions WHERE id = ?1",
+            params![session_id],
+            row_to_upload_session,
+        )
+        .optional()
+        .context("get_upload_session")
+    }
+
+    pub fn list_uploaded_chunks(&self, session_id: i64) -> Result<Vec<i64>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT chunk_index FROM upload_session_chunks WHERE session_id=?1 ORDER BY chunk_index ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![session_id], |row| row.get::<_, i64>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("list_uploaded_chunks")?;
+        Ok(rows)
+    }
+
+    pub fn upsert_upload_chunk(&self, session_id: i64, chunk_index: i64, size_bytes: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let now = now_str();
+        conn.execute(
+            "INSERT INTO upload_session_chunks (session_id, chunk_index, size_bytes, created_at) \
+             VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(session_id, chunk_index) DO UPDATE SET size_bytes=excluded.size_bytes",
+            params![session_id, chunk_index, size_bytes, now],
+        )
+        .context("upsert_upload_chunk")?;
+        conn.execute(
+            "UPDATE upload_sessions \
+             SET uploaded_bytes = (SELECT COALESCE(SUM(size_bytes), 0) FROM upload_session_chunks WHERE session_id = ?1), \
+                 updated_at = ?2 \
+             WHERE id = ?1",
+            params![session_id, now],
+        )
+        .context("upsert_upload_chunk aggregate")?;
+        Ok(())
+    }
+
+    pub fn set_upload_session_state(
+        &self,
+        session_id: i64,
+        status: &str,
+        stored_path: Option<&str>,
+        error: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "UPDATE upload_sessions \
+             SET status = ?1, \
+                 stored_path = COALESCE(?2, stored_path), \
+                 error = COALESCE(?3, error), \
+                 updated_at = ?4 \
+             WHERE id = ?5",
+            params![status, stored_path, error, now_str(), session_id],
+        )
+        .context("set_upload_session_state")?;
+        Ok(())
+    }
+
     pub fn summarize_themes(
         &self,
         project_id: Option<i64>,
@@ -1937,6 +2073,56 @@ impl Db {
             params![task_id, branch, repo_path, queued_at, pr_number],
         )
         .context("enqueue")?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Ensure a task/branch has exactly one active queue entry.
+    ///
+    /// If an existing non-merged row exists, it is recycled back to `queued`
+    /// instead of inserting another row. This prevents unbounded queue growth
+    /// when tasks repeatedly cycle through done -> rebase -> done.
+    pub fn enqueue_or_requeue(
+        &self,
+        task_id: i64,
+        branch: &str,
+        repo_path: &str,
+        pr_number: i64,
+    ) -> Result<i64> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM integration_queue \
+                 WHERE task_id = ?1 AND branch = ?2 AND status IN ('queued','merging','excluded','pending_review') \
+                 ORDER BY id DESC LIMIT 1",
+                params![task_id, branch],
+                |r| r.get(0),
+            )
+            .optional()
+            .context("enqueue_or_requeue select existing")?;
+
+        let queued_at = now_str();
+        if let Some(id) = existing {
+            conn.execute(
+                "UPDATE integration_queue
+                 SET status = 'queued',
+                     repo_path = ?1,
+                     queued_at = ?2,
+                     pr_number = ?3,
+                     error_msg = '',
+                     unknown_retries = 0
+                 WHERE id = ?4",
+                params![repo_path, queued_at, pr_number, id],
+            )
+            .context("enqueue_or_requeue update existing")?;
+            return Ok(id);
+        }
+
+        conn.execute(
+            "INSERT INTO integration_queue (task_id, branch, repo_path, status, queued_at, pr_number) \
+             VALUES (?1, ?2, ?3, 'queued', ?4, ?5)",
+            params![task_id, branch, repo_path, queued_at, pr_number],
+        )
+        .context("enqueue_or_requeue insert")?;
         Ok(conn.last_insert_rowid())
     }
 

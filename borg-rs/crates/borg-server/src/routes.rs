@@ -1,6 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use axum::{
+    body::Bytes,
     extract::{Multipart, Path, Query, State},
     http::StatusCode,
     response::{
@@ -17,6 +18,7 @@ use borg_core::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{broadcast, Mutex as TokioMutex};
 use tokio_stream::{
     wrappers::{BroadcastStream, UnboundedReceiverStream},
@@ -2055,6 +2057,356 @@ pub(crate) async fn get_project_file_content(
         .header("content-disposition", format!("attachment; filename=\"{safe_name}\""))
         .body(axum::body::Body::from(bytes))
         .unwrap())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CreateUploadSessionBody {
+    pub file_name: String,
+    pub mime_type: Option<String>,
+    pub file_size: i64,
+    pub chunk_size: i64,
+    pub total_chunks: i64,
+    #[serde(default)]
+    pub is_zip: bool,
+}
+
+fn upload_chunks_dir(data_dir: &str, session_id: i64) -> String {
+    format!("{data_dir}/uploads/sessions/{session_id}/chunks")
+}
+
+fn upload_assembled_path(data_dir: &str, session_id: i64, file_name: &str) -> String {
+    format!(
+        "{data_dir}/uploads/assembled/{}_{}_{}",
+        session_id,
+        Utc::now().timestamp_millis(),
+        sanitize_upload_name(file_name)
+    )
+}
+
+fn guess_mime_from_name(file_name: &str) -> String {
+    let ext = file_name
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "txt" => "text/plain",
+        "md" => "text/markdown",
+        "csv" => "text/csv",
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "pdf" => "application/pdf",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "doc" => "application/msword",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+pub(crate) async fn create_upload_session(
+    State(state): State<Arc<AppState>>,
+    Path(project_id): Path<i64>,
+    Json(body): Json<CreateUploadSessionBody>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.db.get_project(project_id).map_err(internal)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    if body.file_size <= 0
+        || body.chunk_size <= 0
+        || body.total_chunks <= 0
+        || body.total_chunks > 1_000_000
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let file_name = sanitize_upload_name(&body.file_name);
+    if file_name.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let mime_type = body
+        .mime_type
+        .unwrap_or_else(|| guess_mime_from_name(&file_name));
+    let session_id = state
+        .db
+        .create_upload_session(
+            project_id,
+            &file_name,
+            &mime_type,
+            body.file_size,
+            body.chunk_size,
+            body.total_chunks,
+            body.is_zip || file_name.to_ascii_lowercase().ends_with(".zip"),
+        )
+        .map_err(internal)?;
+    Ok(Json(json!({
+        "session_id": session_id,
+        "project_id": project_id,
+        "status": "uploading",
+        "file_name": file_name,
+        "total_chunks": body.total_chunks,
+        "chunk_size": body.chunk_size,
+    })))
+}
+
+pub(crate) async fn upload_session_chunk(
+    State(state): State<Arc<AppState>>,
+    Path((project_id, session_id, chunk_index)): Path<(i64, i64, i64)>,
+    bytes: Bytes,
+) -> Result<Json<Value>, StatusCode> {
+    let session = state
+        .db
+        .get_upload_session(session_id)
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if session.project_id != project_id {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    if session.status != "uploading" {
+        return Err(StatusCode::CONFLICT);
+    }
+    if chunk_index < 0 || chunk_index >= session.total_chunks {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if bytes.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let chunks_dir = upload_chunks_dir(&state.config.data_dir, session_id);
+    tokio::fs::create_dir_all(&chunks_dir)
+        .await
+        .map_err(internal)?;
+    let chunk_path = format!("{chunks_dir}/{chunk_index}.part");
+    let mut file = tokio::fs::File::create(&chunk_path).await.map_err(internal)?;
+    file.write_all(&bytes).await.map_err(internal)?;
+    file.flush().await.map_err(internal)?;
+    state
+        .db
+        .upsert_upload_chunk(session_id, chunk_index, bytes.len() as i64)
+        .map_err(internal)?;
+    let updated = state
+        .db
+        .get_upload_session(session_id)
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(json!({
+        "session_id": session_id,
+        "uploaded_bytes": updated.uploaded_bytes,
+        "file_size": updated.file_size,
+        "status": updated.status,
+    })))
+}
+
+pub(crate) async fn get_upload_session_status(
+    State(state): State<Arc<AppState>>,
+    Path((project_id, session_id)): Path<(i64, i64)>,
+) -> Result<Json<Value>, StatusCode> {
+    let session = state
+        .db
+        .get_upload_session(session_id)
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if session.project_id != project_id {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let uploaded_chunks = state.db.list_uploaded_chunks(session_id).map_err(internal)?;
+    let uploaded_set: HashSet<i64> = uploaded_chunks.iter().copied().collect();
+    let uploaded_count = uploaded_set.len() as i64;
+    let mut next_missing = None;
+    for idx in 0..session.total_chunks {
+        if !uploaded_set.contains(&idx) {
+            next_missing = Some(idx);
+            break;
+        }
+    }
+    Ok(Json(json!({
+        "session": session,
+        "uploaded_chunks": uploaded_count,
+        "total_chunks": session.total_chunks,
+        "missing_chunks": (session.total_chunks - uploaded_count).max(0),
+        "next_missing_chunk": next_missing,
+    })))
+}
+
+async fn process_completed_upload_session(state: Arc<AppState>, project_id: i64, session_id: i64, assembled_path: String) {
+    let session = match state.db.get_upload_session(session_id) {
+        Ok(Some(s)) => s,
+        _ => return,
+    };
+    let result = if session.is_zip {
+        process_uploaded_zip(state.clone(), project_id, session_id, &assembled_path).await
+    } else {
+        process_uploaded_single_file(state.clone(), project_id, session_id, &session.file_name, &session.mime_type, &assembled_path).await
+    };
+    match result {
+        Ok(stored_path) => {
+            let _ = state
+                .db
+                .set_upload_session_state(session_id, "done", Some(&stored_path), Some(""));
+        }
+        Err(e) => {
+            let _ = state
+                .db
+                .set_upload_session_state(session_id, "failed", None, Some(&e.to_string()));
+        }
+    }
+    let _ = tokio::fs::remove_file(&assembled_path).await;
+    let chunks_dir = upload_chunks_dir(&state.config.data_dir, session_id);
+    let _ = tokio::fs::remove_dir_all(chunks_dir).await;
+}
+
+async fn process_uploaded_single_file(
+    state: Arc<AppState>,
+    project_id: i64,
+    _session_id: i64,
+    file_name: &str,
+    mime_type: &str,
+    assembled_path: &str,
+) -> anyhow::Result<String> {
+    let unique_name = format!("{}_{}_{}", Utc::now().timestamp_millis(), rand_suffix(), sanitize_upload_name(file_name));
+    let stored_path = state
+        .file_storage
+        .put_project_file_from_path(project_id, &unique_name, assembled_path)
+        .await?;
+    let size_bytes = tokio::fs::metadata(assembled_path).await?.len() as i64;
+    let file_id = state
+        .db
+        .insert_project_file(project_id, file_name, &stored_path, mime_type, size_bytes)?;
+    if let Err(e) = state
+        .ingestion_queue
+        .enqueue_project_file(project_id, file_id, file_name, &stored_path, mime_type, size_bytes)
+        .await
+    {
+        tracing::warn!("failed to enqueue uploaded file ingest: {e}");
+    }
+    Ok(stored_path)
+}
+
+async fn process_uploaded_zip(
+    state: Arc<AppState>,
+    project_id: i64,
+    session_id: i64,
+    assembled_path: &str,
+) -> anyhow::Result<String> {
+    let extract_dir = format!("{}/uploads/extracted/{session_id}", state.config.data_dir);
+    let assembled_path_owned = assembled_path.to_string();
+    let extract_dir_owned = extract_dir.clone();
+    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        std::fs::create_dir_all(&extract_dir_owned)?;
+        let file = std::fs::File::open(&assembled_path_owned)?;
+        let mut archive = zip::ZipArchive::new(file)?;
+        for idx in 0..archive.len() {
+            let mut entry = archive.by_index(idx)?;
+            if entry.is_dir() {
+                continue;
+            }
+            let raw_name = entry.name().to_string();
+            let fallback = format!("file-{idx}");
+            let leaf = std::path::Path::new(&raw_name)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&fallback);
+            let safe_name = sanitize_upload_name(leaf);
+            if safe_name.is_empty() {
+                continue;
+            }
+            let out_name = format!("{idx:07}__{safe_name}");
+            let out_path = std::path::Path::new(&extract_dir_owned).join(out_name);
+            let mut out = std::fs::File::create(out_path)?;
+            std::io::copy(&mut entry, &mut out)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("zip extraction join error: {e}"))??;
+
+    let mut dir = tokio::fs::read_dir(&extract_dir).await?;
+    let mut imported = 0i64;
+    while let Some(entry) = dir.next_entry().await? {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let stem = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file.bin");
+        let file_name = stem
+            .split_once("__")
+            .map(|(_, name)| name.to_string())
+            .unwrap_or_else(|| stem.to_string());
+        let unique_name = format!("{}_{}_{}", Utc::now().timestamp_millis(), rand_suffix(), sanitize_upload_name(&file_name));
+        let stored_path = state
+            .file_storage
+            .put_project_file_from_path(project_id, &unique_name, path.to_string_lossy().as_ref())
+            .await?;
+        let size_bytes = tokio::fs::metadata(&path).await?.len() as i64;
+        let mime_type = guess_mime_from_name(&file_name);
+        let file_id = state
+            .db
+            .insert_project_file(project_id, &file_name, &stored_path, &mime_type, size_bytes)?;
+        if let Err(e) = state
+            .ingestion_queue
+            .enqueue_project_file(project_id, file_id, &file_name, &stored_path, &mime_type, size_bytes)
+            .await
+        {
+            tracing::warn!("failed to enqueue zip file ingest: {e}");
+        }
+        imported += 1;
+    }
+    let _ = tokio::fs::remove_dir_all(&extract_dir).await;
+    Ok(format!("zip://session/{session_id}/imported/{imported}"))
+}
+
+pub(crate) async fn complete_upload_session(
+    State(state): State<Arc<AppState>>,
+    Path((project_id, session_id)): Path<(i64, i64)>,
+) -> Result<Json<Value>, StatusCode> {
+    let session = state
+        .db
+        .get_upload_session(session_id)
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if session.project_id != project_id {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    if session.status != "uploading" {
+        return Err(StatusCode::CONFLICT);
+    }
+    let uploaded = state.db.list_uploaded_chunks(session_id).map_err(internal)?;
+    let uploaded_set: HashSet<i64> = uploaded.into_iter().collect();
+    for idx in 0..session.total_chunks {
+        if !uploaded_set.contains(&idx) {
+            return Err(StatusCode::CONFLICT);
+        }
+    }
+
+    let assembled_dir = format!("{}/uploads/assembled", state.config.data_dir);
+    tokio::fs::create_dir_all(&assembled_dir).await.map_err(internal)?;
+    let assembled_path = upload_assembled_path(&state.config.data_dir, session_id, &session.file_name);
+    let mut assembled_file = tokio::fs::File::create(&assembled_path).await.map_err(internal)?;
+    let chunks_dir = upload_chunks_dir(&state.config.data_dir, session_id);
+    for idx in 0..session.total_chunks {
+        let chunk_path = format!("{chunks_dir}/{idx}.part");
+        let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_err(internal)?;
+        tokio::io::copy(&mut chunk_file, &mut assembled_file)
+            .await
+            .map_err(internal)?;
+    }
+    assembled_file.flush().await.map_err(internal)?;
+    state
+        .db
+        .set_upload_session_state(session_id, "processing", Some(&assembled_path), Some(""))
+        .map_err(internal)?;
+
+    let state_cloned = state.clone();
+    tokio::spawn(async move {
+        process_completed_upload_session(state_cloned, project_id, session_id, assembled_path).await;
+    });
+
+    Ok(Json(json!({
+        "session_id": session_id,
+        "status": "processing",
+    })))
 }
 
 pub(crate) async fn upload_project_files(

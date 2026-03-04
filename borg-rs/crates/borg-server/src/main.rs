@@ -792,6 +792,22 @@ async fn main() -> anyhow::Result<()> {
             post(routes::upload_project_files).layer(DefaultBodyLimit::max(110 * 1024 * 1024)),
         )
         .route(
+            "/api/projects/:id/uploads/sessions",
+            post(routes::create_upload_session),
+        )
+        .route(
+            "/api/projects/:id/uploads/sessions/:session_id",
+            get(routes::get_upload_session_status),
+        )
+        .route(
+            "/api/projects/:id/uploads/sessions/:session_id/complete",
+            post(routes::complete_upload_session),
+        )
+        .route(
+            "/api/projects/:id/uploads/sessions/:session_id/chunks/:chunk_index",
+            put(routes::upload_session_chunk),
+        )
+        .route(
             "/api/projects/:id/chat/messages",
             get(routes::get_project_chat_messages),
         )

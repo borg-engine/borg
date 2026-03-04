@@ -203,6 +203,24 @@ impl Pipeline {
             })
     }
 
+    /// Resolve the backend name that will be used for this task.
+    fn selected_backend_name(&self, task: &Task) -> String {
+        if !task.backend.is_empty() {
+            return task.backend.clone();
+        }
+        if let Some(repo) = self
+            .config
+            .watched_repos
+            .iter()
+            .find(|r| r.path == task.repo_path)
+        {
+            if !repo.backend.is_empty() {
+                return repo.backend.clone();
+            }
+        }
+        self.config.backend.clone()
+    }
+
     /// Build a PhaseContext for a task phase.
     fn make_context(
         &self,
@@ -486,7 +504,10 @@ impl Pipeline {
                 if let Some(mode) = self.resolve_mode(&task.mode) {
                     if mode.integration == IntegrationType::GitPr {
                         let branch = format!("task-{}", task.id);
-                        if let Err(e) = self.db.enqueue(task.id, &branch, &task.repo_path, 0) {
+                        if let Err(e) = self
+                            .db
+                            .enqueue_or_requeue(task.id, &branch, &task.repo_path, 0)
+                        {
                             warn!("re-enqueue orphaned done task #{}: {e}", task.id);
                         } else {
                             info!(
@@ -1230,8 +1251,152 @@ impl Pipeline {
             return Ok(());
         }
 
-        // GitHub API couldn't auto-merge — spawn a Docker agent to resolve conflicts
+        // Codex backend runs directly on host work_dir; rebase phases use session dirs.
+        // Use deterministic local git rebase path to avoid "not a repo" / sandbox loops.
+        if self.selected_backend_name(task) == "codex" {
+            return self
+                .run_rebase_non_interactive(task, phase, mode, slug, &branch)
+                .await;
+        }
+
+        // GitHub API couldn't auto-merge — spawn an agent to resolve conflicts
         self.run_rebase_agent(task, phase, mode, &branch).await
+    }
+
+    async fn verify_rebased_branch(&self, _task: &Task, slug: &str, branch: &str) -> Result<()> {
+        let compare = self
+            .gh(&[
+                "api",
+                &format!("repos/{slug}/compare/main...{branch}"),
+                "--jq",
+                ".behind_by",
+            ])
+            .await?;
+        let behind_by = compare.stdout.trim().parse::<u64>().unwrap_or(1);
+        if behind_by > 0 {
+            anyhow::bail!("branch {branch} is still behind main by {behind_by}");
+        }
+
+        let state_out = self
+            .gh(&[
+                "pr",
+                "view",
+                branch,
+                "--repo",
+                slug,
+                "--json",
+                "state,number",
+                "--jq",
+                ".state + \" \" + (.number|tostring)",
+            ])
+            .await;
+        if let Ok(o) = state_out {
+            if o.exit_code == 0 {
+                let mut parts = o.stdout.split_whitespace();
+                let state = parts.next().unwrap_or_default();
+                let num = parts.next().unwrap_or_default();
+                if state == "CLOSED" {
+                    let reopen = self
+                        .gh(&["pr", "reopen", num, "--repo", slug])
+                        .await
+                        .ok()
+                        .filter(|x| x.exit_code == 0);
+                    if reopen.is_none() {
+                        anyhow::bail!("PR #{num} is closed and could not be reopened");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn run_rebase_non_interactive(
+        &self,
+        task: &Task,
+        phase: &PhaseConfig,
+        mode: &PipelineMode,
+        slug: &str,
+        branch: &str,
+    ) -> Result<()> {
+        let ts = Utc::now().timestamp_millis();
+        let temp_root = std::env::temp_dir().join(format!("borg-rebase-task-{}-{ts}", task.id));
+        std::fs::create_dir_all(&temp_root)
+            .with_context(|| format!("create temp rebase dir {}", temp_root.display()))?;
+        let work_dir = temp_root.join("repo");
+        let work_dir_s = work_dir.to_string_lossy().to_string();
+
+        let clone = tokio::process::Command::new("git")
+            .args([
+                "clone",
+                "--no-tags",
+                "--single-branch",
+                "--branch",
+                branch,
+                &task.repo_path,
+                &work_dir_s,
+            ])
+            .output()
+            .await
+            .context("git clone for non-interactive rebase")?;
+        if !clone.status.success() {
+            let err = String::from_utf8_lossy(&clone.stderr).to_string();
+            self.fail_or_retry(task, "rebase", &format!("clone failed: {err}"))?;
+            return Ok(());
+        }
+
+        let fetch = tokio::process::Command::new("git")
+            .args(["fetch", "origin", "main"])
+            .current_dir(&work_dir_s)
+            .output()
+            .await
+            .context("git fetch origin main")?;
+        if !fetch.status.success() {
+            let err = String::from_utf8_lossy(&fetch.stderr).to_string();
+            self.fail_or_retry(task, "rebase", &format!("fetch failed: {err}"))?;
+            return Ok(());
+        }
+
+        let rebase = tokio::process::Command::new("git")
+            .args(["rebase", "origin/main"])
+            .current_dir(&work_dir_s)
+            .output()
+            .await
+            .context("git rebase origin/main")?;
+        if !rebase.status.success() {
+            let err = String::from_utf8_lossy(&rebase.stderr).to_string();
+            self.fail_or_retry(task, "rebase", &format!("rebase failed: {err}"))?;
+            return Ok(());
+        }
+
+        let test_cmd = self.repo_config(task).test_cmd;
+        if let Some(check_cmd) = derive_compile_check(&test_cmd) {
+            let out = self.run_test_command(&work_dir_s, &check_cmd).await?;
+            if out.exit_code != 0 {
+                let err = format!("{}\n{}", out.stdout, out.stderr);
+                self.fail_or_retry(task, "rebase", &format!("compile check failed: {err}"))?;
+                return Ok(());
+            }
+        }
+
+        let push = tokio::process::Command::new("git")
+            .args(["push", "--force-with-lease", "origin", branch])
+            .current_dir(&work_dir_s)
+            .output()
+            .await
+            .context("git push --force-with-lease")?;
+        if !push.status.success() {
+            let err = String::from_utf8_lossy(&push.stderr).to_string();
+            self.fail_or_retry(task, "rebase", &format!("push failed: {err}"))?;
+            return Ok(());
+        }
+
+        if let Err(e) = self.verify_rebased_branch(task, slug, branch).await {
+            self.fail_or_retry(task, "rebase", &format!("post-rebase verification failed: {e}"))?;
+            return Ok(());
+        }
+
+        self.advance_phase(task, phase, mode)?;
+        Ok(())
     }
 
     /// Spawn a Docker agent to rebase the branch onto main and resolve conflicts.
@@ -1332,6 +1497,18 @@ and report what went wrong.",
                     )?;
                     return Ok(());
                 }
+            }
+            let repo = self.repo_config(task);
+            if let Err(e) = self
+                .verify_rebased_branch(task, &repo.repo_slug, branch)
+                .await
+            {
+                self.fail_or_retry(
+                    task,
+                    "rebase",
+                    &format!("post-rebase verification failed: {e}"),
+                )?;
+                return Ok(());
             }
             info!("task #{} rebase: agent resolved conflicts", task.id);
             self.advance_phase(task, phase, mode)?;
@@ -1459,7 +1636,10 @@ and report what went wrong.",
             match mode.integration {
                 IntegrationType::GitPr => {
                     let branch = format!("task-{}", task.id);
-                    if let Err(e) = self.db.enqueue(task.id, &branch, &task.repo_path, 0) {
+                    if let Err(e) = self
+                        .db
+                        .enqueue_or_requeue(task.id, &branch, &task.repo_path, 0)
+                    {
                         warn!("enqueue for task #{}: {}", task.id, e);
                     } else {
                         info!("task #{} done, queued for integration", task.id);
@@ -1918,6 +2098,34 @@ and report what went wrong.",
                         excluded_ids.insert(entry.id);
                         continue;
                     }
+                    // Closed but not identical: attempt reopen so the branch can re-enter merge flow.
+                    let pr_num = self
+                        .gh(&[
+                            "pr",
+                            "view",
+                            &entry.branch,
+                            "--repo",
+                            slug,
+                            "--json",
+                            "number",
+                            "--jq",
+                            ".number",
+                        ])
+                        .await
+                        .ok()
+                        .map(|o| o.stdout.trim().to_string())
+                        .filter(|s| !s.is_empty());
+                    if let Some(num) = pr_num {
+                        let reopened = self
+                            .gh(&["pr", "reopen", &num, "--repo", slug])
+                            .await
+                            .ok()
+                            .filter(|o| o.exit_code == 0);
+                        if reopened.is_some() {
+                            info!("Task #{} {}: reopened closed PR #{}", entry.task_id, entry.branch, num);
+                            continue;
+                        }
+                    }
                 }
             }
 
@@ -1930,9 +2138,9 @@ and report what went wrong.",
                     "--repo",
                     slug,
                     "--json",
-                    "number",
+                    "number,state",
                     "--jq",
-                    ".number",
+                    ".state + \" \" + (.number|tostring)",
                 ])
                 .await;
             let view_out = match view_out {
@@ -1940,7 +2148,26 @@ and report what went wrong.",
                 Err(e) => { warn!("gh pr view {}: {e}", entry.branch); continue; }
             };
             if view_out.exit_code == 0 && !view_out.stdout.trim().is_empty() {
-                continue;
+                let mut parts = view_out.stdout.split_whitespace();
+                let state = parts.next().unwrap_or_default();
+                let number = parts.next().unwrap_or_default();
+                if state == "OPEN" {
+                    continue;
+                }
+                if state == "CLOSED" && !number.is_empty() {
+                    let reopened = self
+                        .gh(&["pr", "reopen", number, "--repo", slug])
+                        .await
+                        .ok()
+                        .filter(|o| o.exit_code == 0);
+                    if reopened.is_some() {
+                        info!(
+                            "Task #{} {}: reopened PR #{}",
+                            entry.task_id, entry.branch, number
+                        );
+                        continue;
+                    }
+                }
             }
 
             // Get task title for PR

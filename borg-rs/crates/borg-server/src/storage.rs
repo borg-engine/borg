@@ -102,6 +102,46 @@ impl FileStorage {
         }
     }
 
+    pub async fn put_project_file_from_path(
+        &self,
+        project_id: i64,
+        object_name: &str,
+        source_path: &str,
+    ) -> Result<String> {
+        match self {
+            Self::Local { data_dir } => {
+                let files_dir = format!("{data_dir}/projects/{project_id}/files");
+                tokio::fs::create_dir_all(&files_dir)
+                    .await
+                    .with_context(|| format!("create project dir {files_dir}"))?;
+                let stored_path = format!("{files_dir}/{object_name}");
+                tokio::fs::copy(source_path, &stored_path)
+                    .await
+                    .with_context(|| format!("copy project file {source_path} -> {stored_path}"))?;
+                Ok(stored_path)
+            }
+            Self::S3 {
+                bucket,
+                prefix,
+                client,
+            } => {
+                let key = format!("{prefix}projects/{project_id}/files/{object_name}");
+                let body = ByteStream::from_path(std::path::Path::new(source_path))
+                    .await
+                    .context("create s3 bytestream from path")?;
+                client
+                    .put_object()
+                    .bucket(bucket)
+                    .key(&key)
+                    .body(body)
+                    .send()
+                    .await
+                    .context("s3 put_object project file from path")?;
+                Ok(format!("s3://{bucket}/{key}"))
+            }
+        }
+    }
+
     pub async fn read_all(&self, stored_path: &str) -> Result<Vec<u8>> {
         match self {
             Self::Local { .. } => tokio::fs::read(stored_path)
