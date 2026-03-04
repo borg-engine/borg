@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   browseProjectCloudFiles,
+  completeProjectUploadSession,
+  createProjectUploadSession,
   createProject,
   deleteProjectCloudConnection,
   fetchProjectFileText,
+  getProjectUploadSessionStatus,
   getProjectChatMessages,
   importProjectCloudFiles,
   listProjectUploadSessions,
   reextractProjectFile,
   retryProjectUploadSession,
   sendProjectChat,
-  uploadProjectFiles,
+  uploadProjectUploadChunk,
   useProjectCloudConnections,
   useSettings,
   useModes,
@@ -61,6 +64,19 @@ const CHAT_SUGGESTED_PROMPTS = [
   "List recurring terms and explain why they matter for this matter.",
   "Identify common patterns, contradictions, and missing evidence.",
 ] as const;
+const RESUMABLE_UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024;
+const RESUMABLE_UPLOAD_PARALLEL_CHUNKS = 4;
+const UPLOAD_SESSION_KEY_PREFIX = "borg-upload-session";
+
+type FileUploadProgress = {
+  id: string;
+  fileName: string;
+  uploadedBytes: number;
+  totalBytes: number;
+  status: "starting" | "uploading" | "processing" | "done" | "failed";
+  sessionId?: number;
+  error?: string;
+};
 
 function cloudProviderLabel(provider: string): string {
   return CLOUD_PROVIDERS.find((p) => p.id === provider)?.label ?? provider;
@@ -225,6 +241,7 @@ export function ProjectsPanel() {
   const [uploadSessions, setUploadSessions] = useState<UploadSession[]>([]);
   const [uploadSessionCounts, setUploadSessionCounts] = useState<Record<string, number>>({});
   const [uploadSessionsLoading, setUploadSessionsLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<FileUploadProgress[]>([]);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageInput, setMessageInput] = useState("");
@@ -252,6 +269,19 @@ export function ProjectsPanel() {
     1,
     settings?.cloud_import_max_batch_files ?? MAX_CLOUD_IMPORT_SELECTION
   );
+
+  const updateUploadProgress = useCallback((id: string, patch: Partial<FileUploadProgress>) => {
+    setUploadProgress((prev) =>
+      prev.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry))
+    );
+  }, []);
+
+  const refreshUploadSessions = useCallback(async () => {
+    if (!activeProjectId) return;
+    const data = await listProjectUploadSessions(activeProjectId, 30);
+    setUploadSessions(data.sessions || []);
+    setUploadSessionCounts(data.counts || {});
+  }, [activeProjectId]);
 
   useEffect(() => {
     if (!selectedProjectId && projects.length > 0) {
@@ -418,16 +448,149 @@ export function ProjectsPanel() {
     }
   }
 
+  function uploadSessionStorageKey(projectId: number, file: File): string {
+    return `${UPLOAD_SESSION_KEY_PREFIX}:${projectId}:${file.name}:${file.size}:${file.lastModified}`;
+  }
+
+  function buildChunkQueueFromRanges(ranges: Array<[number, number]>, totalChunks: number): number[] {
+    const queue: number[] = [];
+    if (ranges.length === 0) {
+      for (let idx = 0; idx < totalChunks; idx += 1) queue.push(idx);
+      return queue;
+    }
+    for (const [startRaw, endRaw] of ranges) {
+      const start = Math.max(0, startRaw);
+      const end = Math.min(totalChunks - 1, endRaw);
+      for (let idx = start; idx <= end; idx += 1) queue.push(idx);
+    }
+    return queue;
+  }
+
+  async function uploadChunkQueue(
+    projectId: number,
+    sessionId: number,
+    file: File,
+    chunkSize: number,
+    queue: number[],
+    onChunkUploaded: (bytes: number) => void,
+  ) {
+    const workerCount = Math.min(RESUMABLE_UPLOAD_PARALLEL_CHUNKS, queue.length);
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (true) {
+          const chunkIndex = queue.shift();
+          if (chunkIndex === undefined) return;
+          const start = chunkIndex * chunkSize;
+          const end = Math.min(start + chunkSize, file.size);
+          const blob = file.slice(start, end);
+          await uploadProjectUploadChunk(projectId, sessionId, chunkIndex, blob);
+          onChunkUploaded(blob.size);
+        }
+      }),
+    );
+  }
+
   async function handleUpload(filesToUpload: FileList | File[]) {
     if (!activeProjectId || uploading) return;
     setUploading(true);
     setUploadError(null);
+    const files = Array.from(filesToUpload);
+    const startingProgress: FileUploadProgress[] = files.map((file, idx) => ({
+      id: `${Date.now()}-${idx}-${file.name}`,
+      fileName: file.name,
+      totalBytes: file.size,
+      uploadedBytes: 0,
+      status: "starting",
+    }));
+    setUploadProgress(startingProgress);
     try {
-      await uploadProjectFiles(activeProjectId, filesToUpload);
+      for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+        const file = files[fileIndex];
+        const progressId = startingProgress[fileIndex]?.id ?? `${Date.now()}-${fileIndex}-${file.name}`;
+        const chunkSize = RESUMABLE_UPLOAD_CHUNK_SIZE;
+        const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
+        const sessionKey = uploadSessionStorageKey(activeProjectId, file);
+        let sessionId = Number(localStorage.getItem(sessionKey) || "");
+        let status = null as Awaited<ReturnType<typeof getProjectUploadSessionStatus>> | null;
+
+        try {
+          if (Number.isFinite(sessionId) && sessionId > 0) {
+            status = await getProjectUploadSessionStatus(activeProjectId, sessionId);
+            if (status.session.status !== "uploading") {
+              localStorage.removeItem(sessionKey);
+            }
+          } else {
+            sessionId = 0;
+          }
+        } catch {
+          sessionId = 0;
+          status = null;
+          localStorage.removeItem(sessionKey);
+        }
+
+        if (!status) {
+          const created = await createProjectUploadSession(activeProjectId, {
+            file_name: file.name,
+            mime_type: file.type || "application/octet-stream",
+            file_size: file.size,
+            chunk_size: chunkSize,
+            total_chunks: totalChunks,
+            is_zip: file.name.toLowerCase().endsWith(".zip"),
+          });
+          sessionId = created.session_id;
+          localStorage.setItem(sessionKey, String(sessionId));
+          status = await getProjectUploadSessionStatus(activeProjectId, sessionId);
+        }
+
+        updateUploadProgress(progressId, {
+          sessionId,
+          uploadedBytes: status.session.uploaded_bytes,
+          status: status.session.status === "uploading" ? "uploading" : status.session.status,
+        });
+
+        if (status.session.status === "uploading") {
+          const queue = buildChunkQueueFromRanges(status.missing_ranges, status.total_chunks);
+          await uploadChunkQueue(activeProjectId, sessionId, file, status.session.chunk_size, queue, (bytes) => {
+            setUploadProgress((prev) =>
+              prev.map((entry) =>
+                entry.id === progressId
+                  ? { ...entry, uploadedBytes: Math.min(entry.uploadedBytes + bytes, entry.totalBytes), status: "uploading" }
+                  : entry
+              ),
+            );
+          });
+          await completeProjectUploadSession(activeProjectId, sessionId);
+          localStorage.removeItem(sessionKey);
+          updateUploadProgress(progressId, {
+            uploadedBytes: file.size,
+            status: "processing",
+          });
+        } else if (status.session.status === "done") {
+          localStorage.removeItem(sessionKey);
+          updateUploadProgress(progressId, {
+            uploadedBytes: file.size,
+            status: "done",
+          });
+        } else if (status.session.status === "failed") {
+          updateUploadProgress(progressId, {
+            status: "failed",
+            error: status.session.error || "upload processing failed",
+          });
+        } else {
+          updateUploadProgress(progressId, {
+            uploadedBytes: file.size,
+            status: "processing",
+          });
+        }
+      }
       await refetchFiles();
+      await refreshUploadSessions();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "upload failed";
-      setUploadError(msg === "413" ? "Upload exceeds 100MB project limit." : `Upload failed (${msg})`);
+      setUploadError(msg === "413" ? "Upload exceeds project byte limit." : `Upload failed (${msg})`);
+      setUploadProgress((prev) =>
+        prev.map((entry) => (entry.status === "done" ? entry : { ...entry, status: "failed", error: msg })),
+      );
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -454,9 +617,7 @@ export function ProjectsPanel() {
     if (!activeProjectId) return;
     try {
       await retryProjectUploadSession(activeProjectId, sessionId);
-      const data = await listProjectUploadSessions(activeProjectId, 30);
-      setUploadSessions(data.sessions || []);
-      setUploadSessionCounts(data.counts || {});
+      await refreshUploadSessions();
     } catch {
       // no-op
     }
@@ -717,6 +878,33 @@ export function ProjectsPanel() {
               </div>
               {uploadError && (
                 <div className="mt-2 text-[11px] text-red-400">{uploadError}</div>
+              )}
+              {uploadProgress.length > 0 && (
+                <div className="mt-2 space-y-1 rounded border border-white/[0.06] bg-black/20 p-2">
+                  {uploadProgress.map((entry) => {
+                    const pct = entry.totalBytes > 0 ? Math.round((entry.uploadedBytes / entry.totalBytes) * 100) : 0;
+                    return (
+                      <div key={entry.id} className="text-[11px]">
+                        <div className="flex items-center justify-between gap-2 text-zinc-400">
+                          <span className="truncate">{entry.fileName}</span>
+                          <span className="shrink-0 text-zinc-500">
+                            {entry.status} {entry.status === "uploading" || entry.status === "processing" || entry.status === "done" ? `${pct}%` : ""}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-white/[0.06]">
+                          <div
+                            className={cn(
+                              "h-full transition-all",
+                              entry.status === "failed" ? "bg-red-500/70" : "bg-blue-500/70"
+                            )}
+                            style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+                          />
+                        </div>
+                        {entry.error && <div className="mt-0.5 text-[10px] text-red-400">{entry.error}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
               <div className="mt-3 max-h-28 overflow-y-auto rounded border border-white/[0.06] bg-black/20">
                 {files.map((f) => (
