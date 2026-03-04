@@ -1,5 +1,5 @@
-import { useTaskDetail, useTaskStream, useTaskContainer, useFullModes, retryTask, setTaskBackend, approveTask, rejectTask, requestRevision, getRevisionHistory } from "@/lib/api";
-import type { RevisionHistory } from "@/lib/api";
+import { useTaskDetail, useTaskStream, useTaskContainer, useFullModes, retryTask, setTaskBackend, approveTask, rejectTask, requestRevision, getRevisionHistory, getTaskDiagnostics } from "@/lib/api";
+import type { RevisionHistory, TaskDiagnostics } from "@/lib/api";
 import { PhaseTracker } from "./phase-tracker";
 import { StatusBadge } from "./status-badge";
 import { LiveTerminal } from "./live-terminal";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { parseRawStream, type ParsedStreamEvent } from "@/lib/stream-utils";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { ArrowLeft, RotateCcw } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface TaskDetailProps {
   taskId: number;
@@ -31,6 +31,13 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
   const [revisionFeedback, setRevisionFeedback] = useState("");
   const [revHistory, setRevHistory] = useState<RevisionHistory | null>(null);
   const [showRevHistory, setShowRevHistory] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const { data: diagnostics, isFetching: diagnosticsLoading } = useQuery<TaskDiagnostics>({
+    queryKey: ["task_diagnostics", taskId],
+    queryFn: () => getTaskDiagnostics(taskId),
+    enabled: showDiagnostics,
+    staleTime: 10_000,
+  });
 
   if (isLoading || !task) {
     return (
@@ -173,6 +180,12 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
           <span>
             <span className="text-zinc-600">at</span> {task.created_at}
           </span>
+          <button
+            onClick={() => setShowDiagnostics((v) => !v)}
+            className="rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] text-zinc-500 hover:border-white/[0.16] hover:text-zinc-300 transition-colors"
+          >
+            {showDiagnostics ? "Hide diagnostics" : "Show diagnostics"}
+          </button>
           <span className="flex items-center gap-1">
             <span className="text-zinc-600">backend</span>
             <select
@@ -259,6 +272,35 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
           <pre className="max-h-20 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] text-red-400/90">
             {task.last_error}
           </pre>
+        </div>
+      )}
+
+      {showDiagnostics && (
+        <div className="mx-4 mt-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3 text-[11px]">
+          {diagnosticsLoading && !diagnostics ? (
+            <div className="text-zinc-500">Loading diagnostics…</div>
+          ) : diagnostics ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-zinc-400">
+                <span>stuck_suspected: <span className={diagnostics.summary.stuck_suspected ? "text-amber-400" : "text-zinc-500"}>{String(diagnostics.summary.stuck_suspected)}</span></span>
+                <span>same_failure_streak: {diagnostics.summary.same_failure_streak}</span>
+                <span>queue_entries: {diagnostics.queue_entries.length}</span>
+                <span>attempt: {diagnostics.summary.attempt}/{diagnostics.summary.max_attempts}</span>
+              </div>
+              <div>
+                <div className="mb-1 text-zinc-500">Recent events</div>
+                <div className="max-h-24 overflow-y-auto space-y-1">
+                  {diagnostics.recent_events.slice(0, 8).map((e) => (
+                    <div key={e.id} className="font-mono text-[10px] text-zinc-500">
+                      [{e.created_at}] {e.kind}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-zinc-500">Diagnostics unavailable</div>
+          )}
         </div>
       )}
 

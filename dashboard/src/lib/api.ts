@@ -3,6 +3,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import type {
   Task,
   TaskDetail,
+  TaskOutput,
   QueueEntry,
   Status,
   LogEvent,
@@ -111,6 +112,41 @@ export function useTaskDetail(id: number | null) {
 export async function getTaskStructuredData(id: number): Promise<Record<string, unknown> | null> {
   const detail: TaskDetail = await fetchJson(`/api/tasks/${id}`);
   return detail.structured_data ?? null;
+}
+
+export interface TaskDiagnosticsSummary {
+  attempt: number;
+  max_attempts: number;
+  status: string;
+  review_status?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  duration_secs?: number | null;
+  stuck_suspected: boolean;
+  same_failure_streak: number;
+  has_queue_entry: boolean;
+}
+
+export interface TaskDiagnosticsEvent {
+  id: number;
+  task_id: number | null;
+  project_id: number | null;
+  actor: string;
+  kind: string;
+  payload: string;
+  created_at: string;
+}
+
+export interface TaskDiagnostics {
+  task: Task;
+  summary: TaskDiagnosticsSummary;
+  queue_entries: QueueEntry[];
+  recent_outputs: Array<Pick<TaskOutput, "id" | "phase" | "output" | "exit_code" | "created_at">>;
+  recent_events: TaskDiagnosticsEvent[];
+}
+
+export async function getTaskDiagnostics(id: number): Promise<TaskDiagnostics> {
+  return fetchJson(`/api/tasks/${id}/diagnostics`);
 }
 
 export function useQueue() {
@@ -271,63 +307,6 @@ export async function dismissProposal(id: number): Promise<void> {
 
 export async function triageProposals(): Promise<{ scored: number }> {
   const res = await apiFetch("/api/proposals/triage", { method: "POST" });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
-}
-
-export interface PlanTodo {
-  id: number;
-  title: string;
-  details: string;
-  status: "todo" | "doing" | "blocked" | "done";
-  priority: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export function usePlanTodos() {
-  return useQuery<{ items: PlanTodo[] }>({
-    queryKey: ["plan_todos"],
-    queryFn: () => fetchJson("/api/plan/todos"),
-    staleTime: 30_000,
-  });
-}
-
-export async function createPlanTodo(body: {
-  title: string;
-  details?: string;
-  status?: "todo" | "doing" | "blocked" | "done";
-  priority?: number;
-}): Promise<PlanTodo> {
-  const res = await apiFetch("/api/plan/todos", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
-}
-
-export async function patchPlanTodo(
-  id: number,
-  patch: Partial<Pick<PlanTodo, "title" | "details" | "status" | "priority">>,
-): Promise<PlanTodo> {
-  const res = await apiFetch(`/api/plan/todos/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
-}
-
-export async function deletePlanTodo(id: number): Promise<void> {
-  const res = await apiFetch(`/api/plan/todos/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(`${res.status}`);
-}
-
-export async function seedProdPlanTodos(): Promise<{ seeded: boolean; items: PlanTodo[] }> {
-  const res = await apiFetch("/api/plan/todos/seed-prod", { method: "POST" });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
