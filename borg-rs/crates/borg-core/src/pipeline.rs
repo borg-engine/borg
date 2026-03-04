@@ -1,5 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
+    ffi::CString,
+    path::PathBuf,
     process::Command,
     sync::Arc,
 };
@@ -59,6 +61,8 @@ pub struct Pipeline {
     in_flight_repos: Mutex<HashSet<String>>,
     /// Per-task last agent dispatch timestamp (epoch seconds) for rate limiting.
     last_agent_dispatch: Mutex<HashMap<i64, i64>>,
+    /// Per-task deferred retry unlock timestamp (epoch seconds).
+    retry_not_before: Mutex<HashMap<i64, i64>>,
     /// Prevents overlapping seed runs (seeding is spawned in background).
     seeding_active: std::sync::atomic::AtomicBool,
     /// Tracks repeated phase-failure signatures per task to detect stuck loops.
@@ -150,6 +154,7 @@ impl Pipeline {
             in_flight: Mutex::new(HashSet::new()),
             in_flight_repos: Mutex::new(HashSet::new()),
             last_agent_dispatch: Mutex::new(HashMap::new()),
+            retry_not_before: Mutex::new(HashMap::new()),
             seeding_active: std::sync::atomic::AtomicBool::new(false),
             failure_signatures: std::sync::Mutex::new(HashMap::new()),
             agent_network_available,
@@ -241,6 +246,118 @@ impl Pipeline {
         } else {
             Some(lint_cmd.to_string())
         }
+    }
+
+    fn task_wall_timeout_s(&self) -> u64 {
+        // Whole-task timeout should be materially above per-command timeouts.
+        (self.config.agent_timeout_s.max(300) as u64).saturating_mul(3).max(900)
+    }
+
+    fn retry_backoff_secs(&self, task_id: i64, attempt: i64, error: &str) -> Option<i64> {
+        let class = classify_retry_error(error);
+        let exp = ((attempt - 1).max(0) as u32).min(6);
+        let secs = match class {
+            RetryClass::Resource => (30_i64 * (1_i64 << exp)).min(600),
+            RetryClass::Transient => (15_i64 * (1_i64 << exp)).min(300),
+            _ => return None,
+        };
+        let now = Utc::now().timestamp();
+        let unlock_at = now + secs;
+        self.retry_not_before
+            .try_lock()
+            .map(|mut m| m.insert(task_id, unlock_at))
+            .ok();
+        Some(secs)
+    }
+
+    fn should_defer_retry(&self, task_id: i64) -> Option<i64> {
+        let now = Utc::now().timestamp();
+        let map = self.retry_not_before.try_lock().ok()?;
+        let unlock_at = *map.get(&task_id)?;
+        if unlock_at > now {
+            Some(unlock_at - now)
+        } else {
+            None
+        }
+    }
+
+    fn pipeline_tmp_dir(&self) -> PathBuf {
+        PathBuf::from(format!("{}/tmp", self.config.data_dir))
+    }
+
+    fn ensure_tmp_capacity(&self, task_id: i64, phase: &str) -> Result<()> {
+        const MIN_TMP_FREE_BYTES: u64 = 512 * 1024 * 1024;
+        const MIN_TMP_FREE_INODES: u64 = 5_000;
+        const MAX_TMP_INODE_USED_PCT: f64 = 85.0;
+
+        let is_healthy = |h: &TmpHealth| {
+            h.inode_used_pct < MAX_TMP_INODE_USED_PCT
+                && h.free_bytes >= MIN_TMP_FREE_BYTES
+                && h.free_inodes >= MIN_TMP_FREE_INODES
+        };
+
+        let before = tmp_health("/tmp");
+        if before.as_ref().is_some_and(is_healthy) {
+            return Ok(());
+        }
+
+        let msg = if let Some(h) = before {
+            format!(
+                "Self-heal: low /tmp capacity before {phase} (task #{task_id}): inode_used={:.1}% free_inodes={} free_bytes={}MB",
+                h.inode_used_pct,
+                h.free_inodes,
+                h.free_bytes / (1024 * 1024)
+            )
+        } else {
+            format!("Self-heal: could not read /tmp statvfs before {phase} (task #{task_id})")
+        };
+        warn!("{msg}");
+        self.notify(&self.config.pipeline_admin_chat, &msg);
+
+        let removed_tmp = cleanup_tmp_prefixes("/tmp", &["borg-rebase-task-", "borg-", "task-"]);
+        let pipeline_tmp = self.pipeline_tmp_dir();
+        std::fs::create_dir_all(&pipeline_tmp).ok();
+        let removed_pipeline_tmp = cleanup_tmp_prefixes(
+            &pipeline_tmp.to_string_lossy(),
+            &["borg-rebase-task-", "borg-", "task-"],
+        );
+
+        let after = tmp_health("/tmp");
+        if after.as_ref().is_some_and(is_healthy) {
+            if let Some(h) = after {
+                let healed = format!(
+                    "Self-heal success: cleaned tmp artifacts ({removed_tmp} in /tmp, {removed_pipeline_tmp} in {}) now inode_used={:.1}% free_inodes={} free_bytes={}MB",
+                    pipeline_tmp.display(),
+                    h.inode_used_pct,
+                    h.free_inodes,
+                    h.free_bytes / (1024 * 1024)
+                );
+                info!("{healed}");
+                self.notify(&self.config.pipeline_admin_chat, &healed);
+            }
+            return Ok(());
+        }
+
+        if let Some(h) = after {
+            anyhow::bail!(
+                "tmp still unhealthy after self-heal before {phase}: inode_used={:.1}% free_inodes={} free_bytes={}MB",
+                h.inode_used_pct,
+                h.free_inodes,
+                h.free_bytes / (1024 * 1024)
+            );
+        }
+        anyhow::bail!("tmp still unhealthy after self-heal before {phase}");
+    }
+
+    fn maybe_self_heal_tmp(&self) {
+        const HEAL_INTERVAL_S: i64 = 120;
+        let now = Utc::now().timestamp();
+        let last = self.db.get_ts("last_tmp_self_heal_ts");
+        if now - last < HEAL_INTERVAL_S {
+            return;
+        }
+        self.db.set_ts("last_tmp_self_heal_ts", now);
+        let _ = self.ensure_tmp_capacity(0, "tick_guardrail");
     }
 
     /// Build a PhaseContext for a task phase.
@@ -367,6 +484,12 @@ impl Pipeline {
                 }),
             );
         } else {
+            if let Some(backoff_s) = self.retry_backoff_secs(task.id, current.attempt, error) {
+                info!(
+                    "task #{} retry backoff scheduled: {}s (attempt {} phase {})",
+                    task.id, backoff_s, current.attempt, retry_status
+                );
+            }
             // After 3 attempts, force a fresh session with a summary of what was tried
             let error_ctx = if current.attempt >= 3 {
                 self.db.update_task_session(task.id, "").ok();
@@ -475,6 +598,9 @@ impl Pipeline {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         map.retain(|(id, _), _| *id != task_id);
+        if let Ok(mut retry_map) = self.retry_not_before.try_lock() {
+            retry_map.remove(&task_id);
+        }
     }
 
     /// Build a summary of previous failed attempts for fresh-session retries.
@@ -594,15 +720,19 @@ impl Pipeline {
                     task_repo,
                 };
 
-                let handle = tokio::spawn(async move {
-                    Arc::clone(&inner_pipeline)
-                        .process_task(task)
-                        .await
+                let timeout_s = pipeline.task_wall_timeout_s();
+                let mut handle = tokio::spawn(async move {
+                    Arc::clone(&inner_pipeline).process_task(task).await
                 });
-                match handle.await {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => error!("process_task #{task_id} error: {e}"),
-                    Err(join_err) => {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(timeout_s),
+                    &mut handle,
+                )
+                .await
+                {
+                    Ok(Ok(Ok(()))) => {}
+                    Ok(Ok(Err(e))) => error!("process_task #{task_id} error: {e}"),
+                    Ok(Err(join_err)) => {
                         let msg = if join_err.is_panic() {
                             let panic = join_err.into_panic();
                             match panic.downcast_ref::<String>() {
@@ -622,6 +752,18 @@ impl Pipeline {
                             &format!("panic: {msg}"),
                         ) {
                             error!("process_task #{task_id} panic recovery DB update failed: {e}");
+                        }
+                    }
+                    Err(_) => {
+                        handle.abort();
+                        let msg = format!("task wall timeout after {timeout_s}s");
+                        error!("process_task #{task_id} timed out: {msg}");
+                        if let Err(e) = pipeline.fail_or_retry(
+                            &task_for_recovery,
+                            &task_for_recovery.status,
+                            &msg,
+                        ) {
+                            error!("process_task #{task_id} timeout recovery DB update failed: {e}");
                         }
                     }
                 }
@@ -669,6 +811,8 @@ impl Pipeline {
         self.check_remote_updates().await;
         self.maybe_apply_self_update();
         self.refresh_mirrors().await;
+        self.maybe_self_heal_tmp();
+        self.maybe_alert_guardrails();
         self.maybe_prune_cache_volumes().await;
         self.maybe_prune_session_dirs().await;
 
@@ -688,6 +832,14 @@ impl Pipeline {
 
     /// Process a single task through its current phase.
     async fn process_task(self: Arc<Self>, task: Task) -> Result<()> {
+        if let Some(wait_s) = self.should_defer_retry(task.id) {
+            info!(
+                "task #{} [{}] deferred by retry backoff ({}s remaining)",
+                task.id, task.status, wait_s
+            );
+            return Ok(());
+        }
+
         // Freshly requeued tasks should not inherit in-memory loop signatures
         // from previous failed runs.
         if task.attempt == 0 || task.status == "backlog" {
@@ -1143,7 +1295,10 @@ impl Pipeline {
                         "compileCheck",
                     )
                 } else {
-                    match self.run_test_command(&work_dir, &check_cmd).await {
+                    match self
+                        .run_test_command_for_task(task, &work_dir, &check_cmd)
+                        .await
+                    {
                         Ok(o) => Some(o),
                         Err(e) => {
                             warn!("compile check error for task #{}: {e}", task.id);
@@ -1175,7 +1330,10 @@ impl Pipeline {
             let out = if result.ran_in_docker {
                 container_result_as_test_output(&result.container_test_results, "test")
             } else {
-                match self.run_test_command(&work_dir, &test_cmd).await {
+                match self
+                    .run_test_command_for_task(task, &work_dir, &test_cmd)
+                    .await
+                {
                     Ok(o) => Some(o),
                     Err(e) => {
                         warn!("test command error for task #{}: {}", task.id, e);
@@ -1232,7 +1390,7 @@ impl Pipeline {
             let out = if use_docker {
                 self.run_test_in_container(task, &check_cmd).await?
             } else {
-                self.run_test_command(&work_dir, &check_cmd).await?
+                self.run_test_command_for_task(task, &work_dir, &check_cmd).await?
             };
             if out.exit_code != 0 {
                 let error_msg = format!("{}\n{}", out.stdout, out.stderr);
@@ -1260,7 +1418,10 @@ impl Pipeline {
         let out = if use_docker {
             self.run_test_in_container(task, &test_cmd).await?
         } else {
-            match self.run_test_command(&work_dir, &test_cmd).await {
+            match self
+                .run_test_command_for_task(task, &work_dir, &test_cmd)
+                .await
+            {
                 Ok(o) => o,
                 Err(e) => {
                     warn!("task #{} validate: test command error: {e}", task.id);
@@ -1445,12 +1606,28 @@ impl Pipeline {
         slug: &str,
         branch: &str,
     ) -> Result<()> {
+        if let Err(e) = self.ensure_tmp_capacity(task.id, "rebase_non_interactive") {
+            self.fail_or_retry(task, "rebase", &format!("tmp capacity check failed: {e}"))?;
+            return Ok(());
+        }
+
         let ts = Utc::now().timestamp_millis();
-        let temp_root = std::env::temp_dir().join(format!("borg-rebase-task-{}-{ts}", task.id));
+        let tmp_root = self.pipeline_tmp_dir();
+        std::fs::create_dir_all(&tmp_root).ok();
+        let temp_root = tmp_root.join(format!("borg-rebase-task-{}-{ts}", task.id));
         std::fs::create_dir_all(&temp_root)
             .with_context(|| format!("create temp rebase dir {}", temp_root.display()))?;
+        struct TempDirGuard(PathBuf);
+        impl Drop for TempDirGuard {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _temp_guard = TempDirGuard(temp_root.clone());
+
         let work_dir = temp_root.join("repo");
         let work_dir_s = work_dir.to_string_lossy().to_string();
+        let tmp_env = self.pipeline_tmp_dir().to_string_lossy().to_string();
 
         let clone = tokio::process::Command::new("git")
             .args([
@@ -1459,6 +1636,7 @@ impl Pipeline {
                 &task.repo_path,
                 &work_dir_s,
             ])
+            .env("TMPDIR", &tmp_env)
             .output()
             .await
             .context("git clone for non-interactive rebase")?;
@@ -1476,6 +1654,7 @@ impl Pipeline {
                 &format!("{branch}:refs/remotes/origin/{branch}"),
             ])
             .current_dir(&work_dir_s)
+            .env("TMPDIR", &tmp_env)
             .output()
             .await
             .context("git fetch origin main")?;
@@ -1488,6 +1667,7 @@ impl Pipeline {
         let checkout = tokio::process::Command::new("git")
             .args(["checkout", branch])
             .current_dir(&work_dir_s)
+            .env("TMPDIR", &tmp_env)
             .output()
             .await
             .context("git checkout branch for rebase")?;
@@ -1500,6 +1680,7 @@ impl Pipeline {
         let rebase = tokio::process::Command::new("git")
             .args(["rebase", "-X", "theirs", "origin/main"])
             .current_dir(&work_dir_s)
+            .env("TMPDIR", &tmp_env)
             .output()
             .await
             .context("git rebase origin/main")?;
@@ -1511,7 +1692,9 @@ impl Pipeline {
 
         let test_cmd = self.repo_config(task).test_cmd;
         if let Some(check_cmd) = derive_compile_check(&test_cmd) {
-            let out = self.run_test_command(&work_dir_s, &check_cmd).await?;
+            let out = self
+                .run_test_command_for_task(task, &work_dir_s, &check_cmd)
+                .await?;
             if out.exit_code != 0 {
                 let err = format!("{}\n{}", out.stdout, out.stderr);
                 self.fail_or_retry(task, "rebase", &format!("compile check failed: {err}"))?;
@@ -1540,6 +1723,7 @@ impl Pipeline {
         let set_url = tokio::process::Command::new("git")
             .args(["remote", "set-url", "origin", &origin_url])
             .current_dir(&work_dir_s)
+            .env("TMPDIR", &tmp_env)
             .output()
             .await
             .context("git remote set-url origin")?;
@@ -1552,6 +1736,7 @@ impl Pipeline {
         let push = tokio::process::Command::new("git")
             .args(["push", "--force", "origin", branch])
             .current_dir(&work_dir_s)
+            .env("TMPDIR", &tmp_env)
             .output()
             .await
             .context("git push --force-with-lease")?;
@@ -1720,7 +1905,9 @@ codebase pass the project's linter with zero warnings or errors. Do not refactor
 change logic — only fix what the linter reports. Read the lint output carefully and make the \
 minimal changes needed. After editing, do not run the linter yourself — the pipeline will verify.";
 
-        let mut lint_out = self.run_test_command(&wt_path, &lint_cmd).await?;
+        let mut lint_out = self
+            .run_test_command_for_task(task, &wt_path, &lint_cmd)
+            .await?;
         if lint_out.exit_code == 0 {
             self.advance_phase(task, phase, mode)?;
             info!("task #{} lint_fix: already clean", task.id);
@@ -1800,7 +1987,9 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             let lint_commit_msg = Self::with_user_coauthor("fix: lint errors", &user_coauthor);
             let _ = git.commit_all(&wt_path, &lint_commit_msg, self.git_author());
 
-            lint_out = self.run_test_command(&wt_path, &lint_cmd).await?;
+            lint_out = self
+                .run_test_command_for_task(task, &wt_path, &lint_cmd)
+                .await?;
             if lint_out.exit_code == 0 {
                 self.advance_phase(task, phase, mode)?;
                 info!(
@@ -1883,7 +2072,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
             let msg = Self::with_user_coauthor("fix: compile errors", &user_coauthor);
             let _ = git.commit_all(work_dir, &msg, self.git_author());
 
-            match self.run_test_command(work_dir, check_cmd).await {
+            match self.run_test_command_for_task(task, work_dir, check_cmd).await {
                 Ok(ref out) if out.exit_code == 0 => {
                     info!("task #{} compile_fix: resolved after {} attempt(s)", task.id, attempt + 1);
                     return Ok(true);
@@ -2144,7 +2333,20 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
     // ── Test runner ───────────────────────────────────────────────────────
 
+    pub(crate) async fn run_test_command_for_task(
+        &self,
+        task: &Task,
+        dir: &str,
+        cmd: &str,
+    ) -> Result<TestOutput> {
+        self.ensure_tmp_capacity(task.id, "run_test_command")?;
+        self.run_test_command(dir, cmd).await
+    }
+
     pub(crate) async fn run_test_command(&self, dir: &str, cmd: &str) -> Result<TestOutput> {
+        self.ensure_tmp_capacity(0, "run_test_command")?;
+        let tmp_dir = self.pipeline_tmp_dir();
+        std::fs::create_dir_all(&tmp_dir).ok();
         let timeout = std::time::Duration::from_secs(self.config.agent_timeout_s.max(300) as u64);
         let output = tokio::time::timeout(
             timeout,
@@ -2152,6 +2354,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 .arg("-c")
                 .arg(cmd)
                 .current_dir(dir)
+                .env("TMPDIR", tmp_dir.to_string_lossy().to_string())
                 .output(),
         )
         .await
@@ -2168,6 +2371,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
     /// Run a test command inside a fresh Docker container (for validate phase in Docker mode).
     /// Clones the task branch and runs `cmd` directly via bash — no claude agent involved.
     async fn run_test_in_container(&self, task: &Task, cmd: &str) -> Result<TestOutput> {
+        self.ensure_tmp_capacity(task.id, "run_test_in_container")?;
         let timeout = std::time::Duration::from_secs(self.config.agent_timeout_s.max(300) as u64);
         let repo_name = std::path::Path::new(&task.repo_path)
             .file_name()
@@ -3407,6 +3611,59 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         }
     }
 
+    fn maybe_alert_guardrails(&self) {
+        const ALERT_INTERVAL_S: i64 = 5 * 60;
+        let now = chrono::Utc::now().timestamp();
+        let last = self.db.get_ts("last_guardrail_check_ts");
+        if now - last < ALERT_INTERVAL_S {
+            return;
+        }
+        self.db.set_ts("last_guardrail_check_ts", now);
+
+        let rebase_count = self.db.count_tasks_with_status("rebase").unwrap_or(0);
+        if rebase_count >= 50 {
+            let last_alert = self.db.get_ts("last_alert_rebase_backlog_ts");
+            if now - last_alert >= 15 * 60 {
+                self.db.set_ts("last_alert_rebase_backlog_ts", now);
+                let msg = format!(
+                    "Guardrail alert: rebase backlog is high ({rebase_count} tasks in rebase)."
+                );
+                warn!("{msg}");
+                self.notify(&self.config.pipeline_admin_chat, &msg);
+            }
+        }
+
+        let queued_count = self.db.count_queue_with_status("queued").unwrap_or(0)
+            + self.db.count_queue_with_status("merging").unwrap_or(0);
+        let last_merge_ts = self.db.get_ts("last_release_ts");
+        if queued_count > 0 && now - last_merge_ts >= 60 * 60 {
+            let last_alert = self.db.get_ts("last_alert_no_merge_ts");
+            if now - last_alert >= 15 * 60 {
+                self.db.set_ts("last_alert_no_merge_ts", now);
+                let mins = (now - last_merge_ts) / 60;
+                let msg = format!(
+                    "Guardrail alert: {queued_count} queued/merging entries and no merge for {mins} minutes."
+                );
+                warn!("{msg}");
+                self.notify(&self.config.pipeline_admin_chat, &msg);
+            }
+        }
+
+        if let Some(inode_used_pct) = tmp_inode_usage_percent("/tmp") {
+            if inode_used_pct >= 90.0 {
+                let last_alert = self.db.get_ts("last_alert_tmp_inode_ts");
+                if now - last_alert >= 15 * 60 {
+                    self.db.set_ts("last_alert_tmp_inode_ts", now);
+                    let msg = format!(
+                        "Guardrail alert: /tmp inode usage is high ({inode_used_pct:.1}%)."
+                    );
+                    warn!("{msg}");
+                    self.notify(&self.config.pipeline_admin_chat, &msg);
+                }
+            }
+        }
+    }
+
     /// Run `claude --print --model <model>` with prompt on stdin, return stdout.
     async fn run_claude_print(&self, model: &str, prompt: &str) -> Result<String> {
         use tokio::io::AsyncWriteExt;
@@ -3477,6 +3734,14 @@ pub(crate) struct TestOutput {
     pub(crate) exit_code: i32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RetryClass {
+    Resource,
+    Transient,
+    Conflict,
+    Other,
+}
+
 fn container_result_as_test_output(
     results: &[ContainerTestResult],
     phase: &str,
@@ -3501,6 +3766,91 @@ fn extract_blocks(text: &str, start_marker: &str, end_marker: &str) -> Vec<Strin
         }
     }
     blocks
+}
+
+fn tmp_inode_usage_percent(path: &str) -> Option<f64> {
+    tmp_health(path).map(|h| h.inode_used_pct)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TmpHealth {
+    inode_used_pct: f64,
+    free_inodes: u64,
+    free_bytes: u64,
+}
+
+fn tmp_health(path: &str) -> Option<TmpHealth> {
+    let c_path = CString::new(path).ok()?;
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    let rc = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat as *mut libc::statvfs) };
+    if rc != 0 || stat.f_files == 0 {
+        return None;
+    }
+    let used = stat.f_files.saturating_sub(stat.f_ffree);
+    let inode_used_pct = (used as f64) * 100.0 / (stat.f_files as f64);
+    Some(TmpHealth {
+        inode_used_pct,
+        free_inodes: stat.f_ffree,
+        free_bytes: stat.f_bavail.saturating_mul(stat.f_bsize),
+    })
+}
+
+fn cleanup_tmp_prefixes(base: &str, prefixes: &[&str]) -> usize {
+    let mut removed = 0usize;
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return removed;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !prefixes.iter().any(|p| name.starts_with(p)) {
+            continue;
+        }
+        let path = entry.path();
+        let res = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if res.is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
+fn classify_retry_error(error: &str) -> RetryClass {
+    let err = error.to_ascii_lowercase();
+    if err.contains("no space left on device")
+        || err.contains("failed to copy file")
+        || err.contains("inode")
+        || err.contains("cannot create temp")
+        || err.contains("resource temporarily unavailable")
+        || err.contains("too many open files")
+    {
+        return RetryClass::Resource;
+    }
+    if err.contains("could not resolve host")
+        || err.contains("temporary failure in name resolution")
+        || err.contains("network is unreachable")
+        || err.contains("connection reset")
+        || err.contains("timed out")
+        || err.contains("timeout")
+        || err.contains("rate limit")
+        || err.contains("http 502")
+        || err.contains("http 503")
+    {
+        return RetryClass::Transient;
+    }
+    if err.contains("merge conflict")
+        || err.contains("behind main")
+        || err.contains("not mergeable")
+        || err.contains("could not apply")
+        || err.contains("conflict")
+    {
+        return RetryClass::Conflict;
+    }
+    RetryClass::Other
 }
 
 #[derive(Debug, Clone)]
