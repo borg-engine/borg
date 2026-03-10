@@ -1,0 +1,108 @@
+import { useMemo } from "react";
+import { useSettings } from "./api";
+
+export interface Vocabulary {
+  mode: "swe" | "law" | "knowledge" | "general";
+
+  // Navigation
+  projectsLabel: string;
+  tasksLabel: string;
+
+  // Projects
+  projectSingular: string;
+  projectPlural: string;
+  newProjectPlaceholder: string;
+  projectDocsLabel: string;
+  projectDocsDescription: string;
+  uploadSubtitle: string;
+
+  // Tasks
+  taskSingular: string;
+  taskPlural: string;
+
+  // Statuses — human-readable overrides for pipeline statuses
+  statusLabels: Record<string, string>;
+
+  // Sections to hide
+  hideGitColumns: boolean;
+  hideAttemptCount: boolean;
+  hidePipelineStats: boolean;
+  hideRetryAll: boolean;
+}
+
+const SWE_VOCAB: Vocabulary = {
+  mode: "swe",
+  projectsLabel: "Projects",
+  tasksLabel: "Tasks",
+  projectSingular: "project",
+  projectPlural: "projects",
+  newProjectPlaceholder: "New project name",
+  projectDocsLabel: "Project Documents",
+  projectDocsDescription: "Documents scoped to this project. Chat with these docs via the bottom bar.",
+  uploadSubtitle: "Upload source documents for this project",
+  taskSingular: "task",
+  taskPlural: "tasks",
+  statusLabels: {},
+  hideGitColumns: false,
+  hideAttemptCount: false,
+  hidePipelineStats: false,
+  hideRetryAll: false,
+};
+
+const LAW_VOCAB: Vocabulary = {
+  mode: "law",
+  projectsLabel: "Matters",
+  tasksLabel: "Tasks",
+  projectSingular: "matter",
+  projectPlural: "matters",
+  newProjectPlaceholder: "New matter name",
+  projectDocsLabel: "Matter Documents",
+  projectDocsDescription: "Documents for this matter. Chat via the bottom bar.",
+  uploadSubtitle: "Upload source documents for this matter",
+  taskSingular: "task",
+  taskPlural: "tasks",
+  statusLabels: {
+    backlog: "Pending",
+    implement: "Drafting",
+    review: "Reviewing",
+    human_review: "Human Review",
+    purge: "Retention Hold",
+    purged: "Purged",
+    done: "Complete",
+    merged: "Complete",
+    failed: "Failed",
+  },
+  hideGitColumns: true,
+  hideAttemptCount: true,
+  hidePipelineStats: true,
+  hideRetryAll: true,
+};
+
+const KNOWLEDGE_VOCAB: Vocabulary = {
+  ...LAW_VOCAB,
+  mode: "knowledge",
+  projectsLabel: "Projects",
+  projectSingular: "project",
+  projectPlural: "projects",
+  newProjectPlaceholder: "New project name",
+  projectDocsLabel: "Project Documents",
+  projectDocsDescription: "Documents for this project. Chat via the bottom bar.",
+  uploadSubtitle: "Upload source documents for this project",
+};
+
+const GENERAL_VOCAB: Vocabulary = { ...SWE_VOCAB, mode: "general" };
+
+export function getVocabulary(mode: string): Vocabulary {
+  if (mode === "lawborg" || mode === "legal") return LAW_VOCAB;
+  if (mode === "knowledge") return KNOWLEDGE_VOCAB;
+  if (mode === "sweborg" || mode === "swe") return SWE_VOCAB;
+  return GENERAL_VOCAB;
+}
+
+export function useVocabulary(): Vocabulary {
+  const { data: settings } = useSettings();
+  return useMemo(() => {
+    const mode = settings?.dashboard_mode ?? "general";
+    return getVocabulary(mode);
+  }, [settings?.dashboard_mode]);
+}

@@ -1,0 +1,7 @@
+.shimmer-text {
+  background: linear-gradient(90deg, currentColor 40%, hsl(35, 80%, 65%) 50%, currentColor 60%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmertext 2s ease-in-out infinite;
+}

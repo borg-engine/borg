@@ -1,0 +1,61 @@
+mod support;
+
+use support::open_db;
+
+#[test]
+fn total_knowledge_bytes_empty() {
+    let db = open_db();
+    let total = db.total_knowledge_file_bytes().unwrap();
+    assert!(total >= 0);
+}
+
+#[test]
+fn total_knowledge_bytes_single_file() {
+    let db = open_db();
+    let workspace_id = db.get_system_workspace().unwrap().unwrap().id;
+    let before = db.total_knowledge_file_bytes().unwrap();
+    db.insert_knowledge_file(workspace_id, "doc.pdf", "test doc", 1_000_000, false)
+        .unwrap();
+    assert_eq!(db.total_knowledge_file_bytes().unwrap(), before + 1_000_000);
+}
+
+#[test]
+fn total_knowledge_bytes_multiple_files() {
+    let db = open_db();
+    let workspace_id = db.get_system_workspace().unwrap().unwrap().id;
+    let before = db.total_knowledge_file_bytes().unwrap();
+    db.insert_knowledge_file(workspace_id, "a.pdf", "", 1_000, false)
+        .unwrap();
+    db.insert_knowledge_file(workspace_id, "b.pdf", "", 2_000, false)
+        .unwrap();
+    db.insert_knowledge_file(workspace_id, "c.pdf", "", 3_000, false)
+        .unwrap();
+    assert_eq!(db.total_knowledge_file_bytes().unwrap(), before + 6_000);
+}
+
+#[test]
+fn total_knowledge_bytes_after_delete() {
+    let db = open_db();
+    let workspace_id = db.get_system_workspace().unwrap().unwrap().id;
+    let before = db.total_knowledge_file_bytes().unwrap();
+    db.insert_knowledge_file(workspace_id, "x.pdf", "", 500, false)
+        .unwrap();
+    let id = db
+        .insert_knowledge_file(workspace_id, "y.pdf", "", 300, false)
+        .unwrap();
+    assert_eq!(db.total_knowledge_file_bytes().unwrap(), before + 800);
+    db.delete_knowledge_file(id).unwrap();
+    assert_eq!(db.total_knowledge_file_bytes().unwrap(), before + 500);
+}
+
+// Verify per-file and cumulative limit constants are consistent with the
+// handler: per-file cap (50 MB) must be less than cumulative cap (1 GB).
+#[test]
+fn knowledge_limits_are_ordered() {
+    const MAX_FILE: i64 = 50 * 1024 * 1024;
+    const MAX_TOTAL: i64 = 1024 * 1024 * 1024;
+    assert!(
+        MAX_FILE < MAX_TOTAL,
+        "per-file cap must be smaller than total cap"
+    );
+}

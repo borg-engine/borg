@@ -1,0 +1,19 @@
+[package]
+name = "borg-domains"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[lints]
+workspace = true
+
+[dependencies]
+borg-core = { path = "../borg-core" }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+urlencoding = "2"
+regex = "1"
+chrono = { workspace = true }

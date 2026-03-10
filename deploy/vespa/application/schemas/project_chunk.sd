@@ -1,0 +1,102 @@
+schema project_chunk {
+  document project_chunk {
+    field project_id type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field file_id type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field chunk_index type int {
+      indexing: attribute | summary
+    }
+    field file_path type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+    field title type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+    field content type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+    field doc_type type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field jurisdiction type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field privileged type bool {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field mime_type type string {
+      indexing: attribute | summary
+    }
+    field indexed_at type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field embedding type tensor<float>(x[1024]) {
+      indexing: attribute | index
+      attribute {
+        distance-metric: angular
+      }
+      index {
+        hnsw {
+          max-links-per-node: 16
+          neighbors-to-explore-at-insert: 200
+        }
+      }
+    }
+  }
+
+  fieldset default {
+    fields: title, content, file_path
+  }
+
+  rank-profile default {
+    first-phase {
+      expression: bm25(title) + bm25(content) + bm25(file_path)
+    }
+  }
+
+  rank-profile hybrid inherits default {
+    inputs {
+      query(q_embedding) tensor<float>(x[1024])
+    }
+    first-phase {
+      expression: bm25(title) + bm25(content) + bm25(file_path)
+    }
+    match-phase {
+      attribute: project_id
+      max-hits: 2000
+    }
+    second-phase {
+      expression: bm25(title) * 3 + bm25(content) * 2 + bm25(file_path) + closeness(field, embedding) * 10 + if(attribute(indexed_at) > 0, freshness(indexed_at).logscale * 2, 0)
+      rerank-count: 200
+    }
+  }
+
+  rank-profile legal inherits hybrid {
+    second-phase {
+      expression: bm25(title) * 4 + bm25(content) * 2 + bm25(file_path) + closeness(field, embedding) * 12 + if(attribute(indexed_at) > 0, freshness(indexed_at).logscale * 2, 0)
+      rerank-count: 200
+    }
+  }
+
+  rank-profile semantic {
+    inputs {
+      query(q_embedding) tensor<float>(x[1024])
+    }
+    first-phase {
+      expression: closeness(field, embedding)
+    }
+  }
+
+}

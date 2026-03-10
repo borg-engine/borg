@@ -1,0 +1,31 @@
+[package]
+name = "borg-core"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+tokio-postgres = { workspace = true }
+deadpool-postgres = { workspace = true }
+postgres-types = { workspace = true }
+reqwest = { workspace = true }
+async-trait = { workspace = true }
+libc = "0.2"
+aes-gcm = "0.10.3"
+base64 = "0.22.1"
+hex = "0.4.3"
+aws-config = "1"
+aws-sdk-kms = "1"
+
+[dev-dependencies]
+tempfile = "3"
+libc = "0.2"
