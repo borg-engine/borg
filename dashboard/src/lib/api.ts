@@ -1,35 +1,35 @@
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useCallback, useState } from "react";
-import type {
-  Task,
-  TaskDetail,
-  TaskOutput,
-  QueueEntry,
-  Status,
-  LogEvent,
-  Proposal,
-  PipelineMode,
-  TaskMessage,
-  Project,
-  ProjectFile,
-  ProjectFilePage,
-  ProjectTask,
-  ProjectDocument,
-  PipelineModeFull,
-  KnowledgeFile,
-  KnowledgeFilePage,
-} from "./types";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MAX_LOG_BUFFER,
   MAX_STREAM_EVENTS,
-  REFETCH_TASKS,
-  REFETCH_TASK_DETAIL,
+  REFETCH_PROJECTS,
+  REFETCH_PROPOSALS,
   REFETCH_QUEUE,
   REFETCH_STATUS,
-  REFETCH_PROPOSALS,
-  REFETCH_PROJECTS,
+  REFETCH_TASK_DETAIL,
   REFETCH_TASK_MESSAGES,
+  REFETCH_TASKS,
 } from "./constants";
+import type {
+  KnowledgeFile,
+  KnowledgeFilePage,
+  LogEvent,
+  PipelineMode,
+  PipelineModeFull,
+  Project,
+  ProjectDocument,
+  ProjectFile,
+  ProjectFilePage,
+  ProjectTask,
+  Proposal,
+  QueueEntry,
+  Status,
+  Task,
+  TaskDetail,
+  TaskMessage,
+  TaskOutput,
+} from "./types";
 
 // Runtime base URL: set window.__API_BASE_URL__ = "https://api.example.com" in a <script> before the app loads.
 // Falls back to same-origin (empty string) which works in dev via the Vite proxy.
@@ -850,7 +850,7 @@ export function useLogs() {
         es.close();
         esRef.current = null;
         if (retriesRef.current < 10) {
-          const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30000);
+          const delay = Math.min(1000 * 2 ** retriesRef.current, 30000);
           retriesRef.current++;
           retryTimer.current = setTimeout(connect, delay);
         }
@@ -988,7 +988,9 @@ export async function uploadProjectFiles(
 ): Promise<{ uploaded: ProjectFile[] }> {
   await tokenReady;
   const form = new FormData();
-  Array.from(files).forEach((file) => form.append("files", file));
+  Array.from(files).forEach((file) => {
+    form.append("files", file);
+  });
   const params = new URLSearchParams();
   if (options?.privileged) params.set("privileged", "true");
   const query = params.toString();
@@ -1396,7 +1398,7 @@ export function useSendTaskMessage(taskId: number) {
 export function useTaskStream(taskId: number | null, active: boolean) {
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [streaming, setStreaming] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
+  const [_retryKey, setRetryKey] = useState(0);
   const esRef = useRef<AuthEventSource | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1405,7 +1407,7 @@ export function useTaskStream(taskId: number | null, active: boolean) {
     setEvents([]);
     setStreaming(false);
     setRetryKey(0);
-  }, [taskId]);
+  }, []);
 
   useEffect(() => {
     if (!taskId || !active) {
@@ -1456,7 +1458,7 @@ export function useTaskStream(taskId: number | null, active: boolean) {
       esRef.current = null;
       if (retryTimer.current) clearTimeout(retryTimer.current);
     };
-  }, [taskId, active, retryKey]);
+  }, [taskId, active]);
 
   return { events, streaming };
 }

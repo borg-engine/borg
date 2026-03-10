@@ -1,5 +1,5 @@
-import { useEffect, useState, lazy, Suspense } from "react";
-import { X, FileText } from "lucide-react";
+import { FileText, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { fetchProjectFileContent } from "@/lib/api";
 import type { ProjectFile } from "@/lib/types";
 

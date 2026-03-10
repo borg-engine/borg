@@ -1,69 +1,67 @@
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  ArrowLeft,
+  Brain,
+  Check,
+  ChevronDown,
+  FileText,
+  Folder,
+  RotateCw,
+  Search,
+  Trash2,
+  Upload,
+  Wrench,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CloudBrowseItem, CloudConnection, FtsSearchResult, UploadSession } from "@/lib/api";
 import {
   browseProjectCloudFiles,
   completeProjectUploadSession,
-  createProjectUploadSession,
   createProject,
+  createProjectUploadSession,
   deleteAllKnowledgeFiles,
   deleteAllProjectFiles,
+  deleteKnowledgeFile,
   deleteProjectCloudConnection,
+  fetchKnowledgeContent,
   fetchProjectFileText,
   getProjectUploadSessionStatus,
   importProjectCloudFiles,
   listProjectUploadSessions,
   reextractProjectFile,
   retryProjectUploadSession,
-  uploadProjectUploadChunk,
-  useProjectCloudConnections,
-  useSettings,
-  useModes,
-  useCustomModes,
-  useProjects,
-  useDeleteProject,
   searchDocuments,
-  useKnowledgeFiles,
   uploadKnowledgeFile,
-  deleteKnowledgeFile,
-  fetchKnowledgeContent,
+  uploadProjectUploadChunk,
+  useCustomModes,
+  useDeleteProject,
+  useKnowledgeFiles,
+  useModes,
+  useProjectCloudConnections,
+  useProjectDocumentVersions,
+  useProjects,
+  useSettings,
 } from "@/lib/api";
-import type { CloudBrowseItem, CloudConnection, FtsSearchResult } from "@/lib/api";
-import type { UploadSession } from "@/lib/api";
-import {
-  FileText,
-  ArrowLeft,
-  Search,
-  RotateCw,
-  Folder,
-  Upload,
-  X,
-  Brain,
-  Trash2,
-  ChevronDown,
-  Check,
-  Wrench,
-} from "lucide-react";
-import type { ProjectDocument } from "@/lib/types";
-import { useQueryClient } from "@tanstack/react-query";
+import { useDashboardMode } from "@/lib/dashboard-mode";
+import type { KnowledgeFile, ProjectDocument } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { getVocabulary, useVocabulary } from "@/lib/vocabulary";
-import { useDashboardMode } from "@/lib/dashboard-mode";
-import type { KnowledgeFile } from "@/lib/types";
-import { ProjectDetail } from "./project-detail";
 import { ChatBody } from "./chat-body";
-import { MarkdownLegalViewer } from "./viewers/markdown-legal-viewer";
-import { RedlineViewer } from "./viewers/redline-viewer";
-import { useProjectDocumentVersions } from "@/lib/api";
 import {
-  useFileList,
-  useFilePreview,
-  FileUploadArea,
-  FileSearchBar,
-  FileListPagination,
   FileListItem,
+  FileListPagination,
   FilePreviewWrapper,
+  FileSearchBar,
+  FileUploadArea,
   formatFileSize,
   isPreviewable,
+  useFileList,
+  useFilePreview,
 } from "./file-list-shared";
+import { ProjectDetail } from "./project-detail";
+import { MarkdownLegalViewer } from "./viewers/markdown-legal-viewer";
+import { RedlineViewer } from "./viewers/redline-viewer";
 
 const CLOUD_PROVIDERS = [
   { id: "dropbox", label: "Dropbox", clientIdKey: "dropbox_client_id", clientSecretKey: "dropbox_client_secret" },
@@ -387,7 +385,7 @@ export function ProjectsPanel() {
   useEffect(() => {
     setSelectedDoc(null);
     setDocViewMode("view");
-  }, [selectedProjectId]);
+  }, []);
 
   useEffect(() => {
     if (activeProjectId) {
@@ -747,7 +745,7 @@ export function ProjectsPanel() {
       const droppedFiles = e.dataTransfer.files;
       if (droppedFiles.length > 0) handleUpload(droppedFiles);
     },
-    [activeProjectId, uploading],
+    [handleUpload],
   );
 
   async function retryUploadSession(sessionId: number) {

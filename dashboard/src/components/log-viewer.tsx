@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DbEvent, LogEvent } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import type { LogEvent, DbEvent } from "@/lib/types";
 
 interface KeyedLogEvent extends LogEvent {
   _key: number;
@@ -44,7 +44,7 @@ export function LogViewer({ logs }: { logs: LogEvent[] }) {
     if (autoScroll && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "instant" });
     }
-  }, [logs.length, events.length, autoScroll]);
+  }, [autoScroll]);
 
   function handleScroll() {
     const el = containerRef.current;

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
 import { apiBase, authHeaders, tokenReady, useTemplates } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -72,6 +72,7 @@ function extractCitations(content: string): Citation[] {
   for (const pattern of CITATION_PATTERNS) {
     const re = new RegExp(pattern.source, pattern.flags);
     let m: RegExpExecArray | null;
+    // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
     while ((m = re.exec(content)) !== null) {
       const text = m[0].trim();
       if (!seen.has(text)) {

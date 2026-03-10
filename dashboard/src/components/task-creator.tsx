@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useModes, useStatus, createTask } from "@/lib/api";
+import { ChevronRight, Plus, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { createTask, useModes, useStatus } from "@/lib/api";
 import { useDashboardMode } from "@/lib/dashboard-mode";
-import { repoName, type PipelineMode } from "@/lib/types";
-import { Plus, X, ChevronRight } from "lucide-react";
+import { type PipelineMode, repoName } from "@/lib/types";
 
 const LEGAL_TASK_TYPES = [
   { value: "", label: "General legal task" },

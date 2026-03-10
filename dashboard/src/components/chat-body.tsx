@@ -1,24 +1,24 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { Send, Mic, MicOff, FolderOpen, Globe, Sparkles, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useDictation } from "@/lib/dictation";
-import { ChatMarkdown } from "./chat-markdown";
+import { useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, FolderOpen, Globe, Mic, MicOff, Send, Sparkles } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { StreamEvent } from "@/lib/api";
 import {
-  authHeaders,
-  tokenReady,
-  useProjects,
-  useProjectTasks,
-  useFullModes,
   approveTask,
+  authHeaders,
   rejectTask,
   requestRevision,
   retryTask,
+  tokenReady,
+  useFullModes,
+  useProjects,
+  useProjectTasks,
 } from "@/lib/api";
-import { useQueryClient } from "@tanstack/react-query";
-import { useChatEvents } from "@/lib/use-chat-events";
+import { useDictation } from "@/lib/dictation";
 import { parseStreamEvents, rawStreamToEvents, type TermLine } from "@/lib/stream-utils";
+import { useChatEvents } from "@/lib/use-chat-events";
+import { cn } from "@/lib/utils";
 import { ActionActivity } from "./action-card";
-import type { StreamEvent } from "@/lib/api";
+import { ChatMarkdown } from "./chat-markdown";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -82,7 +82,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
     lastTsRef.current = 0;
     forceScrollRef.current = true;
     fetchMessages();
-  }, [thread, fetchMessages]);
+  }, [fetchMessages]);
 
   const handleSseMessage = useCallback(
     (msg: any) => {
@@ -195,7 +195,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
     if (nearBottom) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }
-  }, [messages.length, streamEvents.length]);
+  }, [messages.length]);
 
   async function handleSend() {
     const text = input.trim();

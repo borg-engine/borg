@@ -1,40 +1,40 @@
-import { useState, useEffect, useCallback, useMemo, Component } from "react";
-import type { ReactNode, ErrorInfo } from "react";
-import { getSelectedWorkspaceId, switchWorkspace, useLogs, useStatus, useWorkspaces } from "@/lib/api";
-import { useVocabulary } from "@/lib/vocabulary";
-import { UIModeProvider, useUIMode } from "@/lib/ui-mode";
-import type { UIMode } from "@/lib/ui-mode";
-import { DomainProvider, useDomain } from "@/lib/domain";
-import { DashboardModeProvider, useDashboardMode } from "@/lib/dashboard-mode";
-import { AuthProvider, useAuth } from "@/lib/auth";
-import { Header } from "@/components/header";
-import { TaskList } from "@/components/task-list";
-import { TaskDetail } from "@/components/task-detail";
-import { LogViewer } from "@/components/log-viewer";
-import { QueuePanel } from "@/components/queue-panel";
-import { ProposalsPanel } from "@/components/proposals-panel";
-import { ChatPanel } from "@/components/chat-panel";
-import { ChatDrawer } from "@/components/chat-drawer";
-import { ProjectsPanel } from "@/components/projects-panel";
-import { ModeCreatorPanel } from "@/components/mode-creator-panel";
-import { AutoTasksPanel } from "@/components/auto-tasks-panel";
-import { SettingsPanel } from "@/components/settings-panel";
-import { StatusPanel } from "@/components/status-panel";
-import { LoginPage } from "@/components/login-page";
-import { BorgLogo, PRODUCT_WORD } from "@/components/borg-logo";
 import {
   Activity,
-  ListTodo,
-  Terminal,
-  GitMerge,
-  MessageSquare,
-  Lightbulb,
-  Settings,
   FolderOpen,
+  GitMerge,
+  Lightbulb,
+  ListTodo,
+  MessageSquare,
+  Settings,
+  Terminal,
   Wrench,
   Zap,
 } from "lucide-react";
+import type { ErrorInfo, ReactNode } from "react";
+import { Component, useCallback, useEffect, useMemo, useState } from "react";
+import { AutoTasksPanel } from "@/components/auto-tasks-panel";
+import { BorgLogo, PRODUCT_WORD } from "@/components/borg-logo";
+import { ChatDrawer } from "@/components/chat-drawer";
+import { ChatPanel } from "@/components/chat-panel";
+import { Header } from "@/components/header";
+import { LogViewer } from "@/components/log-viewer";
+import { LoginPage } from "@/components/login-page";
+import { ModeCreatorPanel } from "@/components/mode-creator-panel";
+import { ProjectsPanel } from "@/components/projects-panel";
+import { ProposalsPanel } from "@/components/proposals-panel";
+import { QueuePanel } from "@/components/queue-panel";
+import { SettingsPanel } from "@/components/settings-panel";
+import { StatusPanel } from "@/components/status-panel";
+import { TaskDetail } from "@/components/task-detail";
+import { TaskList } from "@/components/task-list";
+import { getSelectedWorkspaceId, switchWorkspace, useLogs, useStatus, useWorkspaces } from "@/lib/api";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { DashboardModeProvider, useDashboardMode } from "@/lib/dashboard-mode";
+import { DomainProvider, useDomain } from "@/lib/domain";
+import type { UIMode } from "@/lib/ui-mode";
+import { UIModeProvider, useUIMode } from "@/lib/ui-mode";
 import { cn } from "@/lib/utils";
+import { useVocabulary } from "@/lib/vocabulary";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null };
@@ -221,7 +221,7 @@ function AppInner() {
         if (!isSWE && SWE_ONLY_KEYS.includes(item.key)) return false;
         return uiMode === "advanced" || item.minimalVisible;
       }),
-    [uiMode, domain, isSWE],
+    [uiMode, domain, isSWE, SWE_ONLY_KEYS.includes],
   );
 
   useEffect(() => {

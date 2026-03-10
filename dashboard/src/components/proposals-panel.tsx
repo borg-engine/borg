@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { useProposals, approveProposal, dismissProposal, triageProposals, reopenProposal } from "@/lib/api";
-import { repoName, type Proposal } from "@/lib/types";
 import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { approveProposal, dismissProposal, reopenProposal, triageProposals, useProposals } from "@/lib/api";
+import { type Proposal, repoName } from "@/lib/types";
 
 interface ProposalsPanelProps {
   repoFilter: string | null;

@@ -1,16 +1,16 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import type { AuthUser } from "./api";
 import {
   fetchAuthStatus,
   fetchMe,
   getSelectedWorkspaceId,
   loginUser,
-  setupAdmin,
   setAuthToken,
   setSelectedWorkspaceId,
+  setupAdmin,
   tokenReady,
 } from "./api";
-import type { AuthUser } from "./api";
 
 interface AuthState {
   ready: boolean;

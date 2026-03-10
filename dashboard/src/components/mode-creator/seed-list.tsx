@@ -1,8 +1,8 @@
+import { useDashboardMode } from "@/lib/dashboard-mode";
 import type { SeedConfigFull, SeedOutputType } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { AutoTextarea } from "./auto-textarea";
 import { ToolChips } from "./tool-chips";
-import { cn } from "@/lib/utils";
-import { useDashboardMode } from "@/lib/dashboard-mode";
 
 export function SeedList({
   seeds,

@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import { ChevronDown, Globe, FolderOpen } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ChevronDown, FolderOpen, Globe } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useProjects } from "@/lib/api";
 import { useDashboardMode } from "@/lib/dashboard-mode";
+import { cn } from "@/lib/utils";
 import { ChatBody } from "./chat-body";
 
 function threadLabel(id: string, projects: { id: number; name: string }[]): string {

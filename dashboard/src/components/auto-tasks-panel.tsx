@@ -1,8 +1,8 @@
-import { useReducer, useMemo, useCallback, useState } from "react";
-import { saveCustomMode, useCustomModes, useFullModes, useSettings } from "@/lib/api";
-import { SeedList } from "./mode-creator/seed-list";
-import { editorReducer, INITIAL_STATE } from "./mode-creator/reducer";
 import { Zap } from "lucide-react";
+import { useCallback, useMemo, useReducer, useState } from "react";
+import { saveCustomMode, useCustomModes, useFullModes, useSettings } from "@/lib/api";
+import { editorReducer, INITIAL_STATE } from "./mode-creator/reducer";
+import { SeedList } from "./mode-creator/seed-list";
 
 const CORE_MODES = new Set(["sweborg", "lawborg", "swe", "legal", "knowledge"]);
 
@@ -43,7 +43,7 @@ export function AutoTasksPanel() {
       dispatch({ type: "LOAD_MODE", mode: currentMode, readOnly: !isCustom });
       dispatch({ type: "SET_TAB", tab: "seeds" });
     }
-  }, [currentMode?.name, isCustom]);
+  }, [currentMode?.name, isCustom, currentMode]);
 
   const handleSave = useCallback(async () => {
     if (busy) return;

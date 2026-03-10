@@ -14,7 +14,7 @@ r:
 
 # Build dashboard
 dash:
-    cd dashboard && bun install && bun run build
+    cd dashboard && bun install && bun run format && bun run build
 
 # Build Docker agent image
 image:
@@ -115,7 +115,7 @@ dev: ensure-stack
 fmt:
     cd dashboard && bun run format
 
-ship: ensure-stack fmt dash s
+ship: ensure-stack dash s
 
 # Connect to borg postgres
 db:

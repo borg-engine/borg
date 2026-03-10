@@ -1,8 +1,8 @@
+import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PhaseConfigFull, PhaseType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useVocabulary } from "@/lib/vocabulary";
-import { ChevronDown } from "lucide-react";
 
 const TYPE_COLORS: Record<PhaseType, string> = {
   setup: "bg-[#1c1a17] text-[#6b6459]",
@@ -55,7 +55,9 @@ export function PhaseStrip({
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const nameToIndex = useMemo(() => {
     const map = new Map<string, number>();
-    phases.forEach((p, i) => map.set(p.name, i));
+    phases.forEach((p, i) => {
+      map.set(p.name, i);
+    });
     return map;
   }, [phases]);
 
@@ -73,7 +75,7 @@ export function PhaseStrip({
 
   useEffect(() => {
     setShowAddMenu(false);
-  }, [readOnly, selectedIndex]);
+  }, []);
 
   const loops = useMemo(() => {
     const edges: LoopEdge[] = [];

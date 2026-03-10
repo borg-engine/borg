@@ -1,6 +1,6 @@
-import { useMcpStatus, type McpStatusItem } from "@/lib/api";
+import { Activity, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { type McpStatusItem, useMcpStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Activity, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 
 const STATUS_STYLES: Record<
   McpStatusItem["status"],
@@ -55,7 +55,12 @@ function StatusRow({ item }: { item: McpStatusItem }) {
             <div className="text-[13px] font-medium text-[#e8e0d4]">{item.label}</div>
             <div className="mt-1 text-[11px] leading-5 text-[#9c9486]">{item.detail}</div>
           </div>
-          <span className={cn("shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em]", style.pill)}>
+          <span
+            className={cn(
+              "shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em]",
+              style.pill,
+            )}
+          >
             {style.label}
           </span>
         </div>
@@ -92,15 +97,7 @@ function SummaryCard({
   );
 }
 
-function StatusSection({
-  title,
-  desc,
-  items,
-}: {
-  title: string;
-  desc: string;
-  items: McpStatusItem[];
-}) {
+function StatusSection({ title, desc, items }: { title: string; desc: string; items: McpStatusItem[] }) {
   return (
     <section className="space-y-3">
       <div>
@@ -149,7 +146,8 @@ export function StatusPanel() {
               <div>
                 <h1 className="text-[22px] font-semibold text-[#f1e7d8]">MCP Status</h1>
                 <p className="mt-1 text-[12px] text-[#7e7568]">
-                  Green means verified by Borg. Amber means configured but not actively probed. Red means missing or failing.
+                  Green means verified by Borg. Amber means configured but not actively probed. Red means missing or
+                  failing.
                 </p>
               </div>
             </div>

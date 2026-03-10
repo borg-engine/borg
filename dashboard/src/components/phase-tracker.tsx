@@ -1,4 +1,4 @@
-import { getDisplayPhases, getPhaseLabel, effectivePhase } from "@/lib/types";
+import { effectivePhase, getDisplayPhases, getPhaseLabel } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function PhaseTracker({ status, mode }: { status: string; mode?: string }) {

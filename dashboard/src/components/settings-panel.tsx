@@ -1,30 +1,30 @@
-import { useState, useRef, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import {
-  useSettings,
-  useStatus,
-  useHealth,
-  updateSettings,
-  useRepos,
-  setRepoBackend,
-  useCacheVolumes,
-  deleteCacheVolume,
-  useUserSettings,
-  updateUserSettings,
-  useLinkedCredentials,
-  startLinkedCredentialConnect,
-  fetchLinkedCredentialConnectSession,
-  deleteLinkedCredential,
-  useUsers,
-  createUser,
-  deleteUser,
   changeUserPassword,
+  createUser,
+  deleteCacheVolume,
+  deleteLinkedCredential,
+  deleteUser,
+  fetchLinkedCredentialConnectSession,
   type LinkedCredential,
   type LinkedCredentialConnectSession,
   type Settings,
+  setRepoBackend,
+  startLinkedCredentialConnect,
+  updateSettings,
+  updateUserSettings,
+  useCacheVolumes,
+  useHealth,
+  useLinkedCredentials,
+  useRepos,
+  useSettings,
+  useStatus,
+  useUserSettings,
+  useUsers,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
-import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
 function formatUptime(seconds: number) {
@@ -844,7 +844,10 @@ function LinkedAccountsPanel() {
     <div className="space-y-3 rounded-xl border border-[#2a2520] bg-[#120f0d]/60 p-3">
       <div>
         <Label>Linked AI Accounts</Label>
-        <Desc>Per-user agent credentials. Borg revalidates linked sessions every 15 minutes and again before use when needed.</Desc>
+        <Desc>
+          Per-user agent credentials. Borg revalidates linked sessions every 15 minutes and again before use when
+          needed.
+        </Desc>
       </div>
       {LINKED_ACCOUNT_PROVIDERS.map((meta) => {
         const credential = credentialsByProvider.get(meta.provider);
@@ -852,16 +855,18 @@ function LinkedAccountsPanel() {
         const isPending = pendingSession?.status === "pending";
         const detail = credential?.account_email || credential?.account_label || "";
         return (
-          <div
-            key={meta.provider}
-            className="space-y-2 rounded-lg border border-[#2a2520] bg-[#1a1714]/70 p-3"
-          >
+          <div key={meta.provider} className="space-y-2 rounded-lg border border-[#2a2520] bg-[#1a1714]/70 p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[12px] font-medium text-[#e8e0d4]">{meta.label}</span>
-                  <span className={cn("rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]", credentialBadge(credential))}>
-                    {isPending ? "Connecting" : credential?.status ?? "Disconnected"}
+                  <span
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]",
+                      credentialBadge(credential),
+                    )}
+                  >
+                    {isPending ? "Connecting" : (credential?.status ?? "Disconnected")}
                   </span>
                 </div>
                 <div className="mt-1 text-[11px] text-[#6b6459]">{meta.desc}</div>
@@ -908,9 +913,7 @@ function LinkedAccountsPanel() {
                 {pendingSession.device_code && (
                   <div className="mt-2 font-mono text-[12px] text-[#f1e7d8]">{pendingSession.device_code}</div>
                 )}
-                {pendingSession.error && (
-                  <div className="mt-2 text-[#d49a8f]">{pendingSession.error}</div>
-                )}
+                {pendingSession.error && <div className="mt-2 text-[#d49a8f]">{pendingSession.error}</div>}
               </div>
             )}
             {credential?.last_error && credential.status !== "connected" && !pendingSession && (

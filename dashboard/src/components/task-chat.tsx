@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Clock, ChevronDown, ChevronUp, Mic, MicOff, Send } from "lucide-react";
-import { useTaskMessages, useSendTaskMessage } from "@/lib/api";
+import { ChevronDown, ChevronUp, Clock, Mic, MicOff, Send } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSendTaskMessage, useTaskMessages } from "@/lib/api";
+import { useDictation } from "@/lib/dictation";
 import type { TaskMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useDictation } from "@/lib/dictation";
 import { BorgingIndicator } from "./borging";
 import { ChatMarkdown } from "./chat-markdown";
 
@@ -24,7 +24,7 @@ export function TaskChat({ taskId }: TaskChatProps) {
     if (open) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages.length, open]);
+  }, [open]);
 
   useEffect(() => {
     if (open) inputRef.current?.focus();

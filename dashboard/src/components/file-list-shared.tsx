@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useProjectFiles, uploadProjectFiles } from "@/lib/api";
-import type { ProjectFile } from "@/lib/types";
-import { cn } from "@/lib/utils";
-import { formatFileSize } from "@/lib/utils";
 import { Eye, FileText, Search, Upload } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { uploadProjectFiles, useProjectFiles } from "@/lib/api";
+import type { ProjectFile } from "@/lib/types";
+import { cn, formatFileSize } from "@/lib/utils";
 import { FilePreviewModal, isPreviewable } from "./file-preview-modal";
 
 // ── Shared file shape for generic components ─────────────────────────────────
@@ -39,7 +38,7 @@ export function useFileList(projectId: number | null) {
   useEffect(() => {
     setFilePageStack([{ cursor: null, offset: 0 }]);
     setFileSearch("");
-  }, [projectId]);
+  }, []);
 
   const resetPagination = useCallback(() => {
     setFilePageStack([{ cursor: null, offset: 0 }]);

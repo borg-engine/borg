@@ -1,28 +1,28 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { RevisionHistory, TaskDiagnostics } from "@/lib/api";
 import {
-  useTaskDetail,
-  useTaskStream,
-  useTaskContainer,
-  useFullModes,
-  retryTask,
-  setTaskBackend,
   approveTask,
-  rejectTask,
-  requestRevision,
   getRevisionHistory,
   getTaskDiagnostics,
+  rejectTask,
+  requestRevision,
+  retryTask,
+  setTaskBackend,
+  useFullModes,
+  useTaskContainer,
+  useTaskDetail,
+  useTaskStream,
 } from "@/lib/api";
-import type { RevisionHistory, TaskDiagnostics } from "@/lib/api";
-import { PhaseTracker } from "./phase-tracker";
-import { StatusBadge } from "./status-badge";
-import { LiveTerminal } from "./live-terminal";
-import { TaskChat } from "./task-chat";
-import { repoName, isActiveStatus, type TaskOutput } from "@/lib/types";
+import { type ParsedStreamEvent, parseRawStream } from "@/lib/stream-utils";
+import { isActiveStatus, repoName, type TaskOutput } from "@/lib/types";
 import { useUIMode } from "@/lib/ui-mode";
 import { cn } from "@/lib/utils";
-import { parseRawStream, type ParsedStreamEvent } from "@/lib/stream-utils";
-import { useState, useMemo, useRef, useEffect } from "react";
-import { ArrowLeft, RotateCcw } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { LiveTerminal } from "./live-terminal";
+import { PhaseTracker } from "./phase-tracker";
+import { StatusBadge } from "./status-badge";
+import { TaskChat } from "./task-chat";
 
 interface TaskDetailProps {
   taskId: number;

@@ -1,4 +1,4 @@
-import type { PhaseType, IntegrationType } from "@/lib/types";
+import type { IntegrationType, PhaseType } from "@/lib/types";
 
 export interface CategoryProfile {
   phaseTypes: PhaseType[];

@@ -24,7 +24,7 @@ export function AutoTextarea({
     el.style.height = "auto";
     const minH = minRows * 20;
     el.style.height = `${Math.max(minH, Math.min(el.scrollHeight, 280))}px`;
-  }, [value, minRows]);
+  }, [minRows]);
 
   return (
     <textarea

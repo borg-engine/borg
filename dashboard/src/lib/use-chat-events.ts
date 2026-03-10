@@ -47,7 +47,7 @@ export function useChatEvents<T extends ChatEventBase>(
           esRef.current = null;
           onDisconnect?.();
           if (retriesRef.current < maxRetries) {
-            const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30_000);
+            const delay = Math.min(1000 * 2 ** retriesRef.current, 30_000);
             retriesRef.current++;
             retryTimerRef.current = setTimeout(connect, delay);
           }

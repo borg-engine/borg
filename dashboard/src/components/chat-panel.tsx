@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Mic, MicOff, Send, ChevronDown, Globe, FolderOpen } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ChevronDown, FolderOpen, Globe, Mic, MicOff, Send } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { authHeaders, tokenReady, useProjects } from "@/lib/api";
 import { useDictation } from "@/lib/dictation";
+import { useChatEvents } from "@/lib/use-chat-events";
+import { cn } from "@/lib/utils";
 import { BorgingIndicator } from "./borging";
 import { ChatMarkdown } from "./chat-markdown";
-import { authHeaders, tokenReady, useProjects } from "@/lib/api";
-import { useChatEvents } from "@/lib/use-chat-events";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -68,7 +68,7 @@ export function ChatPanel() {
     setMessages([]);
     lastTsRef.current = 0;
     fetchMessages();
-  }, [thread, fetchMessages]);
+  }, [fetchMessages]);
 
   const handleSseMessage = useCallback((msg: ChatMessage) => {
     if (msg.role === "user") return;
@@ -124,7 +124,7 @@ export function ChatPanel() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
-  }, [messages.length]);
+  }, []);
 
   // Close dropdown on outside click
   useEffect(() => {

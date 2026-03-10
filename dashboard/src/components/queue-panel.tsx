@@ -1,7 +1,7 @@
+import { GitMerge } from "lucide-react";
 import { useQueue, useStatus } from "@/lib/api";
 import { repoName } from "@/lib/types";
 import { StatusBadge } from "./status-badge";
-import { GitMerge } from "lucide-react";
 
 interface QueuePanelProps {
   repoFilter: string | null;

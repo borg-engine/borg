@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from "react";
-import { diffLines, diffWords } from "diff";
 import type { Change } from "diff";
+import { diffLines, diffWords } from "diff";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiBase, authHeaders } from "@/lib/api";
 import { cn } from "@/lib/utils";
 

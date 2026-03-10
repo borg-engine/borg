@@ -1,10 +1,10 @@
-import { getSelectedWorkspaceId, switchWorkspace, useStatus, useWorkspaces } from "@/lib/api";
-import { useUIMode } from "@/lib/ui-mode";
-import { useDomain } from "@/lib/domain";
-import { TaskCreator } from "./task-creator";
-import { BorgLogo, PRODUCT_WORD } from "./borg-logo";
-import { repoName } from "@/lib/types";
 import { useState } from "react";
+import { getSelectedWorkspaceId, switchWorkspace, useStatus, useWorkspaces } from "@/lib/api";
+import { useDomain } from "@/lib/domain";
+import { repoName } from "@/lib/types";
+import { useUIMode } from "@/lib/ui-mode";
+import { BorgLogo, PRODUCT_WORD } from "./borg-logo";
+import { TaskCreator } from "./task-creator";
 
 function formatUptime(seconds: number) {
   const h = Math.floor(seconds / 3600);

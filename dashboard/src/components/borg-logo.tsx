@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export const PRODUCT_WORD = "Borg";
 const LETTERS = PRODUCT_WORD.split("");

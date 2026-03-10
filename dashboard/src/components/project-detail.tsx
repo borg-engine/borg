@@ -1,50 +1,48 @@
+import { useQueryClient } from "@tanstack/react-query";
+import { Edit2, FileText, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  useProjectDetail,
-  useProjectTasks,
-  useProjectDocuments,
-  useProjectAudit,
-  useDeleteProject,
-  useTaskStream,
-  getTaskStructuredData,
-  deleteAllProjectFiles,
-  type StreamEvent,
-} from "@/lib/api";
-import type { Project, ProjectDocument, ProjectTask } from "@/lib/types";
-import { StatusBadge } from "./status-badge";
-import { PhaseTracker } from "./phase-tracker";
-import { cn } from "@/lib/utils";
-import { useDashboardMode } from "@/lib/dashboard-mode";
-import { useVocabulary } from "@/lib/vocabulary";
+import type { CitationVerification, RevisionHistory } from "@/lib/api";
 import {
   apiBase,
-  authHeaders,
-  tokenReady,
-  retryTask,
-  patchTask,
   approveTask,
-  rejectTask,
-  requestRevision,
+  authHeaders,
+  deleteAllProjectFiles,
   getRevisionHistory,
   getTaskCitations,
+  getTaskStructuredData,
+  patchTask,
+  rejectTask,
+  requestRevision,
+  retryTask,
+  type StreamEvent,
+  tokenReady,
+  useDeleteProject,
   useFullModes,
+  useProjectAudit,
+  useProjectDetail,
+  useProjectDocuments,
+  useProjectTasks,
+  useTaskStream,
   useTemplates,
   verifyTaskCitations,
 } from "@/lib/api";
-import type { CitationVerification, RevisionHistory } from "@/lib/api";
-import { useQueryClient } from "@tanstack/react-query";
-import { Edit2, FileText, RotateCcw, Trash2 } from "lucide-react";
+import { useDashboardMode } from "@/lib/dashboard-mode";
+import type { Project, ProjectDocument, ProjectTask } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { useVocabulary } from "@/lib/vocabulary";
 import {
+  FileListItem,
+  FileListPagination,
+  FilePreviewWrapper,
+  FileSearchBar,
+  FileUploadArea,
+  formatFileSize,
+  isPreviewable,
   useFileList,
   useFilePreview,
-  FileUploadArea,
-  FileSearchBar,
-  FileListPagination,
-  FileListItem,
-  FilePreviewWrapper,
-  isPreviewable,
-  formatFileSize,
 } from "./file-list-shared";
+import { PhaseTracker } from "./phase-tracker";
+import { StatusBadge } from "./status-badge";
 import { TaskCreator } from "./task-creator";
 
 const AGENT_WORKING_STATUSES = new Set([
@@ -622,7 +620,7 @@ function TaskStreamMini({ taskId }: { taskId: number }) {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [events.length]);
+  }, []);
 
   const lines = useMemo(() => {
     return events

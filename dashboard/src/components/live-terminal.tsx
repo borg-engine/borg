@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { StreamEvent } from "@/lib/api";
 import { parseStreamEvents } from "@/lib/stream-utils";
 import { ActionActivity } from "./action-card";
@@ -21,7 +21,7 @@ export function LiveTerminal({ events, streaming, title, phase }: LiveTerminalPr
     if (autoScrollRef.current && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "instant" });
     }
-  }, [lines.length]);
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;

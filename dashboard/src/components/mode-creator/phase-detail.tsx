@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
-import type { PhaseConfigFull, PhaseType } from "@/lib/types";
-import { AutoTextarea } from "./auto-textarea";
-import { ToolChips } from "./tool-chips";
-import { cn } from "@/lib/utils";
-import type { CategoryProfile } from "./category-profiles";
+import { useEffect, useState } from "react";
 import { useDashboardMode } from "@/lib/dashboard-mode";
+import type { PhaseConfigFull, PhaseType } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { AutoTextarea } from "./auto-textarea";
+import type { CategoryProfile } from "./category-profiles";
+import { ToolChips } from "./tool-chips";
 
 const PHASE_TYPE_LABELS: Record<PhaseType, string> = {
   setup: "Setup",
@@ -44,7 +44,7 @@ export function PhaseDetail({
 
   useEffect(() => {
     setShowAdvanced(false);
-  }, [phase.name]);
+  }, []);
 
   const isAgent = phase.phase_type === "agent" || phase.phase_type === "rebase";
   const isHumanReview = phase.phase_type === "human_review";

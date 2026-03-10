@@ -737,12 +737,7 @@ html:not(.dark) .shadow-\[0_0_8px_rgba\(200\,160\,80\,0\.3\)\] {
   }
   body {
     @apply bg-background text-foreground;
-    font-family:
-      "Inter Variable",
-      "Inter",
-      system-ui,
-      -apple-system,
-      sans-serif;
+    font-family: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
     overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

@@ -1,21 +1,21 @@
-import { useState, useMemo } from "react";
-import { cn } from "@/lib/utils";
-import { ChatMarkdown } from "./chat-markdown";
 import {
-  FileText,
-  FilePen,
-  Pencil,
-  Terminal,
-  Search,
-  Globe,
-  Sparkles,
-  ChevronDown,
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   Copy,
   Download,
+  FilePen,
+  FileText,
+  Globe,
+  Pencil,
+  Search,
+  Sparkles,
+  Terminal,
 } from "lucide-react";
+import { useMemo, useState } from "react";
 import type { TermLine } from "@/lib/stream-utils";
+import { cn } from "@/lib/utils";
+import { ChatMarkdown } from "./chat-markdown";
 
 // Human-readable tool labels
 const TOOL_LABELS: Record<string, string> = {

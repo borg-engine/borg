@@ -1,14 +1,14 @@
-import { useReducer, useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { removeCustomMode, saveCustomMode, useCustomModes, useFullModes, useSettings } from "@/lib/api";
-import type { PipelineModeFull } from "@/lib/types";
-import { ModeSidebar } from "./mode-creator/mode-sidebar";
-import { ModeSettings } from "./mode-creator/mode-settings";
-import { PhaseStrip } from "./mode-creator/phase-strip";
-import { PhaseDetail } from "./mode-creator/phase-detail";
-import { editorReducer, INITIAL_STATE, blankMode } from "./mode-creator/reducer";
-import { getProfile } from "./mode-creator/category-profiles";
-import { useDashboardMode } from "@/lib/dashboard-mode";
 import { Layers } from "lucide-react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { removeCustomMode, saveCustomMode, useCustomModes, useFullModes, useSettings } from "@/lib/api";
+import { useDashboardMode } from "@/lib/dashboard-mode";
+import type { PipelineModeFull } from "@/lib/types";
+import { getProfile } from "./mode-creator/category-profiles";
+import { ModeSettings } from "./mode-creator/mode-settings";
+import { ModeSidebar } from "./mode-creator/mode-sidebar";
+import { PhaseDetail } from "./mode-creator/phase-detail";
+import { PhaseStrip } from "./mode-creator/phase-strip";
+import { blankMode, editorReducer, INITIAL_STATE } from "./mode-creator/reducer";
 
 const CORE_MODES = new Set(["sweborg", "lawborg", "swe", "legal", "knowledge"]);
 

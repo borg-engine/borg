@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { useTasks, useStatus, retryAllFailed } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { retryAllFailed, useStatus, useTasks } from "@/lib/api";
 import { isActiveStatus, repoName } from "@/lib/types";
 import { useUIMode } from "@/lib/ui-mode";
+import { cn } from "@/lib/utils";
 import { useVocabulary } from "@/lib/vocabulary";
 import { StatusBadge } from "./status-badge";
-import { cn } from "@/lib/utils";
 
 interface TaskListProps {
   selectedId: number | null;

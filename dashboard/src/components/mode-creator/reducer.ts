@@ -1,4 +1,4 @@
-import type { PipelineModeFull, PhaseConfigFull, SeedConfigFull, PhaseType } from "@/lib/types";
+import type { PhaseConfigFull, PhaseType, PipelineModeFull, SeedConfigFull } from "@/lib/types";
 
 export interface EditorState {
   mode: PipelineModeFull;

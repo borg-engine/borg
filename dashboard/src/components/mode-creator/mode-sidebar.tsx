@@ -1,6 +1,6 @@
+import { FileText, Plus, Scale } from "lucide-react";
 import type { PipelineModeFull } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Scale, FileText, Plus } from "lucide-react";
 
 export function ModeSidebar({
   builtIn,
