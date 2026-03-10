@@ -358,6 +358,29 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_owner ON api_keys(owner, provider);
 
+-- ── Linked consumer credentials ──────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS linked_credentials (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  auth_kind TEXT NOT NULL DEFAULT '',
+  account_email TEXT NOT NULL DEFAULT '',
+  account_label TEXT NOT NULL DEFAULT '',
+  credential_bundle TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'disconnected',
+  expires_at TEXT NOT NULL DEFAULT '',
+  last_validated_at TEXT NOT NULL DEFAULT '',
+  last_used_at TEXT NOT NULL DEFAULT '',
+  last_error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS')),
+  updated_at TEXT NOT NULL DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_linked_credentials_user_provider
+  ON linked_credentials(user_id, provider);
+CREATE INDEX IF NOT EXISTS idx_linked_credentials_status
+  ON linked_credentials(status, provider);
+
 -- ── Cloud storage connections ───────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS cloud_connections (

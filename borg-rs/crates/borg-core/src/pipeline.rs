@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     ffi::CString,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -21,6 +21,10 @@ use crate::{
     config::Config,
     db::Db,
     git::Git,
+    linked_credentials::{
+        capture_bundle, claude_oauth_token_from_home, restore_bundle, should_revalidate,
+        validate_home, PROVIDER_CLAUDE, PROVIDER_OPENAI,
+    },
     modes::get_mode,
     sandbox::{Sandbox, SandboxMode},
     stream::TaskStreamManager,
@@ -525,6 +529,104 @@ impl Pipeline {
                 .to_string(),
             chat_context,
         }
+    }
+
+    fn clear_session_provider_credentials(session_dir: &str, provider: &str) {
+        let path = match provider {
+            PROVIDER_CLAUDE => Path::new(session_dir).join(".claude"),
+            PROVIDER_OPENAI => Path::new(session_dir).join(".codex"),
+            _ => return,
+        };
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    async fn prepare_linked_agent_credentials(
+        &self,
+        task: &Task,
+        backend_name: &str,
+        ctx: &mut PhaseContext,
+    ) -> Result<()> {
+        let provider = match backend_name {
+            "claude" => PROVIDER_CLAUDE,
+            "codex" => PROVIDER_OPENAI,
+            _ => return Ok(()),
+        };
+        let Some((user_id, _, _, _, _)) = self.db.get_user_by_username(&task.created_by)? else {
+            return Ok(());
+        };
+        let Some(secret) = self.db.get_user_linked_credential(user_id, provider)? else {
+            return Ok(());
+        };
+        if secret.entry.status != "connected" {
+            return Ok(());
+        }
+        restore_bundle(&secret.bundle, Path::new(&ctx.session_dir))
+            .context("restore linked credential bundle into task session")?;
+
+        if should_revalidate(&secret.entry.last_validated_at, &secret.entry.expires_at) {
+            let validation = validate_home(provider, Path::new(&ctx.session_dir)).await?;
+            let now = Utc::now().to_rfc3339();
+            if validation.ok {
+                let refreshed_bundle = capture_bundle(provider, Path::new(&ctx.session_dir))
+                    .context("capture refreshed linked credential bundle")?;
+                self.db.update_user_linked_credential_state(
+                    user_id,
+                    provider,
+                    &validation.auth_kind,
+                    if validation.account_email.is_empty() {
+                        &secret.entry.account_email
+                    } else {
+                        &validation.account_email
+                    },
+                    if validation.account_label.is_empty() {
+                        &secret.entry.account_label
+                    } else {
+                        &validation.account_label
+                    },
+                    "connected",
+                    &validation.expires_at,
+                    &now,
+                    "",
+                    Some(&refreshed_bundle),
+                )?;
+            } else {
+                self.db.update_user_linked_credential_state(
+                    user_id,
+                    provider,
+                    if validation.auth_kind.is_empty() {
+                        &secret.entry.auth_kind
+                    } else {
+                        &validation.auth_kind
+                    },
+                    if validation.account_email.is_empty() {
+                        &secret.entry.account_email
+                    } else {
+                        &validation.account_email
+                    },
+                    if validation.account_label.is_empty() {
+                        &secret.entry.account_label
+                    } else {
+                        &validation.account_label
+                    },
+                    "expired",
+                    &validation.expires_at,
+                    &now,
+                    &validation.last_error,
+                    None,
+                )?;
+                Self::clear_session_provider_credentials(&ctx.session_dir, provider);
+                return Ok(());
+            }
+        }
+
+        if provider == PROVIDER_CLAUDE {
+            if let Some(token) = claude_oauth_token_from_home(Path::new(&ctx.session_dir)) {
+                ctx.oauth_token = token;
+            }
+        }
+        self.db
+            .touch_user_linked_credential_used(user_id, provider)?;
+        Ok(())
     }
 
     /// Increment attempt and set the retry status, or fail if attempts exhausted.
@@ -1266,7 +1368,17 @@ impl Pipeline {
             .map(|m| (m.role, m.content))
             .collect::<Vec<_>>();
 
+        let backend_name = self.selected_backend_name(task);
         let mut ctx = self.make_context(task, work_dir.clone(), session_dir, pending_messages);
+        self.prepare_linked_agent_credentials(task, &backend_name, &mut ctx)
+            .await
+            .unwrap_or_else(|err| {
+                warn!(
+                    task_id = task.id,
+                    backend = backend_name.as_str(),
+                    "failed to prepare linked credentials: {err}"
+                );
+            });
         let had_pending = !ctx.pending_messages.is_empty();
         let phase_gate_token = Self::build_phase_gate_token(task, phase);
         ctx.phase_attempt = task.attempt;

@@ -42,6 +42,9 @@ use crate::{
 pub(crate) mod tasks;
 pub(crate) use tasks::*;
 
+pub(crate) mod linked_credentials;
+pub(crate) use linked_credentials::*;
+
 pub(crate) use crate::routes_modes::{
     delete_custom_mode, get_full_modes, get_modes, list_custom_modes, upsert_custom_mode,
 };

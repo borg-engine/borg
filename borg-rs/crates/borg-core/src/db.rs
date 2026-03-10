@@ -5,6 +5,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json;
 
 use crate::{
+    linked_credentials::LinkedCredentialBundle,
     pgcompat as pg,
     pgcompat::{params, Connection, ConnectionGuard, Mutex, OptionalExtension},
     types::{Proposal, QueueEntry, Task},
@@ -94,6 +95,29 @@ pub struct ApiKeyEntry {
     pub provider: String,
     pub key_name: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LinkedCredentialEntry {
+    pub id: i64,
+    pub user_id: i64,
+    pub provider: String,
+    pub auth_kind: String,
+    pub account_email: String,
+    pub account_label: String,
+    pub status: String,
+    pub expires_at: String,
+    pub last_validated_at: String,
+    pub last_used_at: String,
+    pub last_error: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LinkedCredentialSecret {
+    pub entry: LinkedCredentialEntry,
+    pub bundle: LinkedCredentialBundle,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -4269,7 +4293,7 @@ impl Db {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()
-        .context("get_user_by_id")?;
+            .context("get_user_by_id")?;
         Ok(result)
     }
 
@@ -5421,6 +5445,252 @@ impl Db {
         conn.execute(
             "DELETE FROM api_keys WHERE id = ?1 AND owner = ?2",
             params![id, owner],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_user_linked_credentials(&self, user_id: i64) -> Result<Vec<LinkedCredentialEntry>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, provider, auth_kind, account_email, account_label, status, \
+                    expires_at, last_validated_at, last_used_at, last_error, created_at, updated_at \
+             FROM linked_credentials WHERE user_id = ?1 ORDER BY provider",
+        )?;
+        let rows = stmt
+            .query_map(params![user_id], |row| {
+                Ok(LinkedCredentialEntry {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    provider: row.get(2)?,
+                    auth_kind: row.get(3)?,
+                    account_email: row.get(4)?,
+                    account_label: row.get(5)?,
+                    status: row.get(6)?,
+                    expires_at: row.get(7)?,
+                    last_validated_at: row.get(8)?,
+                    last_used_at: row.get(9)?,
+                    last_error: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
+                })
+            })?
+            .collect::<pg::Result<Vec<_>>>()
+            .context("list_user_linked_credentials")?;
+        Ok(rows)
+    }
+
+    pub fn list_all_linked_credentials(&self) -> Result<Vec<LinkedCredentialEntry>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, provider, auth_kind, account_email, account_label, status, \
+                    expires_at, last_validated_at, last_used_at, last_error, created_at, updated_at \
+             FROM linked_credentials ORDER BY user_id, provider",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(LinkedCredentialEntry {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    provider: row.get(2)?,
+                    auth_kind: row.get(3)?,
+                    account_email: row.get(4)?,
+                    account_label: row.get(5)?,
+                    status: row.get(6)?,
+                    expires_at: row.get(7)?,
+                    last_validated_at: row.get(8)?,
+                    last_used_at: row.get(9)?,
+                    last_error: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
+                })
+            })?
+            .collect::<pg::Result<Vec<_>>>()
+            .context("list_all_linked_credentials")?;
+        Ok(rows)
+    }
+
+    pub fn get_user_linked_credential(
+        &self,
+        user_id: i64,
+        provider: &str,
+    ) -> Result<Option<LinkedCredentialSecret>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let row = conn
+            .query_row(
+                "SELECT id, user_id, provider, auth_kind, account_email, account_label, status, \
+                        expires_at, last_validated_at, last_used_at, last_error, created_at, updated_at, credential_bundle \
+                 FROM linked_credentials WHERE user_id = ?1 AND provider = ?2",
+                params![user_id, provider],
+                |row| {
+                    Ok((
+                        LinkedCredentialEntry {
+                            id: row.get(0)?,
+                            user_id: row.get(1)?,
+                            provider: row.get(2)?,
+                            auth_kind: row.get(3)?,
+                            account_email: row.get(4)?,
+                            account_label: row.get(5)?,
+                            status: row.get(6)?,
+                            expires_at: row.get(7)?,
+                            last_validated_at: row.get(8)?,
+                            last_used_at: row.get(9)?,
+                            last_error: row.get(10)?,
+                            created_at: row.get(11)?,
+                            updated_at: row.get(12)?,
+                        },
+                        row.get::<_, String>(13)?,
+                    ))
+                },
+            )
+            .optional()
+            .context("get_user_linked_credential")?;
+        let Some((entry, encrypted_bundle)) = row else {
+            return Ok(None);
+        };
+        let bundle_json = Self::decrypt_secret(&encrypted_bundle);
+        let bundle = serde_json::from_str::<LinkedCredentialBundle>(&bundle_json)
+            .context("decode linked credential bundle")?;
+        Ok(Some(LinkedCredentialSecret { entry, bundle }))
+    }
+
+    pub fn upsert_user_linked_credential(
+        &self,
+        user_id: i64,
+        provider: &str,
+        auth_kind: &str,
+        account_email: &str,
+        account_label: &str,
+        status: &str,
+        expires_at: &str,
+        last_validated_at: &str,
+        last_used_at: &str,
+        last_error: &str,
+        bundle: &LinkedCredentialBundle,
+    ) -> Result<i64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let bundle_json =
+            serde_json::to_string(bundle).context("encode linked credential bundle")?;
+        let encrypted_bundle = Self::encrypt_secret(&bundle_json);
+        let id = conn.execute_returning_id(
+            "INSERT INTO linked_credentials \
+                (user_id, provider, auth_kind, account_email, account_label, credential_bundle, \
+                 status, expires_at, last_validated_at, last_used_at, last_error, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS')) \
+             ON CONFLICT(user_id, provider) DO UPDATE SET \
+                 auth_kind = excluded.auth_kind, \
+                 account_email = excluded.account_email, \
+                 account_label = excluded.account_label, \
+                 credential_bundle = excluded.credential_bundle, \
+                 status = excluded.status, \
+                 expires_at = excluded.expires_at, \
+                 last_validated_at = excluded.last_validated_at, \
+                 last_used_at = excluded.last_used_at, \
+                 last_error = excluded.last_error, \
+                 updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS')",
+            params![
+                user_id,
+                provider,
+                auth_kind,
+                account_email,
+                account_label,
+                encrypted_bundle,
+                status,
+                expires_at,
+                last_validated_at,
+                last_used_at,
+                last_error
+            ],
+        )?;
+        Ok(id)
+    }
+
+    pub fn update_user_linked_credential_state(
+        &self,
+        user_id: i64,
+        provider: &str,
+        auth_kind: &str,
+        account_email: &str,
+        account_label: &str,
+        status: &str,
+        expires_at: &str,
+        last_validated_at: &str,
+        last_error: &str,
+        bundle: Option<&LinkedCredentialBundle>,
+    ) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let encrypted_bundle = match bundle {
+            Some(bundle) => {
+                let bundle_json =
+                    serde_json::to_string(bundle).context("encode linked credential bundle")?;
+                Some(Self::encrypt_secret(&bundle_json))
+            },
+            None => None,
+        };
+        conn.execute(
+            "UPDATE linked_credentials SET \
+                 auth_kind = ?3, \
+                 account_email = ?4, \
+                 account_label = ?5, \
+                 status = ?6, \
+                 expires_at = ?7, \
+                 last_validated_at = ?8, \
+                 last_error = ?9, \
+                 credential_bundle = COALESCE(?10, credential_bundle), \
+                 updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS') \
+             WHERE user_id = ?1 AND provider = ?2",
+            params![
+                user_id,
+                provider,
+                auth_kind,
+                account_email,
+                account_label,
+                status,
+                expires_at,
+                last_validated_at,
+                last_error,
+                encrypted_bundle
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn touch_user_linked_credential_used(&self, user_id: i64, provider: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE linked_credentials SET last_used_at = ?3, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS') \
+             WHERE user_id = ?1 AND provider = ?2",
+            params![user_id, provider, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_user_linked_credential(&self, user_id: i64, provider: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        conn.execute(
+            "DELETE FROM linked_credentials WHERE user_id = ?1 AND provider = ?2",
+            params![user_id, provider],
         )?;
         Ok(())
     }

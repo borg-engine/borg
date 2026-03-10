@@ -270,7 +270,7 @@ pub(crate) async fn create_task(
         attempt: 0,
         max_attempts: 5,
         last_error: String::new(),
-        created_by: "api".into(),
+        created_by: user.username.clone(),
         notify_chat: body.notify_chat.unwrap_or_default(),
         created_at: Utc::now(),
         updated_at: Utc::now(),

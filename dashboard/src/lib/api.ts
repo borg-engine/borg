@@ -257,6 +257,65 @@ export async function updateUserSettings(settings: Partial<UserSettings>): Promi
   return r.json();
 }
 
+export interface LinkedCredential {
+  id: number;
+  user_id: number;
+  provider: "claude" | "openai";
+  auth_kind: string;
+  account_email: string;
+  account_label: string;
+  status: string;
+  expires_at: string;
+  last_validated_at: string;
+  last_used_at: string;
+  last_error: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LinkedCredentialListResponse {
+  credentials: LinkedCredential[];
+}
+
+export interface LinkedCredentialConnectSession {
+  id: string;
+  provider: "claude" | "openai";
+  status: string;
+  auth_url: string;
+  device_code: string;
+  message: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function useLinkedCredentials() {
+  return useQuery<LinkedCredentialListResponse>({
+    queryKey: ["linked-credentials"],
+    queryFn: () => fetchJson("/api/user/linked-credentials"),
+    staleTime: 15_000,
+  });
+}
+
+export async function startLinkedCredentialConnect(provider: "claude" | "openai") {
+  const r = await apiFetch(`/api/user/linked-credentials/${provider}/connect`, {
+    method: "POST",
+  });
+  return r.json() as Promise<LinkedCredentialConnectSession>;
+}
+
+export async function fetchLinkedCredentialConnectSession(id: string) {
+  const r = await apiFetch(`/api/user/linked-credentials/connect/${encodeURIComponent(id)}`);
+  return r.json() as Promise<LinkedCredentialConnectSession>;
+}
+
+export async function deleteLinkedCredential(provider: "claude" | "openai") {
+  const r = await apiFetch(`/api/user/linked-credentials/${provider}`, {
+    method: "DELETE",
+  });
+  return r.json() as Promise<{ ok: boolean }>;
+}
+
 // AuthEventSource replaces native EventSource with a fetch-based connection
 // that sends the token in Authorization header instead of a query parameter.
 export class AuthEventSource {

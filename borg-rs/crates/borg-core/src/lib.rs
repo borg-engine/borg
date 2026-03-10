@@ -5,6 +5,7 @@ pub mod db;
 pub mod git;
 pub mod ipc;
 pub mod knowledge;
+pub mod linked_credentials;
 pub mod modes;
 pub mod observer;
 pub mod pgcompat;

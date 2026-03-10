@@ -297,6 +297,9 @@ impl AgentBackend for ClaudeBackend {
 
         let is_docker = matches!(effective_mode, SandboxMode::Docker);
         let oauth_token = ctx.oauth_token.clone();
+        let has_linked_auth = Path::new(&ctx.session_dir)
+            .join(".claude/.credentials.json")
+            .exists();
 
         let stream_tx = ctx.stream_tx.clone();
         if let Some(tx) = &stream_tx {
@@ -408,9 +411,11 @@ impl AgentBackend for ClaudeBackend {
                     .env("HOME", &ctx.session_dir)
                     .env("RUSTUP_HOME", &rustup_home)
                     .env("CARGO_HOME", &cargo_home)
-                    .env("CLAUDE_CODE_OAUTH_TOKEN", &oauth_token)
                     .env("API_BASE_URL", &ctx.borg_api_url)
                     .env("API_TOKEN", &ctx.borg_api_token);
+                if !has_linked_auth && !oauth_token.is_empty() {
+                    cmd.env("CLAUDE_CODE_OAUTH_TOKEN", &oauth_token);
+                }
 
                 if !effective_base_url.is_empty() {
                     cmd.env("ANTHROPIC_BASE_URL", &effective_base_url);
@@ -434,8 +439,10 @@ impl AgentBackend for ClaudeBackend {
                     ("HOME".to_string(), "/home/bun".to_string()),
                     ("RUSTUP_HOME".to_string(), "/home/bun/.rustup".to_string()),
                     ("CARGO_HOME".to_string(), "/home/bun/.cargo".to_string()),
-                    ("CLAUDE_CODE_OAUTH_TOKEN".to_string(), oauth_token.clone()),
                 ];
+                if !has_linked_auth && !oauth_token.is_empty() {
+                    env_kv.push(("CLAUDE_CODE_OAUTH_TOKEN".to_string(), oauth_token.clone()));
+                }
                 if !gh_token.is_empty() {
                     env_kv.push(("GH_TOKEN".to_string(), gh_token));
                 }
@@ -517,9 +524,11 @@ impl AgentBackend for ClaudeBackend {
                     .env("RUSTUP_HOME", &rustup_home)
                     .env("CARGO_HOME", &cargo_home)
                     .env("PATH", &augmented_path)
-                    .env("CLAUDE_CODE_OAUTH_TOKEN", &oauth_token)
                     .env("API_BASE_URL", &ctx.borg_api_url)
                     .env("API_TOKEN", &ctx.borg_api_token);
+                if !has_linked_auth && !oauth_token.is_empty() {
+                    cmd.env("CLAUDE_CODE_OAUTH_TOKEN", &oauth_token);
+                }
 
                 if !effective_base_url.is_empty() {
                     cmd.env("ANTHROPIC_BASE_URL", &effective_base_url);

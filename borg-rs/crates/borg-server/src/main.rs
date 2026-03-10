@@ -75,6 +75,8 @@ pub struct AppState {
     pub upload_processing_sem: Arc<Semaphore>,
     pub upload_processing_limit: usize,
     pub login_attempts: Arc<std::sync::Mutex<HashMap<String, (u32, std::time::Instant)>>>,
+    pub(crate) linked_credential_sessions:
+        Arc<TokioMutex<HashMap<String, routes::LinkedCredentialConnectSession>>>,
 }
 
 impl AppState {
@@ -907,7 +909,10 @@ async fn main() -> anyhow::Result<()> {
         upload_processing_sem: Arc::new(Semaphore::new(upload_processing_limit)),
         upload_processing_limit,
         login_attempts: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        linked_credential_sessions: Arc::new(TokioMutex::new(HashMap::new())),
     });
+
+    routes::spawn_linked_credential_maintenance(Arc::clone(&state));
 
     {
         let embed_registry = Arc::clone(&state.embed_registry);
@@ -968,6 +973,22 @@ async fn main() -> anyhow::Result<()> {
         // Per-user settings
         .route("/api/user/settings", get(routes::get_user_settings))
         .route("/api/user/settings", put(routes::put_user_settings))
+        .route(
+            "/api/user/linked-credentials",
+            get(routes::list_user_linked_credentials),
+        )
+        .route(
+            "/api/user/linked-credentials/:provider/connect",
+            post(routes::start_linked_credential_connect),
+        )
+        .route(
+            "/api/user/linked-credentials/connect/:id",
+            get(routes::get_linked_credential_connect_session),
+        )
+        .route(
+            "/api/user/linked-credentials/:provider",
+            delete(routes::delete_user_linked_credential),
+        )
         // Tasks
         .route("/api/tasks", get(routes::list_tasks))
         .route("/api/tasks/create", post(routes::create_task))
@@ -1211,7 +1232,10 @@ async fn main() -> anyhow::Result<()> {
                 "http://localhost:3131".to_string(),
             ];
             let public_origin = config.get_base_url();
-            if !allowed_origins.iter().any(|origin| origin == &public_origin) {
+            if !allowed_origins
+                .iter()
+                .any(|origin| origin == &public_origin)
+            {
                 allowed_origins.push(public_origin);
             }
             let origins: Vec<HeaderValue> = allowed_origins

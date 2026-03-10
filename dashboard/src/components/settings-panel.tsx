@@ -10,10 +10,16 @@ import {
   deleteCacheVolume,
   useUserSettings,
   updateUserSettings,
+  useLinkedCredentials,
+  startLinkedCredentialConnect,
+  fetchLinkedCredentialConnectSession,
+  deleteLinkedCredential,
   useUsers,
   createUser,
   deleteUser,
   changeUserPassword,
+  type LinkedCredential,
+  type LinkedCredentialConnectSession,
   type Settings,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -124,17 +130,20 @@ export function SettingsPanel() {
 
         {user && (
           <Section title="Account">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/15 text-[13px] font-semibold text-amber-400">
-                  {(user.username[0] ?? "?").toUpperCase()}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/15 text-[13px] font-semibold text-amber-400">
+                    {(user.username[0] ?? "?").toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="text-[12px] font-medium text-[#e8e0d4]">{user.username}</div>
+                    <div className="text-[11px] text-[#6b6459]">{isAdmin ? "Admin" : "User"}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-[12px] font-medium text-[#e8e0d4]">{user.username}</div>
-                  <div className="text-[11px] text-[#6b6459]">{isAdmin ? "Admin" : "User"}</div>
-                </div>
+                <ChangeOwnPassword userId={user.id} />
               </div>
-              <ChangeOwnPassword userId={user.id} />
+              <LinkedAccountsPanel />
             </div>
           </Section>
         )}
@@ -715,6 +724,203 @@ function ChangeOwnPassword({ userId }: { userId: number }) {
         Cancel
       </button>
       {msg && <span className="text-[10px] text-emerald-400">{msg}</span>}
+    </div>
+  );
+}
+
+const LINKED_ACCOUNT_PROVIDERS: Array<{
+  provider: "claude" | "openai";
+  label: string;
+  desc: string;
+  connectLabel: string;
+}> = [
+  {
+    provider: "claude",
+    label: "Claude Pro/Max",
+    desc: "Uses Claude Code account auth. The resulting session is restored into the task sandbox for agent runs.",
+    connectLabel: "Connect Claude",
+  },
+  {
+    provider: "openai",
+    label: "ChatGPT Plus/Pro",
+    desc: "Uses Codex device auth. Borg stores the resulting Codex auth bundle per user and revalidates it every 15 minutes.",
+    connectLabel: "Connect OpenAI",
+  },
+];
+
+function formatCredentialTime(value: string) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function credentialBadge(credential: LinkedCredential | undefined) {
+  const status = credential?.status ?? "disconnected";
+  if (status === "connected") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
+  }
+  if (status === "expired") {
+    return "border-amber-500/20 bg-amber-500/10 text-amber-300";
+  }
+  return "border-[#2a2520] bg-[#1c1a17]/60 text-[#9c9486]";
+}
+
+function LinkedAccountsPanel() {
+  const queryClient = useQueryClient();
+  const { data } = useLinkedCredentials();
+  const [busyProvider, setBusyProvider] = useState<"claude" | "openai" | null>(null);
+  const [pending, setPending] = useState<Record<string, LinkedCredentialConnectSession>>({});
+
+  useEffect(() => {
+    const activeProviders = Object.values(pending)
+      .filter((session) => session.status === "pending")
+      .map((session) => session.provider);
+    if (activeProviders.length === 0) return;
+    const timer = window.setInterval(async () => {
+      for (const provider of activeProviders) {
+        const current = pending[provider];
+        if (!current) continue;
+        try {
+          const updated = await fetchLinkedCredentialConnectSession(current.id);
+          if (updated.status === "connected") {
+            setPending((prev) => {
+              const next = { ...prev };
+              delete next[provider];
+              return next;
+            });
+            queryClient.invalidateQueries({ queryKey: ["linked-credentials"] });
+            continue;
+          }
+          setPending((prev) => ({ ...prev, [provider]: updated }));
+        } catch {}
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [pending, queryClient]);
+
+  async function handleConnect(provider: "claude" | "openai") {
+    setBusyProvider(provider);
+    try {
+      const session = await startLinkedCredentialConnect(provider);
+      if (session.auth_url) {
+        window.open(session.auth_url, "_blank", "noopener,noreferrer");
+      }
+      if (session.status === "connected") {
+        queryClient.invalidateQueries({ queryKey: ["linked-credentials"] });
+        setPending((prev) => {
+          const next = { ...prev };
+          delete next[provider];
+          return next;
+        });
+      } else {
+        setPending((prev) => ({ ...prev, [provider]: session }));
+      }
+    } finally {
+      setBusyProvider(null);
+    }
+  }
+
+  async function handleDisconnect(provider: "claude" | "openai") {
+    setBusyProvider(provider);
+    try {
+      await deleteLinkedCredential(provider);
+      setPending((prev) => {
+        const next = { ...prev };
+        delete next[provider];
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ["linked-credentials"] });
+    } finally {
+      setBusyProvider(null);
+    }
+  }
+
+  const credentialsByProvider = new Map(
+    (data?.credentials ?? []).map((credential) => [credential.provider, credential]),
+  );
+
+  return (
+    <div className="space-y-3 rounded-xl border border-[#2a2520] bg-[#120f0d]/60 p-3">
+      <div>
+        <Label>Linked AI Accounts</Label>
+        <Desc>Per-user agent credentials. Borg revalidates linked sessions every 15 minutes and again before use when needed.</Desc>
+      </div>
+      {LINKED_ACCOUNT_PROVIDERS.map((meta) => {
+        const credential = credentialsByProvider.get(meta.provider);
+        const pendingSession = pending[meta.provider];
+        const isPending = pendingSession?.status === "pending";
+        const detail = credential?.account_email || credential?.account_label || "";
+        return (
+          <div
+            key={meta.provider}
+            className="space-y-2 rounded-lg border border-[#2a2520] bg-[#1a1714]/70 p-3"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-medium text-[#e8e0d4]">{meta.label}</span>
+                  <span className={cn("rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]", credentialBadge(credential))}>
+                    {isPending ? "Connecting" : credential?.status ?? "Disconnected"}
+                  </span>
+                </div>
+                <div className="mt-1 text-[11px] text-[#6b6459]">{meta.desc}</div>
+                {detail && <div className="mt-2 text-[11px] text-[#b8ad9d]">{detail}</div>}
+                {credential?.last_validated_at && (
+                  <div className="mt-1 text-[10px] text-[#6b6459]">
+                    Last checked {formatCredentialTime(credential.last_validated_at)}
+                  </div>
+                )}
+              </div>
+              {credential?.status === "connected" ? (
+                <button
+                  onClick={() => handleDisconnect(meta.provider)}
+                  disabled={busyProvider === meta.provider}
+                  className="rounded-md border border-[#4a2a24] bg-[#2a1411]/70 px-3 py-1.5 text-[11px] text-[#d49a8f] transition-colors hover:bg-[#331915] disabled:opacity-50"
+                >
+                  Disconnect
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleConnect(meta.provider)}
+                  disabled={busyProvider === meta.provider || isPending}
+                  className="rounded-md bg-amber-500/20 px-3 py-1.5 text-[11px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/30 disabled:opacity-50"
+                >
+                  {busyProvider === meta.provider ? "Starting..." : meta.connectLabel}
+                </button>
+              )}
+            </div>
+            {pendingSession && (
+              <div className="rounded-md border border-[#2a2520] bg-[#141210] px-3 py-2 text-[11px] text-[#b8ad9d]">
+                {pendingSession.message || "Waiting for provider login completion."}
+                {pendingSession.auth_url && (
+                  <div className="mt-2">
+                    <a
+                      href={pendingSession.auth_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-amber-300 underline underline-offset-2"
+                    >
+                      Open provider sign-in
+                    </a>
+                  </div>
+                )}
+                {pendingSession.device_code && (
+                  <div className="mt-2 font-mono text-[12px] text-[#f1e7d8]">{pendingSession.device_code}</div>
+                )}
+                {pendingSession.error && (
+                  <div className="mt-2 text-[#d49a8f]">{pendingSession.error}</div>
+                )}
+              </div>
+            )}
+            {credential?.last_error && credential.status !== "connected" && !pendingSession && (
+              <div className="rounded-md border border-[#4a2a24] bg-[#2a1411]/40 px-3 py-2 text-[11px] text-[#d49a8f]">
+                {credential.last_error}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

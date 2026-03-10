@@ -199,16 +199,13 @@ fn cloudflare_email_is_admin(config: &borg_core::config::Config, email: &str) ->
 
 fn provision_cloudflare_user(state: &AppState, email: &str) -> Result<AuthUser, Response> {
     let desired_admin = cloudflare_email_is_admin(&state.config, email);
-    let existing = state
-        .db
-        .get_user_by_username(email)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": format!("user lookup failed: {e}")})),
-            )
-                .into_response()
-        })?;
+    let existing = state.db.get_user_by_username(email).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("user lookup failed: {e}")})),
+        )
+            .into_response()
+    })?;
 
     let user_id = if let Some((id, _, _, _, is_admin)) = existing {
         if desired_admin && !is_admin {
@@ -251,10 +248,18 @@ fn provision_cloudflare_user(state: &AppState, email: &str) -> Result<AuthUser, 
 
     if is_admin {
         if let Err(e) = state.db.ensure_admin_workspace_memberships(user_id) {
-            tracing::warn!(user_id, email, "failed to sync admin workspace memberships: {e}");
+            tracing::warn!(
+                user_id,
+                email,
+                "failed to sync admin workspace memberships: {e}"
+            );
         }
         if let Err(e) = state.db.set_preferred_admin_workspace(user_id) {
-            tracing::warn!(user_id, email, "failed to set preferred admin workspace: {e}");
+            tracing::warn!(
+                user_id,
+                email,
+                "failed to set preferred admin workspace: {e}"
+            );
         }
     }
 

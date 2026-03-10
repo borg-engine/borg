@@ -1,4 +1,4 @@
-use std::process::Stdio;
+use std::{path::Path, process::Stdio};
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
@@ -238,15 +238,19 @@ impl AgentBackend for CodexBackend {
         codex_args.push(instruction.clone());
 
         let mut cmd = tokio::process::Command::new(&self.codex_bin);
+        let codex_home = format!("{}/.codex", ctx.session_dir);
+        let has_linked_auth = Path::new(&codex_home).join("auth.json").exists();
         cmd.args(&codex_args)
             .current_dir(&ctx.work_dir)
+            .env("HOME", &ctx.session_dir)
+            .env("CODEX_HOME", &codex_home)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         cmd.env("GIT_AUTHOR_NAME", &self.git_author_name);
         cmd.env("GIT_AUTHOR_EMAIL", &self.git_author_email);
         cmd.env("GIT_COMMITTER_NAME", &self.git_committer_name);
         cmd.env("GIT_COMMITTER_EMAIL", &self.git_committer_email);
-        if !self.api_key.is_empty() {
+        if !has_linked_auth && !self.api_key.is_empty() {
             cmd.env("OPENAI_API_KEY", &self.api_key);
         }
         let mut child = cmd
