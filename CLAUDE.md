@@ -59,3 +59,4 @@ Key mode boundaries in the dashboard:
 
 - Use your preferred local git author identity.
 - Do NOT add Claude/Anthropic co-authorship lines.
+- Use conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`
