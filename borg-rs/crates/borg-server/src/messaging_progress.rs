@@ -37,6 +37,11 @@ pub(crate) enum MessagingProgressSink {
         chat_id: String,
         quote_id: Option<String>,
     },
+    Slack {
+        sidecar: Arc<Sidecar>,
+        chat_id: String,
+        reply_to: Option<String>,
+    },
 }
 
 impl MessagingProgressSink {
@@ -59,6 +64,11 @@ impl MessagingProgressSink {
                 chat_id,
                 quote_id,
             } => sidecar.send_whatsapp(chat_id, text, quote_id.as_deref()),
+            Self::Slack {
+                sidecar,
+                chat_id,
+                reply_to,
+            } => sidecar.send_slack(chat_id, text, reply_to.as_deref()),
         }
     }
 
@@ -75,6 +85,9 @@ impl MessagingProgressSink {
             Self::WhatsApp {
                 sidecar, chat_id, ..
             } => sidecar.send_whatsapp_typing(chat_id),
+            Self::Slack {
+                sidecar, chat_id, ..
+            } => sidecar.send_slack_typing(chat_id),
         }
     }
 }

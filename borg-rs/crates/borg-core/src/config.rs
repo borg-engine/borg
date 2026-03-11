@@ -90,10 +90,12 @@ pub struct Config {
     // Gemini
     pub gemini_api_key: String,
 
-    // Sidecar (Discord + WhatsApp)
+    // Sidecar (Discord + WhatsApp + Slack)
     pub discord_token: String,
     pub wa_auth_dir: String,
     pub wa_disabled: bool,
+    pub slack_bot_token: String,
+    pub slack_app_token: String,
 
     // Observer
     pub observer_config: String,
@@ -1006,6 +1008,8 @@ impl Config {
             discord_token: get_str("DISCORD_TOKEN", &dotenv, ""),
             wa_auth_dir: get_str("WA_AUTH_DIR", &dotenv, ""),
             wa_disabled: get_bool("WA_DISABLED", &dotenv, false),
+            slack_bot_token: get_str("SLACK_BOT_TOKEN", &dotenv, ""),
+            slack_app_token: get_str("SLACK_APP_TOKEN", &dotenv, ""),
             observer_config: get_str("OBSERVER_CONFIG", &dotenv, ""),
             public_url: get_str("PUBLIC_URL", &dotenv, ""),
             database_url: get("DATABASE_URL", &dotenv)

@@ -13,6 +13,7 @@ use tracing::{info, warn};
 pub enum Source {
     Discord,
     WhatsApp,
+    Slack,
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +33,7 @@ pub struct SidecarMessage {
 pub enum SidecarEvent {
     Message(SidecarMessage),
     DiscordReady { bot_id: String },
+    SlackReady { bot_id: String, bot_name: String },
     WaConnected { jid: String },
     WaQr { data: String },
     Disconnected { source: Source, reason: String },
@@ -53,6 +55,8 @@ impl Sidecar {
         discord_token: &str,
         wa_auth_dir: &str,
         wa_disabled: bool,
+        slack_bot_token: &str,
+        slack_app_token: &str,
     ) -> Result<(Self, mpsc::UnboundedReceiver<SidecarEvent>)> {
         let cmd_tx_arc: Arc<Mutex<Option<mpsc::UnboundedSender<String>>>> =
             Arc::new(Mutex::new(None));
@@ -63,6 +67,8 @@ impl Sidecar {
         let assistant_name = assistant_name.to_string();
         let discord_token = discord_token.to_string();
         let wa_auth_dir = wa_auth_dir.to_string();
+        let slack_bot_token = slack_bot_token.to_string();
+        let slack_app_token = slack_app_token.to_string();
 
         tokio::spawn(async move {
             let mut attempt = 0u32;
@@ -72,6 +78,8 @@ impl Sidecar {
                     &discord_token,
                     &wa_auth_dir,
                     wa_disabled,
+                    &slack_bot_token,
+                    &slack_app_token,
                     event_tx2.clone(),
                 )
                 .await
@@ -133,6 +141,21 @@ impl Sidecar {
         self.send_raw(cmd.to_string());
     }
 
+    pub fn send_slack(&self, channel_id: &str, text: &str, reply_to: Option<&str>) {
+        let mut obj = serde_json::json!({
+            "target": "slack", "cmd": "send",
+            "channel_id": channel_id, "text": text,
+        });
+        if let Some(ts) = reply_to {
+            obj["reply_to"] = serde_json::Value::String(ts.to_string());
+        }
+        self.send_raw(obj.to_string());
+    }
+
+    pub fn send_slack_typing(&self, _channel_id: &str) {
+        // Slack Socket Mode doesn't support typing indicators
+    }
+
     fn send_raw(&self, cmd: String) {
         if let Ok(guard) = self.cmd_tx.lock() {
             if let Some(tx) = guard.as_ref() {
@@ -149,6 +172,8 @@ async fn spawn_once(
     discord_token: &str,
     wa_auth_dir: &str,
     wa_disabled: bool,
+    slack_bot_token: &str,
+    slack_app_token: &str,
     event_tx: mpsc::UnboundedSender<SidecarEvent>,
 ) -> Result<(
     mpsc::UnboundedSender<String>,
@@ -167,6 +192,12 @@ async fn spawn_once(
     }
     if wa_disabled {
         cmd.env("WA_DISABLED", "true");
+    }
+    if !slack_bot_token.is_empty() {
+        cmd.env("SLACK_BOT_TOKEN", slack_bot_token);
+    }
+    if !slack_app_token.is_empty() {
+        cmd.env("SLACK_APP_TOKEN", slack_app_token);
     }
 
     let mut child = cmd.spawn().context("failed to spawn sidecar/bridge.js")?;
@@ -189,6 +220,9 @@ async fn spawn_once(
             match &event {
                 SidecarEvent::DiscordReady { bot_id } => {
                     info!("Discord connected as bot {}", bot_id);
+                },
+                SidecarEvent::SlackReady { bot_name, .. } => {
+                    info!("Slack connected as @{}", bot_name);
                 },
                 SidecarEvent::WaConnected { jid } => {
                     info!("WhatsApp connected as {}", jid);
@@ -235,6 +269,7 @@ fn parse_source(s: &str) -> Option<Source> {
     match s {
         "discord" => Some(Source::Discord),
         "whatsapp" => Some(Source::WhatsApp),
+        "slack" => Some(Source::Slack),
         _ => None,
     }
 }
@@ -247,8 +282,8 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
 
     let ev = match event_type {
         "message" => {
-            let msg = if source == Source::Discord {
-                SidecarMessage {
+            let msg = match source {
+                Source::Discord => SidecarMessage {
                     source: Source::Discord,
                     id: str_val(&v, "message_id"),
                     chat_id: str_val(&v, "channel_id"),
@@ -258,9 +293,19 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
                     timestamp: v["timestamp"].as_i64().unwrap_or(0),
                     is_group: !v["is_dm"].as_bool().unwrap_or(false),
                     mentions_bot: v["mentions_bot"].as_bool().unwrap_or(false),
-                }
-            } else {
-                SidecarMessage {
+                },
+                Source::Slack => SidecarMessage {
+                    source: Source::Slack,
+                    id: str_val(&v, "message_id"),
+                    chat_id: str_val(&v, "channel_id"),
+                    sender: str_val(&v, "sender_id"),
+                    sender_name: str_val(&v, "sender_name"),
+                    text: str_val(&v, "text"),
+                    timestamp: v["timestamp"].as_i64().unwrap_or(0),
+                    is_group: !v["is_dm"].as_bool().unwrap_or(false),
+                    mentions_bot: v["mentions_bot"].as_bool().unwrap_or(false),
+                },
+                Source::WhatsApp => SidecarMessage {
                     source: Source::WhatsApp,
                     id: str_val(&v, "id"),
                     chat_id: str_val(&v, "jid"),
@@ -270,12 +315,16 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
                     timestamp: v["timestamp"].as_i64().unwrap_or(0),
                     is_group: v["is_group"].as_bool().unwrap_or(false),
                     mentions_bot: v["mentions_bot"].as_bool().unwrap_or(false),
-                }
+                },
             };
             SidecarEvent::Message(msg)
         },
-        "ready" => SidecarEvent::DiscordReady {
+        "ready" if source == Source::Discord => SidecarEvent::DiscordReady {
             bot_id: str_val(&v, "bot_id"),
+        },
+        "ready" if source == Source::Slack => SidecarEvent::SlackReady {
+            bot_id: str_val(&v, "bot_id"),
+            bot_name: str_val(&v, "bot_name"),
         },
         "connected" => SidecarEvent::WaConnected {
             jid: str_val(&v, "jid"),
@@ -350,6 +399,31 @@ mod tests {
             panic!()
         };
         assert_eq!(jid, "me@s.whatsapp.net");
+    }
+
+    #[test]
+    fn parse_slack_message() {
+        let line = r#"{"source":"slack","event":"message","message_id":"1234567890.123456","channel_id":"C12345","sender_id":"U99999","sender_name":"Alice","text":"hello borg","timestamp":1234567890,"is_dm":false,"mentions_bot":true}"#;
+        let ev = parse_event(line).unwrap();
+        let SidecarEvent::Message(msg) = ev else {
+            panic!("expected Message")
+        };
+        assert_eq!(msg.source, Source::Slack);
+        assert_eq!(msg.chat_id, "C12345");
+        assert_eq!(msg.sender_name, "Alice");
+        assert!(msg.mentions_bot);
+        assert!(msg.is_group);
+    }
+
+    #[test]
+    fn parse_slack_ready() {
+        let line = r#"{"source":"slack","event":"ready","bot_id":"U0BOT","bot_name":"borg"}"#;
+        let ev = parse_event(line).unwrap();
+        let SidecarEvent::SlackReady { bot_id, bot_name } = ev else {
+            panic!()
+        };
+        assert_eq!(bot_id, "U0BOT");
+        assert_eq!(bot_name, "borg");
     }
 
     #[test]

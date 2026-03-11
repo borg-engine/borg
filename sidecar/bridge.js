@@ -213,6 +213,88 @@ async function handleWhatsAppCommand(cmd) {
   }
 }
 
+// ── Slack ────────────────────────────────────────────────────────────────
+
+let slackApp = null;
+let slackBotUserId = null;
+
+async function startSlack() {
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  const appToken = process.env.SLACK_APP_TOKEN;
+  if (!botToken || !appToken) return;
+
+  const { App } = await import('@slack/bolt');
+
+  slackApp = new App({
+    token: botToken,
+    appToken,
+    socketMode: true,
+    logLevel: 'error',
+  });
+
+  slackApp.message(async ({ message, say }) => {
+    if (message.bot_id || message.subtype) return;
+    const text = message.text || '';
+    if (!text.trim()) return;
+
+    const isDm = message.channel_type === 'im';
+    const mentionsBot = slackBotUserId
+      ? text.includes(`<@${slackBotUserId}>`) || text.toLowerCase().includes('@' + ASSISTANT_NAME)
+      : text.toLowerCase().includes('@' + ASSISTANT_NAME);
+
+    emit('slack', {
+      event: 'message',
+      channel_id: message.channel,
+      message_id: message.ts,
+      sender_id: message.user || '',
+      sender_name: message.user || '',
+      text,
+      timestamp: Math.floor(Number(message.ts)),
+      is_dm: isDm,
+      mentions_bot: mentionsBot,
+    });
+  });
+
+  slackApp.error(async (error) => {
+    emit('slack', { event: 'error', message: error.message || String(error) });
+  });
+
+  await slackApp.start();
+
+  try {
+    const { client } = slackApp;
+    const info = await client.auth.test();
+    slackBotUserId = info.user_id;
+    emit('slack', { event: 'ready', bot_id: info.user_id, bot_name: info.user });
+  } catch (e) {
+    emit('slack', { event: 'error', message: e.message });
+  }
+}
+
+async function handleSlackCommand(cmd) {
+  if (!slackApp) return;
+  const { client } = slackApp;
+  try {
+    if (cmd.cmd === 'send') {
+      const chunks = splitText(cmd.text, 3000);
+      for (let i = 0; i < chunks.length; i++) {
+        const opts = {
+          channel: cmd.channel_id,
+          text: chunks[i],
+        };
+        if (i === 0 && cmd.reply_to) {
+          opts.thread_ts = cmd.reply_to;
+        }
+        await client.chat.postMessage(opts);
+      }
+    } else if (cmd.cmd === 'typing') {
+      // Slack doesn't have a typing indicator API in Socket Mode — no-op
+    }
+  } catch (e) {
+    emit('slack', { event: 'error', channel_id: cmd.channel_id, message: e.message });
+  }
+}
+
 // ── Agent session manager ────────────────────────────────────────────────
 
 const agentSessions = new Map(); // session_id → { process }
@@ -339,6 +421,7 @@ rl.on('line', async (line) => {
     cmd = JSON.parse(line);
     if (cmd.target === 'discord') await handleDiscordCommand(cmd);
     else if (cmd.target === 'whatsapp') await handleWhatsAppCommand(cmd);
+    else if (cmd.target === 'slack') await handleSlackCommand(cmd);
     else if (cmd.target === 'agent') handleAgentCommand(cmd);
   } catch (e) {
     emit('system', { event: 'error', target: cmd?.target, message: e.message, stack: e.stack });
@@ -352,9 +435,10 @@ rl.on('close', async () => {
   await Promise.all(procs.map(p => waitForExit(p, KILL_TIMEOUT_MS + 1000)));
   if (discordClient) discordClient.destroy();
   if (waSock?.ws) waSock.ws.close();
+  if (slackApp) await slackApp.stop().catch(() => {});
   process.exit(0);
 });
 
 // ── Start ───────────────────────────────────────────────────────────────
 
-await Promise.all([startDiscord(), startWhatsApp()]);
+await Promise.all([startDiscord(), startWhatsApp(), startSlack()]);

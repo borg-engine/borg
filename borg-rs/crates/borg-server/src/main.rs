@@ -86,6 +86,43 @@ impl AppState {
     }
 }
 
+// ── Sidecar helpers ───────────────────────────────────────────────────────
+
+fn sidecar_source_prefix(chat_key: &str) -> String {
+    chat_key.splitn(2, ':').next().unwrap_or("discord").to_string()
+}
+
+fn make_progress_sink(
+    source: &str,
+    sidecar: Arc<borg_core::sidecar::Sidecar>,
+    chat_id: String,
+    reply_to: Option<String>,
+) -> messaging_progress::MessagingProgressSink {
+    match source {
+        "slack" => messaging_progress::MessagingProgressSink::Slack { sidecar, chat_id, reply_to },
+        "whatsapp" => messaging_progress::MessagingProgressSink::WhatsApp {
+            sidecar,
+            chat_id,
+            quote_id: reply_to,
+        },
+        _ => messaging_progress::MessagingProgressSink::Discord { sidecar, chat_id, reply_to },
+    }
+}
+
+fn send_sidecar_reply(
+    sidecar: &borg_core::sidecar::Sidecar,
+    source: &str,
+    chat_id: &str,
+    text: &str,
+    reply_to: Option<&str>,
+) {
+    match source {
+        "slack" => sidecar.send_slack(chat_id, text, reply_to),
+        "whatsapp" => sidecar.send_whatsapp(chat_id, text, reply_to),
+        _ => sidecar.send_discord(chat_id, text, reply_to),
+    }
+}
+
 // ── main ──────────────────────────────────────────────────────────────────
 
 #[tokio::main]
@@ -571,8 +608,11 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // Sidecar (Discord + WhatsApp bridge)
-    if !config.discord_token.is_empty() || !config.wa_auth_dir.is_empty() {
+    // Sidecar (Discord + WhatsApp + Slack bridge)
+    if !config.discord_token.is_empty()
+        || !config.wa_auth_dir.is_empty()
+        || !config.slack_bot_token.is_empty()
+    {
         let config_sc = Arc::clone(&config);
         let db_sc = Arc::clone(&db);
         let storage_sc = Arc::clone(&file_storage);
@@ -582,6 +622,8 @@ async fn main() -> anyhow::Result<()> {
             &config.discord_token,
             &config.wa_auth_dir,
             config.wa_disabled,
+            &config.slack_bot_token,
+            &config.slack_app_token,
         )
         .await
         {
@@ -619,7 +661,7 @@ async fn main() -> anyhow::Result<()> {
                             let chat_tx2 = chat_tx_flush.clone();
                             let ai_request_count2 = Arc::clone(&flush_ai_request_count);
                             let collector2 = Arc::clone(&collector_flush);
-                            let is_discord = batch.chat_key.starts_with("discord:");
+                            let chat_source = sidecar_source_prefix(&batch.chat_key);
                             let chat_id = batch
                                 .chat_key
                                 .splitn(2, ':')
@@ -629,23 +671,17 @@ async fn main() -> anyhow::Result<()> {
                             let sender_name = batch.sender_name.clone();
                             tokio::spawn(async move {
                                 let run_id = new_chat_run_id();
+                                let sink = make_progress_sink(
+                                    &chat_source,
+                                    Arc::clone(&sidecar2),
+                                    chat_id.clone(),
+                                    None,
+                                );
                                 let progress = spawn_chat_progress_forwarder(
                                     &chat_tx2,
                                     batch.chat_key.clone(),
                                     run_id.clone(),
-                                    if is_discord {
-                                        MessagingProgressSink::Discord {
-                                            sidecar: Arc::clone(&sidecar2),
-                                            chat_id: chat_id.clone(),
-                                            reply_to: None,
-                                        }
-                                    } else {
-                                        MessagingProgressSink::WhatsApp {
-                                            sidecar: Arc::clone(&sidecar2),
-                                            chat_id: chat_id.clone(),
-                                            quote_id: None,
-                                        }
-                                    },
+                                    sink,
                                 );
                                 match routes::run_chat_agent(
                                     &batch.chat_key,
@@ -664,30 +700,26 @@ async fn main() -> anyhow::Result<()> {
                                 {
                                     Ok(reply) if !reply.is_empty() => {
                                         progress.stop().await;
-                                        if is_discord {
-                                            sidecar2.send_discord(&chat_id, &reply, None);
-                                        } else {
-                                            sidecar2.send_whatsapp(&chat_id, &reply, None);
-                                        }
+                                        send_sidecar_reply(
+                                            &sidecar2,
+                                            &chat_source,
+                                            &chat_id,
+                                            &reply,
+                                            None,
+                                        );
                                     },
                                     Ok(_) => {
                                         progress.stop().await;
                                     },
                                     Err(e) => {
                                         progress.stop().await;
-                                        if is_discord {
-                                            sidecar2.send_discord(
-                                                &chat_id,
-                                                "I hit an error while working on that.",
-                                                None,
-                                            );
-                                        } else {
-                                            sidecar2.send_whatsapp(
-                                                &chat_id,
-                                                "I hit an error while working on that.",
-                                                None,
-                                            );
-                                        }
+                                        send_sidecar_reply(
+                                            &sidecar2,
+                                            &chat_source,
+                                            &chat_id,
+                                            "I hit an error while working on that.",
+                                            None,
+                                        );
                                         tracing::warn!("Sidecar flush agent error: {e}");
                                     },
                                 }
@@ -714,12 +746,12 @@ async fn main() -> anyhow::Result<()> {
                         if msg.is_group && !msg.mentions_bot {
                             continue;
                         }
-                        let prefix = if msg.source == Source::Discord {
-                            "discord"
-                        } else {
-                            "whatsapp"
+                        let source_prefix = match msg.source {
+                            Source::Discord => "discord",
+                            Source::WhatsApp => "whatsapp",
+                            Source::Slack => "slack",
                         };
-                        let chat_key = format!("{}:{}", prefix, msg.chat_id);
+                        let chat_key = format!("{}:{}", source_prefix, msg.chat_id);
                         let incoming = borg_core::chat::IncomingMessage {
                             chat_key: chat_key.clone(),
                             sender_name: msg.sender_name.clone(),
@@ -737,34 +769,28 @@ async fn main() -> anyhow::Result<()> {
                             let chat_tx2 = chat_tx_events.clone();
                             let ai_request_count2 = Arc::clone(&events_ai_request_count);
                             let collector2 = Arc::clone(&collector);
-                            let is_discord = msg.source == Source::Discord;
+                            let chat_source = source_prefix.to_string();
                             let chat_id = msg.chat_id.clone();
                             let msg_id = msg.id.clone();
                             let sender_name = msg.sender_name.clone();
-                            if is_discord {
-                                sidecar.send_discord_typing(&chat_id);
-                            } else {
-                                sidecar.send_whatsapp_typing(&chat_id);
+                            match msg.source {
+                                Source::Discord => sidecar.send_discord_typing(&chat_id),
+                                Source::WhatsApp => sidecar.send_whatsapp_typing(&chat_id),
+                                Source::Slack => sidecar.send_slack_typing(&chat_id),
                             }
                             tokio::spawn(async move {
                                 let run_id = new_chat_run_id();
+                                let sink = make_progress_sink(
+                                    &chat_source,
+                                    Arc::clone(&sidecar2),
+                                    chat_id.clone(),
+                                    Some(msg_id.clone()),
+                                );
                                 let progress = spawn_chat_progress_forwarder(
                                     &chat_tx2,
                                     batch.chat_key.clone(),
                                     run_id.clone(),
-                                    if is_discord {
-                                        MessagingProgressSink::Discord {
-                                            sidecar: Arc::clone(&sidecar2),
-                                            chat_id: chat_id.clone(),
-                                            reply_to: Some(msg_id.clone()),
-                                        }
-                                    } else {
-                                        MessagingProgressSink::WhatsApp {
-                                            sidecar: Arc::clone(&sidecar2),
-                                            chat_id: chat_id.clone(),
-                                            quote_id: Some(msg_id.clone()),
-                                        }
-                                    },
+                                    sink,
                                 );
                                 match routes::run_chat_agent(
                                     &batch.chat_key,
@@ -783,30 +809,26 @@ async fn main() -> anyhow::Result<()> {
                                 {
                                     Ok(reply) if !reply.is_empty() => {
                                         progress.stop().await;
-                                        if is_discord {
-                                            sidecar2.send_discord(&chat_id, &reply, Some(&msg_id));
-                                        } else {
-                                            sidecar2.send_whatsapp(&chat_id, &reply, Some(&msg_id));
-                                        }
+                                        send_sidecar_reply(
+                                            &sidecar2,
+                                            &chat_source,
+                                            &chat_id,
+                                            &reply,
+                                            Some(&msg_id),
+                                        );
                                     },
                                     Ok(_) => {
                                         progress.stop().await;
                                     },
                                     Err(e) => {
                                         progress.stop().await;
-                                        if is_discord {
-                                            sidecar2.send_discord(
-                                                &chat_id,
-                                                "I hit an error while working on that.",
-                                                Some(&msg_id),
-                                            );
-                                        } else {
-                                            sidecar2.send_whatsapp(
-                                                &chat_id,
-                                                "I hit an error while working on that.",
-                                                Some(&msg_id),
-                                            );
-                                        }
+                                        send_sidecar_reply(
+                                            &sidecar2,
+                                            &chat_source,
+                                            &chat_id,
+                                            "I hit an error while working on that.",
+                                            Some(&msg_id),
+                                        );
                                         tracing::warn!("Sidecar chat agent error: {e}");
                                     },
                                 }
