@@ -45,7 +45,10 @@ if command -v apt-get >/dev/null 2>&1; then
   apt-get install -y \
     ca-certificates curl git rsync jq unzip \
     build-essential pkg-config libssl-dev \
-    docker.io postgresql-client
+    postgresql-client
+  if ! command -v docker >/dev/null 2>&1; then
+    apt-get install -y docker.io
+  fi
   # cloudflared is not in standard repos; install only if CF_TUNNEL_TOKEN is set
   if [[ -n "${CF_TUNNEL_TOKEN:-}" ]] && ! command -v cloudflared >/dev/null 2>&1; then
     curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
