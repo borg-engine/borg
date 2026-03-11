@@ -5,11 +5,11 @@ Step-by-step setup for a fresh machine.
 ## Prerequisites
 
 - Linux (tested on Arch, should work on Ubuntu/Debian)
+- Rust toolchain (`curl https://sh.rustup.rs -sSf | sh`)
 - Docker daemon running
-- Zig 0.14.1+
-- Bun (for Claude Code CLI and messaging sidecar)
+- Bun (`curl -fsSL https://bun.sh/install | bash`)
 - Claude Code CLI (`bun install -g @anthropic-ai/claude-code`)
-- Claude OAuth credentials at `~/.claude/.credentials.json` (created by `claude` login)
+- Claude OAuth credentials (run `claude` once to log in)
 
 ## 1. Clone and Build
 
@@ -22,35 +22,27 @@ This builds the binary, Docker agent image, sidecar deps, and dashboard.
 
 ## 2. Configure
 
-Create `.env` in the project root:
+Copy the example and fill in your values:
 
 ```bash
-# Required: at least one messaging backend
+cp .env.example .env
+```
+
+Minimum required config:
+
+```bash
+# At least one messaging backend
 TELEGRAM_BOT_TOKEN=<token from @BotFather>
-
-# Optional: Discord
-DISCORD_ENABLED=true
-DISCORD_TOKEN=<token from Discord Developer Portal>
-
-# Optional: WhatsApp (scan QR on first start)
-WHATSAPP_ENABLED=true
 
 # Bot identity
 ASSISTANT_NAME=Borg
 
 # Pipeline (optional — enables autonomous engineering)
 PIPELINE_REPO=/absolute/path/to/target/repo
-PIPELINE_TEST_CMD=zig build test
-# PIPELINE_AUTO_MERGE=false        # skip auto-merge for primary repo
-# Additional repos (append !manual to disable auto-merge)
-# WATCHED_REPOS=/path/to/api:go test ./...|/path/to/web:bun test!manual
-
-# Remote dashboard access (default: 127.0.0.1)
-# WEB_BIND=0.0.0.0
-
-# Notify this Telegram chat about pipeline events
-# PIPELINE_ADMIN_CHAT=<chat_id>
+PIPELINE_TEST_CMD=cargo test
 ```
+
+See `.env.example` for the full list of options.
 
 ## 3. Run
 
@@ -58,11 +50,12 @@ PIPELINE_TEST_CMD=zig build test
 just r
 ```
 
-Or with systemd:
+Or with systemd (user service):
 
 ```bash
 mkdir -p ~/.config/systemd/user
 cp borg.service ~/.config/systemd/user/borg.service
+# Edit the paths in the service file to match your install location
 systemctl --user daemon-reload
 systemctl --user enable --now borg
 journalctl --user -u borg -f
@@ -80,7 +73,7 @@ Send `/task Fix the login bug` in a registered chat, or let the auto-seeder disc
 
 - `just status` returns JSON with version and uptime
 - `/ping` in Telegram responds with `pong`
-- Pipeline tasks appear at `http://127.0.0.1:3131`
+- Dashboard at `http://127.0.0.1:3131`
 
 ## Discord Bot Setup
 
@@ -88,4 +81,4 @@ Send `/task Fix the login bug` in a registered chat, or let the auto-seeder disc
 2. Create application → Bot → copy token
 3. Enable **Message Content Intent** under Bot settings
 4. Invite: OAuth2 → URL Generator → scopes: `bot` + `applications.commands` → permissions: Send Messages, Read Message History
-5. Set `DISCORD_ENABLED=true` and `DISCORD_TOKEN=<token>` in `.env`
+5. Set `DISCORD_TOKEN=<token>` in `.env`

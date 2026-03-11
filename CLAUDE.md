@@ -1,10 +1,5 @@
 # CLAUDE.md
 
-## Agent Behavior (IMPORTANT)
-
-- MUST default to `model: "sonnet"` for all subagents. Only use Haiku for trivial lookups.
-- MUST NOT enter plan mode without explicitly asking the user first. Default to task lists.
-
 ## Overview
 
 Borg is an autonomous AI agent orchestrator written in Rust. It connects to Telegram, WhatsApp, and Discord to respond to chat messages (via Claude Code subprocess), and runs an engineering pipeline that autonomously creates, tests, and merges code changes.
@@ -35,7 +30,6 @@ just dash              # Build dashboard
 just setup             # Full setup (image + sidecar + dashboard + build)
 ```
 
-Use `just install-service` + `just restart` (user systemd), not `sudo systemctl`.
 Prefer `just` commands over ad hoc shell invocations when a matching recipe exists.
 
 ## Dashboard Context
@@ -57,6 +51,4 @@ Key mode boundaries in the dashboard:
 
 ## Git Commits
 
-- Use your preferred local git author identity.
-- Do NOT add Claude/Anthropic co-authorship lines.
 - Use conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`
