@@ -62,10 +62,11 @@ export PROJECT_ID
 export BORG_HOST_IP
 
 # Create web_search shim that hits our ZDR proxy
+PROXY_BASE_URL="${ANTHROPIC_BASE_URL:-http://${BORG_HOST_IP}:3132}"
 cat <<EOF > /usr/local/bin/web_search
 #!/bin/bash
 QUERY="\$*"
-curl -s -X POST http://\${BORG_HOST_IP}:3132/v1/search \\
+curl -s -X POST "${PROXY_BASE_URL}/v1/search" \\
      -H "Content-Type: application/json" \\
      -d "{\"query\": \"\$QUERY\", \"project_id\": \${PROJECT_ID:-0}}" | bun -e "
 let s=''; process.stdin.on('data', c=>s+=c); process.stdin.on('end', ()=>{
@@ -104,7 +105,7 @@ if [ -n "$SESSION_ID" ]; then
 fi
 
 if [ -n "$ALLOWED_TOOLS" ]; then
-    CLAUDE_ARGS+=(--allowedTools "$ALLOWED_TOOLS")
+    CLAUDE_ARGS+=("--allowedTools=$ALLOWED_TOOLS")
 fi
 
 if [ -n "$SYSTEM_PROMPT" ]; then

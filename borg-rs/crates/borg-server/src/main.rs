@@ -1011,7 +1011,7 @@ fn build_backends(
                 .with_timeout(config.agent_timeout_s as u64)
                 .with_resource_limits(config.container_memory_mb, config.container_cpus)
                 .with_git_author(&config.git_author_name, &config.git_author_email)
-                .with_base_url("http://127.0.0.1:3132".to_string()),
+                .with_base_url(format!("http://127.0.0.1:{}", config.proxy_port)),
         ),
     );
 

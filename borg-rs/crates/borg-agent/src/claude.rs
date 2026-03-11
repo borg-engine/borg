@@ -59,6 +59,38 @@ fn merge_allowed_tools(base: &str, extras: &[&str]) -> String {
     merged.join(",")
 }
 
+fn isolated_proxy_base_url(base_url: &str) -> String {
+    if let Some(port) = base_url.strip_prefix("http://127.0.0.1:") {
+        return format!("http://172.31.0.1:{port}");
+    }
+    if let Some(port) = base_url.strip_prefix("http://localhost:") {
+        return format!("http://172.31.0.1:{port}");
+    }
+    if base_url.is_empty() {
+        "http://172.31.0.1:3132".to_string()
+    } else {
+        base_url.to_string()
+    }
+}
+
+fn container_host_ip(isolated: bool) -> &'static str {
+    if isolated {
+        "172.31.0.1"
+    } else {
+        "172.30.0.1"
+    }
+}
+
+fn container_reachable_url(base_url: &str, host_ip: &str) -> String {
+    if let Some(port) = base_url.strip_prefix("http://127.0.0.1:") {
+        return format!("http://{host_ip}:{port}");
+    }
+    if let Some(port) = base_url.strip_prefix("http://localhost:") {
+        return format!("http://{host_ip}:{port}");
+    }
+    base_url.to_string()
+}
+
 /// Runs Claude Code as a subprocess, with configurable sandbox isolation.
 pub struct ClaudeBackend {
     /// Path to the `claude` CLI binary.
@@ -152,6 +184,18 @@ impl AgentBackend for ClaudeBackend {
         };
         let instruction =
             crate::instruction::build_instruction(task, phase, &ctx, file_listing.as_deref());
+        let effective_mode = if phase.use_docker {
+            self.sandbox_mode.clone()
+        } else {
+            SandboxMode::Direct
+        };
+        let is_docker = matches!(effective_mode, SandboxMode::Docker);
+        let host_ip = container_host_ip(ctx.isolated);
+        let reachable_borg_api_url = if is_docker {
+            container_reachable_url(&ctx.borg_api_url, host_ip)
+        } else {
+            ctx.borg_api_url.clone()
+        };
 
         let mut effective_allowed_tools = phase.allowed_tools.clone();
 
@@ -169,13 +213,10 @@ impl AgentBackend for ClaudeBackend {
             disallowed.push_str(&ctx.disallowed_tools);
         }
         if !disallowed.is_empty() {
-            claude_args.push("--disallowed-tools".into());
-            claude_args.push(disallowed);
+            claude_args.push(format!("--disallowed-tools={disallowed}"));
         }
 
-        if phase.fresh_session {
-            claude_args.push("--no-resume".into());
-        } else if !task.session_id.is_empty() {
+        if !phase.fresh_session && !task.session_id.is_empty() {
             claude_args.push("--resume".into());
             claude_args.push(task.session_id.clone());
         }
@@ -185,7 +226,7 @@ impl AgentBackend for ClaudeBackend {
             let api_keys_vec: Vec<(String, String)> =
                 ctx.api_keys.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
             let mcp_servers = crate::mcp::build_mcp_servers_json(
-                &ctx.borg_api_url,
+                &reachable_borg_api_url,
                 &ctx.borg_api_token,
                 &task.mode,
                 task.project_id,
@@ -210,8 +251,7 @@ impl AgentBackend for ClaudeBackend {
         }
 
         if !effective_allowed_tools.is_empty() {
-            claude_args.push("--allowed-tools".into());
-            claude_args.push(effective_allowed_tools.clone());
+            claude_args.push(format!("--allowed-tools={effective_allowed_tools}"));
         }
 
         claude_args.push(instruction.clone());
@@ -220,24 +260,17 @@ impl AgentBackend for ClaudeBackend {
             .chain(claude_args)
             .collect();
 
-        info!(
-            task_id = task.id,
-            phase = %phase.name,
-            mode = ?self.sandbox_mode,
-            "spawning claude"
-        );
-
-        let effective_mode = if phase.use_docker {
-            self.sandbox_mode.clone()
-        } else {
-            SandboxMode::Direct
-        };
-
-        let is_docker = matches!(effective_mode, SandboxMode::Docker);
         let oauth_token = ctx.oauth_token.clone();
         let has_linked_auth = Path::new(&ctx.session_dir)
             .join(".claude/.credentials.json")
             .exists();
+
+        info!(
+            task_id = task.id,
+            phase = %phase.name,
+            mode = ?effective_mode,
+            "spawning claude"
+        );
 
         let stream_tx = ctx.stream_tx.clone();
         if let Some(tx) = &stream_tx {
@@ -262,7 +295,7 @@ impl AgentBackend for ClaudeBackend {
         };
 
         // Write CLAUDE.md with search API instructions for the agent
-        if !ctx.borg_api_token.is_empty() && !ctx.borg_api_url.is_empty() {
+        if !ctx.borg_api_token.is_empty() && !reachable_borg_api_url.is_empty() {
             let project_id_hint = if task.project_id > 0 {
                 format!("Current project_id: {}\n", task.project_id)
             } else {
@@ -329,10 +362,8 @@ impl AgentBackend for ClaudeBackend {
             String::new()
         };
 
-        let effective_base_url = if ctx.isolated {
-            "http://172.31.0.1:3132".to_string()
-        } else if !self.base_url.is_empty() {
-            self.base_url.clone()
+        let effective_base_url = if is_docker {
+            container_reachable_url(&isolated_proxy_base_url(&self.base_url), host_ip)
         } else {
             String::new()
         };
@@ -357,7 +388,7 @@ impl AgentBackend for ClaudeBackend {
                     .env("HOME", &ctx.session_dir)
                     .env("RUSTUP_HOME", &rustup_home)
                     .env("CARGO_HOME", &cargo_home)
-                    .env("API_BASE_URL", &ctx.borg_api_url)
+                    .env("API_BASE_URL", &reachable_borg_api_url)
                     .env("API_TOKEN", &ctx.borg_api_token);
                 if !gh_token.is_empty() {
                     cmd.env("GH_TOKEN", &gh_token);
@@ -405,18 +436,13 @@ impl AgentBackend for ClaudeBackend {
                 if !effective_base_url.is_empty() {
                     env_kv.push(("ANTHROPIC_BASE_URL".to_string(), effective_base_url));
                 }
-                if !ctx.borg_api_url.is_empty() {
-                    env_kv.push(("API_BASE_URL".to_string(), ctx.borg_api_url.clone()));
+                if !reachable_borg_api_url.is_empty() {
+                    env_kv.push(("API_BASE_URL".to_string(), reachable_borg_api_url.clone()));
                 }
                 if !ctx.borg_api_token.is_empty() {
                     env_kv.push(("API_TOKEN".to_string(), ctx.borg_api_token.clone()));
                 }
 
-                let host_ip = if ctx.isolated {
-                    "172.31.0.1"
-                } else {
-                    "172.30.0.1"
-                };
                 env_kv.push(("BORG_HOST_IP".to_string(), host_ip.to_string()));
 
                 let binds_ref: Vec<(&str, &str, bool)> = binds
@@ -480,7 +506,7 @@ impl AgentBackend for ClaudeBackend {
                     .env("RUSTUP_HOME", &rustup_home)
                     .env("CARGO_HOME", &cargo_home)
                     .env("PATH", &augmented_path)
-                    .env("API_BASE_URL", &ctx.borg_api_url)
+                    .env("API_BASE_URL", &reachable_borg_api_url)
                     .env("API_TOKEN", &ctx.borg_api_token);
                 if !gh_token.is_empty() {
                     cmd.env("GH_TOKEN", &gh_token);
@@ -643,7 +669,10 @@ impl AgentBackend for ClaudeBackend {
 
 #[cfg(test)]
 mod tests {
-    use super::{merge_allowed_tools, BORG_MCP_READ_ONLY_TOOLS};
+    use super::{
+        container_reachable_url, isolated_proxy_base_url, merge_allowed_tools,
+        BORG_MCP_READ_ONLY_TOOLS,
+    };
 
     #[test]
     fn merge_allowed_tools_appends_borg_tools_without_duplicates() {
@@ -657,5 +686,29 @@ mod tests {
     fn merge_allowed_tools_preserves_empty_semantics() {
         assert!(merge_allowed_tools("", BORG_MCP_READ_ONLY_TOOLS).is_empty());
         assert!(merge_allowed_tools("   ", BORG_MCP_READ_ONLY_TOOLS).is_empty());
+    }
+
+    #[test]
+    fn isolated_proxy_base_url_rewrites_local_proxy_host() {
+        assert_eq!(
+            isolated_proxy_base_url("http://127.0.0.1:3232"),
+            "http://172.31.0.1:3232"
+        );
+        assert_eq!(
+            isolated_proxy_base_url("http://localhost:4232"),
+            "http://172.31.0.1:4232"
+        );
+    }
+
+    #[test]
+    fn container_reachable_url_rewrites_local_api_host() {
+        assert_eq!(
+            container_reachable_url("http://127.0.0.1:3231", "172.31.0.1"),
+            "http://172.31.0.1:3231"
+        );
+        assert_eq!(
+            container_reachable_url("http://localhost:4231", "172.30.0.1"),
+            "http://172.30.0.1:4231"
+        );
     }
 }
