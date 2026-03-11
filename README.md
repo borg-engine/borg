@@ -1,6 +1,6 @@
 # Borg
 
-Autonomous Work Engine for domain-specific pipelines that research, draft, build, review, and ship work end-to-end. Dashboard and chat integration across web, Telegram, Discord, and WhatsApp.
+Autonomous Work Engine. Domain-specific pipelines that research, draft, build, review, and ship work end-to-end.
 
 ## Quick Start
 
@@ -25,17 +25,37 @@ Dashboard at `http://127.0.0.1:3131`.
 
 ## Pipelines
 
-Built-in modes include:
-- `sweborg` — software engineering (implement, validate, lint, rebase, merge)
-- `lawborg` — research-heavy service workflows with review and human sign-off
+Built-in pipeline categories:
 
-Tasks move through configurable phases. Each task gets its own git branch. Agents run in bubblewrap sandboxes or Docker containers (`SANDBOX_BACKEND`). Sessions persist across retries.
+- **SWE** — implement, validate, lint, rebase, merge via git PR
+- **Legal** — research-heavy service workflows with compliance checks and human sign-off
+- **Knowledge** — general-purpose agent workflows for document processing and analysis
 
-Custom pipelines can be created via the dashboard mode creator or the API.
+Tasks move through configurable phases. Each task gets its own git worktree and branch. Agents run in bubblewrap sandboxes or Docker containers (`SANDBOX_BACKEND`). Sessions persist across retries.
 
-## Chat
+Custom pipelines can be created via the dashboard or the API.
 
-Mention the bot in a registered Telegram, Discord, or WhatsApp group. Each group gets its own persistent session. Chat agents can search project documents and create pipeline tasks.
+## Messaging
+
+Chat with agents from any of the supported platforms:
+
+- **Discord** — per-user bot, responds to mentions and DMs
+- **Telegram** — per-user bot via @BotFather token
+- **Slack** — workspace integration via Socket Mode
+- **WhatsApp** — via Baileys (QR code pairing)
+- **Web** — built-in chat in the dashboard
+
+Each conversation gets its own persistent session. Chat agents can search project documents, query the knowledge base, and create pipeline tasks.
+
+Bot connections are managed per-user from the Connections tab in the dashboard.
+
+## BorgSearch
+
+Document search layer built on [Vespa](https://vespa.ai). Supports full-text, semantic (embedding-based), and hybrid search across all project documents and knowledge files.
+
+- Embedding models: `voyage-4-large` (default), `voyage-law-2`, `voyage-finance-2`, `voyage-code-3` — selected automatically per project mode
+- Coverage endpoint for exhaustive corpus review (`/api/borgsearch/coverage`)
+- Agents use BorgSearch via MCP tools: `search_documents`, `check_coverage`, `read_document`
 
 ## Commands
 

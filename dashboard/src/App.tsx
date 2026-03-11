@@ -319,7 +319,7 @@ function AppInner() {
       <div className="relative w-[52px] shrink-0">
         <nav
           className={cn(
-            "group/nav absolute inset-y-0 left-0 z-40 flex w-[52px] hover:w-[140px] flex-col items-start border-r pb-4 overflow-hidden transition-[width] duration-100 ease-out",
+            "group/nav absolute inset-y-0 left-0 z-40 flex w-[52px] hover:w-[160px] flex-col items-start border-r pb-4 overflow-hidden transition-[width] duration-100 ease-out",
             sidebarAlert
               ? "border-red-500/30 bg-red-950/35"
               : "border-[#2a2520] bg-gradient-to-b from-[#1c1a17] to-[#151412]",

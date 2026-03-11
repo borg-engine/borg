@@ -3,7 +3,7 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
 };
 
-use borg_core::{db::Db, config::Config, telegram::Telegram};
+use borg_core::{config::Config, db::Db, sidecar::Sidecar, telegram::Telegram};
 use tokio::{
     sync::{broadcast, Mutex as TokioMutex},
     task::JoinHandle,
@@ -22,15 +22,21 @@ struct RunningBot {
     handle: JoinHandle<()>,
 }
 
-/// Manages per-user Telegram bot polling loops.
+struct RunningDiscordBot {
+    token_hash: u64,
+}
+
+/// Manages per-user Telegram bot polling loops and Discord bots (via sidecar).
 pub struct UserBotManager {
     bots: TokioMutex<HashMap<i64, RunningBot>>,
+    discord_bots: TokioMutex<HashMap<i64, RunningDiscordBot>>,
     db: Arc<Db>,
     config: Arc<Config>,
     search: Option<Arc<SearchClient>>,
     storage: Arc<FileStorage>,
     chat_event_tx: broadcast::Sender<String>,
     ai_request_count: Arc<AtomicU64>,
+    sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>>,
 }
 
 fn hash_token(token: &str) -> u64 {
@@ -48,15 +54,18 @@ impl UserBotManager {
         storage: Arc<FileStorage>,
         chat_event_tx: broadcast::Sender<String>,
         ai_request_count: Arc<AtomicU64>,
+        sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>>,
     ) -> Self {
         Self {
             bots: TokioMutex::new(HashMap::new()),
+            discord_bots: TokioMutex::new(HashMap::new()),
             db,
             config,
             search,
             storage,
             chat_event_tx,
             ai_request_count,
+            sidecar_slot,
         }
     }
 
@@ -70,49 +79,94 @@ impl UserBotManager {
             },
         };
 
-        let mut desired: HashMap<i64, String> = HashMap::new();
+        // Telegram bots
+        let mut desired_tg: HashMap<i64, String> = HashMap::new();
+        let mut desired_dc: HashMap<i64, String> = HashMap::new();
         for (user_id, _, _, _, _) in &all_users {
             if let Ok(Some(token)) = self.db.get_user_setting(*user_id, "telegram_bot_token") {
                 if !token.is_empty() {
-                    desired.insert(*user_id, token);
+                    desired_tg.insert(*user_id, token);
+                }
+            }
+            if let Ok(Some(token)) = self.db.get_user_setting(*user_id, "discord_bot_token") {
+                if !token.is_empty() {
+                    desired_dc.insert(*user_id, token);
                 }
             }
         }
 
-        let mut bots = self.bots.lock().await;
+        // Sync Telegram bots
+        {
+            let mut bots = self.bots.lock().await;
 
-        // Stop bots whose token was removed or changed
-        let to_remove: Vec<i64> = bots
-            .keys()
-            .filter(|uid| {
-                desired
-                    .get(uid)
-                    .map(|t| hash_token(t) != bots[uid].token_hash)
-                    .unwrap_or(true)
-            })
-            .copied()
-            .collect();
-        for uid in to_remove {
-            if let Some(bot) = bots.remove(&uid) {
-                info!(user_id = uid, "stopping user telegram bot");
-                bot.handle.abort();
+            let to_remove: Vec<i64> = bots
+                .keys()
+                .filter(|uid| {
+                    desired_tg
+                        .get(uid)
+                        .map(|t| hash_token(t) != bots[uid].token_hash)
+                        .unwrap_or(true)
+                })
+                .copied()
+                .collect();
+            for uid in to_remove {
+                if let Some(bot) = bots.remove(&uid) {
+                    info!(user_id = uid, "stopping user telegram bot");
+                    bot.handle.abort();
+                }
+            }
+
+            for (user_id, token) in &desired_tg {
+                let th = hash_token(token);
+                if bots.get(user_id).map(|b| b.token_hash == th).unwrap_or(false) {
+                    continue;
+                }
+                let handle = self.spawn_telegram_bot(*user_id, token.clone()).await;
+                if let Some(handle) = handle {
+                    bots.insert(*user_id, RunningBot { token_hash: th, handle });
+                }
             }
         }
 
-        // Start bots for new/changed tokens
-        for (user_id, token) in &desired {
-            let th = hash_token(token);
-            if bots.get(user_id).map(|b| b.token_hash == th).unwrap_or(false) {
-                continue;
+        // Sync Discord bots via sidecar
+        {
+            let sidecar_guard = self.sidecar_slot.lock().await;
+            let Some(sidecar) = sidecar_guard.as_ref() else {
+                return;
+            };
+
+            let mut dc_bots = self.discord_bots.lock().await;
+
+            let to_remove: Vec<i64> = dc_bots
+                .keys()
+                .filter(|uid| {
+                    desired_dc
+                        .get(uid)
+                        .map(|t| hash_token(t) != dc_bots[uid].token_hash)
+                        .unwrap_or(true)
+                })
+                .copied()
+                .collect();
+            for uid in to_remove {
+                if dc_bots.remove(&uid).is_some() {
+                    info!(user_id = uid, "stopping user discord bot");
+                    sidecar.remove_user_discord_bot(uid);
+                }
             }
-            let handle = self.spawn_bot(*user_id, token.clone()).await;
-            if let Some(handle) = handle {
-                bots.insert(*user_id, RunningBot { token_hash: th, handle });
+
+            for (user_id, token) in &desired_dc {
+                let th = hash_token(token);
+                if dc_bots.get(user_id).map(|b| b.token_hash == th).unwrap_or(false) {
+                    continue;
+                }
+                info!(user_id, "starting user discord bot");
+                sidecar.add_user_discord_bot(*user_id, token);
+                dc_bots.insert(*user_id, RunningDiscordBot { token_hash: th });
             }
         }
     }
 
-    async fn spawn_bot(&self, user_id: i64, token: String) -> Option<JoinHandle<()>> {
+    async fn spawn_telegram_bot(&self, user_id: i64, token: String) -> Option<JoinHandle<()>> {
         let mut tg = Telegram::new(&token);
         if let Err(e) = tg.connect().await {
             warn!(user_id, "user telegram bot connect failed: {e}");

@@ -412,6 +412,95 @@ function startAgentSession(session_id, cmd) {
   });
 }
 
+// ── Per-user Discord bots ────────────────────────────────────────────────
+
+const userDiscordBots = new Map(); // user_id -> { client, botId }
+
+async function addUserDiscordBot(cmd) {
+  const { user_id, token } = cmd;
+  if (!user_id || !token) return;
+
+  // Remove existing bot for this user if any
+  await removeUserDiscordBot({ user_id });
+
+  const { Client, GatewayIntentBits } = await import('discord.js');
+  const client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+      GatewayIntentBits.DirectMessages,
+    ],
+  });
+
+  client.once('ready', () => {
+    userDiscordBots.set(String(user_id), { client, botId: client.user.id });
+    emit('discord', { event: 'user_bot_ready', user_id, bot_id: client.user.id, bot_name: client.user.username });
+  });
+
+  client.on('messageCreate', (msg) => {
+    if (msg.author.bot) return;
+    if (!msg.content) return;
+    const mentionsBot = msg.mentions.has(client.user) ||
+      msg.content.toLowerCase().includes('@' + ASSISTANT_NAME);
+    emit('discord', {
+      event: 'message',
+      user_id,
+      channel_id: msg.channelId,
+      message_id: msg.id,
+      sender_id: msg.author.id,
+      sender_name: msg.member?.displayName || msg.author.displayName || msg.author.username,
+      text: msg.content,
+      timestamp: Math.floor(msg.createdTimestamp / 1000),
+      is_dm: !msg.guild,
+      mentions_bot: mentionsBot,
+    });
+  });
+
+  client.on('error', (err) => {
+    emit('discord', { event: 'error', user_id, message: err.message });
+  });
+
+  await client.login(token).catch((err) => {
+    emit('discord', { event: 'error', user_id, message: err.message });
+  });
+}
+
+async function removeUserDiscordBot(cmd) {
+  const key = String(cmd.user_id);
+  const bot = userDiscordBots.get(key);
+  if (bot) {
+    bot.client.destroy();
+    userDiscordBots.delete(key);
+    emit('discord', { event: 'user_bot_removed', user_id: cmd.user_id });
+  }
+}
+
+async function handleUserDiscordCommand(cmd) {
+  const key = String(cmd.user_id);
+  const bot = userDiscordBots.get(key);
+  if (!bot) return;
+  if (cmd.cmd === 'send') {
+    const channel = await bot.client.channels.fetch(cmd.channel_id).catch(() => null);
+    if (!channel?.isTextBased()) return;
+    const chunks = splitText(cmd.text, 2000);
+    for (let i = 0; i < chunks.length; i++) {
+      const opts = {};
+      if (i === 0 && cmd.reply_to) {
+        opts.reply = { messageReference: cmd.reply_to, failIfNotExists: false };
+      }
+      try {
+        await channel.send({ content: chunks[i], ...opts });
+      } catch (e) {
+        emit('discord', { event: 'error', user_id: cmd.user_id, channel_id: cmd.channel_id, message: e.message });
+      }
+    }
+  } else if (cmd.cmd === 'typing') {
+    const channel = await bot.client.channels.fetch(cmd.channel_id).catch(() => null);
+    if (channel?.isTextBased()) await channel.sendTyping().catch(() => {});
+  }
+}
+
 // ── Stdin Router ────────────────────────────────────────────────────────
 
 const rl = createInterface({ input: process.stdin });
@@ -419,7 +508,12 @@ rl.on('line', async (line) => {
   let cmd;
   try {
     cmd = JSON.parse(line);
-    if (cmd.target === 'discord') await handleDiscordCommand(cmd);
+    if (cmd.target === 'discord') {
+      if (cmd.cmd === 'add_user_bot') await addUserDiscordBot(cmd);
+      else if (cmd.cmd === 'remove_user_bot') await removeUserDiscordBot(cmd);
+      else if (cmd.user_id) await handleUserDiscordCommand(cmd);
+      else await handleDiscordCommand(cmd);
+    }
     else if (cmd.target === 'whatsapp') await handleWhatsAppCommand(cmd);
     else if (cmd.target === 'slack') await handleSlackCommand(cmd);
     else if (cmd.target === 'agent') handleAgentCommand(cmd);
@@ -434,6 +528,8 @@ rl.on('close', async () => {
   for (const p of procs) killWithFallback(p, KILL_TIMEOUT_MS);
   await Promise.all(procs.map(p => waitForExit(p, KILL_TIMEOUT_MS + 1000)));
   if (discordClient) discordClient.destroy();
+  for (const bot of userDiscordBots.values()) bot.client.destroy();
+  userDiscordBots.clear();
   if (waSock?.ws) waSock.ws.close();
   if (slackApp) await slackApp.stop().catch(() => {});
   process.exit(0);

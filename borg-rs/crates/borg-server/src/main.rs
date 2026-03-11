@@ -92,6 +92,20 @@ fn sidecar_source_prefix(chat_key: &str) -> String {
     chat_key.splitn(2, ':').next().unwrap_or("discord").to_string()
 }
 
+/// Parse a chat_key like "discord:u42:channel_id" into (user_id, channel_id).
+/// For non-user keys like "discord:channel_id", returns (None, "channel_id").
+fn parse_user_chat_id(chat_key: &str) -> (Option<i64>, String) {
+    let rest = chat_key.splitn(2, ':').nth(1).unwrap_or("");
+    if let Some(stripped) = rest.strip_prefix('u') {
+        if let Some(colon) = stripped.find(':') {
+            if let Ok(uid) = stripped[..colon].parse::<i64>() {
+                return (Some(uid), stripped[colon + 1..].to_string());
+            }
+        }
+    }
+    (None, rest.to_string())
+}
+
 fn make_progress_sink(
     source: &str,
     sidecar: Arc<borg_core::sidecar::Sidecar>,
@@ -109,9 +123,10 @@ fn make_progress_sink(
     }
 }
 
-fn send_sidecar_reply(
+fn send_sidecar_reply_with_user(
     sidecar: &borg_core::sidecar::Sidecar,
     source: &str,
+    user_id: Option<i64>,
     chat_id: &str,
     text: &str,
     reply_to: Option<&str>,
@@ -119,7 +134,13 @@ fn send_sidecar_reply(
     match source {
         "slack" => sidecar.send_slack(chat_id, text, reply_to),
         "whatsapp" => sidecar.send_whatsapp(chat_id, text, reply_to),
-        _ => sidecar.send_discord(chat_id, text, reply_to),
+        _ => {
+            if let Some(uid) = user_id {
+                sidecar.send_user_discord(uid, chat_id, text, reply_to);
+            } else {
+                sidecar.send_discord(chat_id, text, reply_to);
+            }
+        },
     }
 }
 
@@ -541,7 +562,9 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // Per-user Telegram bot manager
+    // Per-user bot manager (Telegram + Discord)
+    let sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>> =
+        Arc::new(TokioMutex::new(None));
     {
         let mgr = Arc::new(user_bots::UserBotManager::new(
             Arc::clone(&db),
@@ -550,6 +573,7 @@ async fn main() -> anyhow::Result<()> {
             Arc::clone(&file_storage),
             chat_event_tx.clone(),
             Arc::clone(&ai_request_count),
+            Arc::clone(&sidecar_slot),
         ));
         tokio::spawn(async move { mgr.run().await });
     }
@@ -609,9 +633,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Sidecar (Discord + WhatsApp + Slack bridge)
-    if !config.discord_token.is_empty()
-        || !config.wa_auth_dir.is_empty()
-        || !config.slack_bot_token.is_empty()
+    // Always spawn — needed for per-user Discord bots even without global tokens
     {
         let config_sc = Arc::clone(&config);
         let db_sc = Arc::clone(&db);
@@ -630,6 +652,7 @@ async fn main() -> anyhow::Result<()> {
             Err(e) => tracing::warn!("Sidecar spawn failed: {e}"),
             Ok((sidecar, mut event_rx)) => {
                 let sidecar = Arc::new(sidecar);
+                *sidecar_slot.lock().await = Some(Arc::clone(&sidecar));
                 let sc_sessions: Arc<TokioMutex<HashMap<String, String>>> =
                     Arc::new(TokioMutex::new(HashMap::new()));
                 let collector = Arc::new(ChatCollector::new(
@@ -662,12 +685,7 @@ async fn main() -> anyhow::Result<()> {
                             let ai_request_count2 = Arc::clone(&flush_ai_request_count);
                             let collector2 = Arc::clone(&collector_flush);
                             let chat_source = sidecar_source_prefix(&batch.chat_key);
-                            let chat_id = batch
-                                .chat_key
-                                .splitn(2, ':')
-                                .nth(1)
-                                .unwrap_or("")
-                                .to_string();
+                            let (user_id, chat_id) = parse_user_chat_id(&batch.chat_key);
                             let sender_name = batch.sender_name.clone();
                             tokio::spawn(async move {
                                 let run_id = new_chat_run_id();
@@ -700,9 +718,10 @@ async fn main() -> anyhow::Result<()> {
                                 {
                                     Ok(reply) if !reply.is_empty() => {
                                         progress.stop().await;
-                                        send_sidecar_reply(
+                                        send_sidecar_reply_with_user(
                                             &sidecar2,
                                             &chat_source,
+                                            user_id,
                                             &chat_id,
                                             &reply,
                                             None,
@@ -713,9 +732,10 @@ async fn main() -> anyhow::Result<()> {
                                     },
                                     Err(e) => {
                                         progress.stop().await;
-                                        send_sidecar_reply(
+                                        send_sidecar_reply_with_user(
                                             &sidecar2,
                                             &chat_source,
+                                            user_id,
                                             &chat_id,
                                             "I hit an error while working on that.",
                                             None,
@@ -751,7 +771,11 @@ async fn main() -> anyhow::Result<()> {
                             Source::WhatsApp => "whatsapp",
                             Source::Slack => "slack",
                         };
-                        let chat_key = format!("{}:{}", source_prefix, msg.chat_id);
+                        let chat_key = if let Some(uid) = msg.user_id {
+                            format!("{}:u{}:{}", source_prefix, uid, msg.chat_id)
+                        } else {
+                            format!("{}:{}", source_prefix, msg.chat_id)
+                        };
                         let incoming = borg_core::chat::IncomingMessage {
                             chat_key: chat_key.clone(),
                             sender_name: msg.sender_name.clone(),
@@ -771,12 +795,14 @@ async fn main() -> anyhow::Result<()> {
                             let collector2 = Arc::clone(&collector);
                             let chat_source = source_prefix.to_string();
                             let chat_id = msg.chat_id.clone();
+                            let msg_user_id = msg.user_id;
                             let msg_id = msg.id.clone();
                             let sender_name = msg.sender_name.clone();
-                            match msg.source {
-                                Source::Discord => sidecar.send_discord_typing(&chat_id),
-                                Source::WhatsApp => sidecar.send_whatsapp_typing(&chat_id),
-                                Source::Slack => sidecar.send_slack_typing(&chat_id),
+                            match (&msg.source, msg_user_id) {
+                                (Source::Discord, Some(uid)) => sidecar.send_user_discord_typing(uid, &chat_id),
+                                (Source::Discord, None) => sidecar.send_discord_typing(&chat_id),
+                                (Source::WhatsApp, _) => sidecar.send_whatsapp_typing(&chat_id),
+                                (Source::Slack, _) => sidecar.send_slack_typing(&chat_id),
                             }
                             tokio::spawn(async move {
                                 let run_id = new_chat_run_id();
@@ -809,9 +835,10 @@ async fn main() -> anyhow::Result<()> {
                                 {
                                     Ok(reply) if !reply.is_empty() => {
                                         progress.stop().await;
-                                        send_sidecar_reply(
+                                        send_sidecar_reply_with_user(
                                             &sidecar2,
                                             &chat_source,
+                                            msg_user_id,
                                             &chat_id,
                                             &reply,
                                             Some(&msg_id),
@@ -822,9 +849,10 @@ async fn main() -> anyhow::Result<()> {
                                     },
                                     Err(e) => {
                                         progress.stop().await;
-                                        send_sidecar_reply(
+                                        send_sidecar_reply_with_user(
                                             &sidecar2,
                                             &chat_source,
+                                            msg_user_id,
                                             &chat_id,
                                             "I hit an error while working on that.",
                                             Some(&msg_id),
@@ -1014,6 +1042,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/user/telegram-bot",
             post(routes::connect_telegram_bot).delete(routes::disconnect_telegram_bot),
+        )
+        .route(
+            "/api/user/discord-bot",
+            post(routes::connect_discord_bot).delete(routes::disconnect_discord_bot),
         )
         .route(
             "/api/user/linked-credentials",

@@ -5033,10 +5033,17 @@ const USER_SETTINGS_KEYS: &[&str] = &[
     "github_token",
     "telegram_bot_token",
     "telegram_bot_username",
+    "discord_bot_token",
+    "discord_bot_username",
     "dashboard_mode",
 ];
 /// Keys that cannot be set via the generic PUT endpoint (use dedicated routes).
-const USER_SETTINGS_PROTECTED: &[&str] = &["telegram_bot_token", "telegram_bot_username"];
+const USER_SETTINGS_PROTECTED: &[&str] = &[
+    "telegram_bot_token",
+    "telegram_bot_username",
+    "discord_bot_token",
+    "discord_bot_username",
+];
 
 pub(crate) async fn get_user_settings(
     State(state): State<Arc<AppState>>,
@@ -5077,6 +5084,15 @@ pub(crate) async fn get_user_settings(
         .unwrap_or(true);
     obj.insert("telegram_bot_connected".to_string(), json!(tg_connected));
     obj.insert("telegram_bot_username".to_string(), json!(tg_username));
+
+    // Discord bot status
+    let dc_username = settings.get("discord_bot_username").cloned().unwrap_or_default();
+    let dc_connected = !settings
+        .get("discord_bot_token")
+        .map(|t| t.is_empty())
+        .unwrap_or(true);
+    obj.insert("discord_bot_connected".to_string(), json!(dc_connected));
+    obj.insert("discord_bot_username".to_string(), json!(dc_username));
 
     Ok(Json(Value::Object(obj)))
 }
@@ -5179,6 +5195,76 @@ pub(crate) async fn disconnect_telegram_bot(
         .map_err(internal)?;
 
     tracing::info!(user_id = user.id, "user disconnected telegram bot");
+
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ── Per-user Discord bot ──────────────────────────────────────────────
+
+pub(crate) async fn connect_discord_bot(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, StatusCode> {
+    let token = body["token"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    // Validate the token by calling Discord's /users/@me
+    let client = reqwest::Client::new();
+    let resp: Value = client
+        .get("https://discord.com/api/v10/users/@me")
+        .header("Authorization", format!("Bot {token}"))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?
+        .json()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    let username = resp["username"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or(StatusCode::UNPROCESSABLE_ENTITY)?
+        .to_string();
+
+    state
+        .db
+        .set_user_setting(user.id, "discord_bot_token", token)
+        .map_err(internal)?;
+    state
+        .db
+        .set_user_setting(user.id, "discord_bot_username", &username)
+        .map_err(internal)?;
+
+    tracing::info!(
+        user_id = user.id,
+        bot = %username,
+        "user connected discord bot"
+    );
+
+    Ok(Json(json!({
+        "ok": true,
+        "bot_username": username,
+    })))
+}
+
+pub(crate) async fn disconnect_discord_bot(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+) -> Result<Json<Value>, StatusCode> {
+    state
+        .db
+        .delete_user_setting(user.id, "discord_bot_token")
+        .map_err(internal)?;
+    state
+        .db
+        .delete_user_setting(user.id, "discord_bot_username")
+        .map_err(internal)?;
+
+    tracing::info!(user_id = user.id, "user disconnected discord bot");
 
     Ok(Json(json!({ "ok": true })))
 }

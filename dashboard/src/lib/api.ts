@@ -248,6 +248,8 @@ export interface UserSettings {
   github_token?: string;
   telegram_bot_connected: boolean;
   telegram_bot_username: string;
+  discord_bot_connected: boolean;
+  discord_bot_username: string;
 }
 
 export function useUserSettings() {
@@ -282,6 +284,25 @@ export async function connectTelegramBot(token: string): Promise<{ ok: boolean; 
 
 export async function disconnectTelegramBot(): Promise<{ ok: boolean }> {
   const r = await apiFetch("/api/user/telegram-bot", { method: "DELETE" });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
+export async function connectDiscordBot(token: string): Promise<{ ok: boolean; bot_username: string }> {
+  const r = await apiFetch("/api/user/discord-bot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!r.ok) {
+    if (r.status === 422) throw new Error("Invalid bot token");
+    throw new Error(`Failed to connect bot (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function disconnectDiscordBot(): Promise<{ ok: boolean }> {
+  const r = await apiFetch("/api/user/discord-bot", { method: "DELETE" });
   if (!r.ok) throw new Error(`${r.status}`);
   return r.json();
 }

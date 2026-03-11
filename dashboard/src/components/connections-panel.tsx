@@ -1,7 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { Github, MessageCircle, Plug } from "lucide-react";
 import { useState } from "react";
 import {
+  connectDiscordBot,
   connectTelegramBot,
+  disconnectDiscordBot,
   disconnectTelegramBot,
   updateUserSettings,
   useUserSettings,
@@ -11,19 +14,156 @@ import { cn } from "@/lib/utils";
 
 export function ConnectionsPanel() {
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl space-y-8 px-6 py-8">
-        <TelegramSection />
-        <SlackSection />
-        <GitHubSection />
+    <div className="flex h-full flex-col">
+      <div className="shrink-0 space-y-3 p-5 pb-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 ring-1 ring-amber-500/20">
+            <Plug className="h-6 w-6 text-amber-400" />
+          </div>
+          <div>
+            <div className="text-[16px] font-semibold text-[#e8e0d4]">Connections</div>
+            <div className="text-[13px] text-[#6b6459]">Connect external services to extend your workflow</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+        <div className="mx-auto max-w-xl space-y-4">
+          <DiscordCard />
+          <TelegramCard />
+          <SlackCard />
+          <GitHubCard />
+        </div>
       </div>
     </div>
   );
 }
 
+// ── Discord ───────────────────────────────────────────────────────────────
+
+function DiscordCard() {
+  const queryClient = useQueryClient();
+  const { data: userSettings } = useUserSettings();
+  const [editing, setEditing] = useState(false);
+  const [token, setToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!userSettings) return null;
+
+  const connected = userSettings.discord_bot_connected;
+  const botUsername = userSettings.discord_bot_username;
+
+  async function handleConnect() {
+    setSaving(true);
+    setError("");
+    try {
+      await connectDiscordBot(token);
+      setToken("");
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to connect");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setSaving(true);
+    try {
+      await disconnectDiscordBot();
+      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        icon={<DiscordIcon />}
+        iconBg="bg-[#5865F2]/10 ring-[#5865F2]/20"
+        title="Discord"
+        subtitle="Chat with your agent from any Discord server or DM"
+        status={connected ? "connected" : undefined}
+        statusLabel={connected ? botUsername : undefined}
+      />
+
+      {connected && !editing ? (
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            onClick={() => setEditing(true)}
+            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+          >
+            Change Bot
+          </button>
+          <button
+            onClick={handleDisconnect}
+            disabled={saving}
+            className="rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-1.5 text-[12px] text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
+          >
+            Disconnect
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3 pt-1">
+          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
+            <p className="font-medium text-[#e8e0d4]">Setup</p>
+            <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
+              <li>
+                Go to the{" "}
+                <span className="font-medium text-[#e8e0d4]">Discord Developer Portal</span>
+              </li>
+              <li>Create a new Application, then add a Bot</li>
+              <li>
+                Enable <span className="font-medium text-[#e8e0d4]">Message Content Intent</span> under Privileged Gateway Intents
+              </li>
+              <li>Copy the bot token and paste it below</li>
+            </ol>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Paste bot token"
+              className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+              autoFocus
+            />
+            <button
+              onClick={handleConnect}
+              disabled={saving || !token.trim()}
+              className={cn(
+                "rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20",
+                (saving || !token.trim()) && "opacity-40 cursor-not-allowed",
+              )}
+            >
+              {saving ? "Verifying..." : "Connect"}
+            </button>
+            {connected && (
+              <button
+                onClick={() => {
+                  setEditing(false);
+                  setToken("");
+                  setError("");
+                }}
+                className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+          {error && <div className="text-[12px] text-red-400">{error}</div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ── Telegram ──────────────────────────────────────────────────────────────
 
-function TelegramSection() {
+function TelegramCard() {
   const queryClient = useQueryClient();
   const { data: userSettings } = useUserSettings();
   const [editing, setEditing] = useState(false);
@@ -62,49 +202,42 @@ function TelegramSection() {
   }
 
   return (
-    <Section
-      title="Telegram"
-      description="Connect your own Telegram bot so you can chat with Borg from any Telegram conversation."
-      status={connected ? `@${botUsername}` : undefined}
-    >
+    <Card>
+      <CardHeader
+        icon={<TelegramIcon />}
+        iconBg="bg-[#229ED9]/10 ring-[#229ED9]/20"
+        title="Telegram"
+        subtitle="Chat with your agent from any Telegram conversation"
+        status={connected ? "connected" : undefined}
+        statusLabel={connected ? `@${botUsername}` : undefined}
+      />
+
       {connected && !editing ? (
-        <div className="flex items-center justify-between rounded-lg border border-[#2a2520] bg-[#1c1a17]/50 px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#229ED9]/15 text-[13px]">
-              <TelegramIcon />
-            </div>
-            <div>
-              <div className="text-[12px] font-medium text-[#e8e0d4]">@{botUsername}</div>
-              <div className="text-[11px] text-emerald-400">Connected</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setEditing(true)}
-              className="rounded-md border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
-            >
-              Change
-            </button>
-            <button
-              onClick={handleDisconnect}
-              disabled={saving}
-              className="rounded-md border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1.5 text-[12px] text-red-400/70 hover:text-red-400 transition-colors"
-            >
-              Disconnect
-            </button>
-          </div>
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            onClick={() => setEditing(true)}
+            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+          >
+            Change Bot
+          </button>
+          <button
+            onClick={handleDisconnect}
+            disabled={saving}
+            className="rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-1.5 text-[12px] text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
+          >
+            Disconnect
+          </button>
         </div>
       ) : (
-        <div className="space-y-3">
-          <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17]/50 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
-            <p>To connect Telegram:</p>
-            <ol className="list-decimal list-inside space-y-1 text-[11px]">
+        <div className="space-y-3 pt-1">
+          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
+            <p className="font-medium text-[#e8e0d4]">Setup</p>
+            <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
               <li>
-                Open{" "}
-                <span className="text-[#e8e0d4]">@BotFather</span> in Telegram
+                Open <span className="font-medium text-[#e8e0d4]">@BotFather</span> in Telegram
               </li>
               <li>
-                Send <span className="font-mono text-[#e8e0d4]">/newbot</span> and follow the prompts to create a bot
+                Send <code className="rounded bg-[#2a2520] px-1.5 py-0.5 text-[11px] text-amber-300">/newbot</code> and follow the prompts
               </li>
               <li>Copy the bot token and paste it below</li>
             </ol>
@@ -115,15 +248,15 @@ function TelegramSection() {
               value={token}
               onChange={(e) => setToken(e.target.value)}
               placeholder="Paste bot token from @BotFather"
-              className="flex-1 rounded-md border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/40 placeholder:text-[#4a4540]"
+              className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
               autoFocus
             />
             <button
               onClick={handleConnect}
               disabled={saving || !token.trim()}
               className={cn(
-                "rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[12px] font-medium text-amber-400 transition-colors hover:bg-amber-500/20",
-                (saving || !token.trim()) && "opacity-50 cursor-not-allowed",
+                "rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20",
+                (saving || !token.trim()) && "opacity-40 cursor-not-allowed",
               )}
             >
               {saving ? "Verifying..." : "Connect"}
@@ -135,41 +268,22 @@ function TelegramSection() {
                   setToken("");
                   setError("");
                 }}
-                className="rounded-md border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+                className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
               >
                 Cancel
               </button>
             )}
           </div>
-          {error && <div className="text-[11px] text-red-400">{error}</div>}
+          {error && <div className="text-[12px] text-red-400">{error}</div>}
         </div>
       )}
-    </Section>
-  );
-}
-
-// ── Slack ──────────────────────────────────────────────────────────────────
-
-function SlackSection() {
-  return (
-    <Section
-      title="Slack"
-      description="Connect a Slack workspace to chat with Borg from any channel."
-    >
-      <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17]/50 px-4 py-6 text-center">
-        <div className="mb-2 text-[13px] text-[#6b6459]">Coming soon</div>
-        <div className="text-[11px] text-[#4a4540]">
-          Slack integration is under development.
-        </div>
-      </div>
-    </Section>
+    </Card>
   );
 }
 
 // ── GitHub ─────────────────────────────────────────────────────────────────
 
-function GitHubSection() {
-  const queryClient = useQueryClient();
+function GitHubCard() {
   const { data: userSettings, refetch } = useUserSettings();
   const [editing, setEditing] = useState(false);
   const [token, setToken] = useState("");
@@ -202,55 +316,49 @@ function GitHubSection() {
   }
 
   return (
-    <Section
-      title="GitHub"
-      description="Personal access token for pushing branches and creating PRs under your account. Leave blank to use the system default."
-      status={isSet ? "Configured" : undefined}
-    >
+    <Card>
+      <CardHeader
+        icon={<Github className="h-4.5 w-4.5 text-[#e8e0d4]" />}
+        iconBg="bg-[#e8e0d4]/8 ring-[#e8e0d4]/15"
+        title="GitHub"
+        subtitle="Personal access token for pushing branches and creating PRs"
+        status={isSet ? "connected" : undefined}
+        statusLabel={isSet ? "Token configured" : undefined}
+      />
+
       {isSet && !editing ? (
-        <div className="flex items-center justify-between rounded-lg border border-[#2a2520] bg-[#1c1a17]/50 px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e8e0d4]/10 text-[13px]">
-              <GitHubIcon />
-            </div>
-            <div>
-              <div className="text-[12px] font-medium text-[#e8e0d4]">Personal Access Token</div>
-              <div className="text-[11px] text-emerald-400">Configured</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setEditing(true)}
-              className="rounded-md border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
-            >
-              Update
-            </button>
-            <button
-              onClick={handleClear}
-              disabled={saving}
-              className="rounded-md border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1.5 text-[12px] text-red-400/70 hover:text-red-400 transition-colors"
-            >
-              Remove
-            </button>
-          </div>
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            onClick={() => setEditing(true)}
+            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+          >
+            Update Token
+          </button>
+          <button
+            onClick={handleClear}
+            disabled={saving}
+            className="rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-1.5 text-[12px] text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
+          >
+            Remove
+          </button>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2 pt-1">
           <div className="flex items-center gap-2">
             <input
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
               placeholder="ghp_..."
-              className="flex-1 rounded-md border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/40 placeholder:text-[#4a4540]"
-              autoFocus
+              className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+              autoFocus={editing}
             />
             <button
               onClick={handleSave}
               disabled={saving || !token.trim()}
               className={cn(
-                "rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[12px] font-medium text-amber-400 transition-colors hover:bg-amber-500/20",
-                (saving || !token.trim()) && "opacity-50 cursor-not-allowed",
+                "rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20",
+                (saving || !token.trim()) && "opacity-40 cursor-not-allowed",
               )}
             >
               Save
@@ -261,7 +369,7 @@ function GitHubSection() {
                   setEditing(false);
                   setToken("");
                 }}
-                className="rounded-md border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+                className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
               >
                 Cancel
               </button>
@@ -269,51 +377,95 @@ function GitHubSection() {
           </div>
         </div>
       )}
-    </Section>
+    </Card>
+  );
+}
+
+// ── Slack ──────────────────────────────────────────────────────────────────
+
+function SlackCard() {
+  return (
+    <Card>
+      <CardHeader
+        icon={<SlackIcon />}
+        iconBg="bg-[#E01E5A]/8 ring-[#E01E5A]/15"
+        title="Slack"
+        subtitle="Chat with your agent from any Slack channel"
+      />
+      <div className="flex items-center gap-3 rounded-xl border border-dashed border-[#2a2520] px-4 py-4">
+        <MessageCircle className="h-4 w-4 shrink-0 text-[#4a4540]" />
+        <span className="text-[12px] text-[#6b6459]">Coming soon</span>
+      </div>
+    </Card>
   );
 }
 
 // ── Shared UI ─────────────────────────────────────────────────────────────
 
-function Section({
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-[#2a2520] bg-[#151412] p-5 space-y-3">
+      {children}
+    </div>
+  );
+}
+
+function CardHeader({
+  icon,
+  iconBg,
   title,
-  description,
+  subtitle,
   status,
-  children,
+  statusLabel,
 }: {
+  icon: React.ReactNode;
+  iconBg: string;
   title: string;
-  description?: string;
-  status?: string;
-  children: React.ReactNode;
+  subtitle: string;
+  status?: "connected";
+  statusLabel?: string;
 }) {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <h3 className="text-[13px] font-semibold text-[#e8e0d4]">{title}</h3>
-        {status && (
-          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
-            {status}
-          </span>
-        )}
+    <div className="flex items-start gap-3.5">
+      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1", iconBg)}>
+        {icon}
       </div>
-      {description && <p className="text-[11px] text-[#6b6459] -mt-1">{description}</p>}
-      {children}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2.5">
+          <span className="text-[14px] font-semibold text-[#e8e0d4]">{title}</span>
+          {status && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              {statusLabel ?? "Connected"}
+            </span>
+          )}
+        </div>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-[#6b6459]">{subtitle}</p>
+      </div>
     </div>
   );
 }
 
 function TelegramIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-[#229ED9]">
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4.5 w-4.5 text-[#229ED9]">
       <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
     </svg>
   );
 }
 
-function GitHubIcon() {
+function DiscordIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-[#e8e0d4]">
-      <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4.5 w-4.5 text-[#5865F2]">
+      <path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189z" />
+    </svg>
+  );
+}
+
+function SlackIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4.5 w-4.5">
+      <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" fill="#E01E5A" />
     </svg>
   );
 }

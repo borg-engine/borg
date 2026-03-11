@@ -27,6 +27,8 @@ pub struct SidecarMessage {
     pub timestamp: i64,
     pub is_group: bool,
     pub mentions_bot: bool,
+    /// Set for per-user bot messages (e.g. user Discord bots)
+    pub user_id: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +158,41 @@ impl Sidecar {
         // Slack Socket Mode doesn't support typing indicators
     }
 
+    pub fn add_user_discord_bot(&self, user_id: i64, token: &str) {
+        let cmd = serde_json::json!({
+            "target": "discord", "cmd": "add_user_bot",
+            "user_id": user_id, "token": token,
+        });
+        self.send_raw(cmd.to_string());
+    }
+
+    pub fn remove_user_discord_bot(&self, user_id: i64) {
+        let cmd = serde_json::json!({
+            "target": "discord", "cmd": "remove_user_bot",
+            "user_id": user_id,
+        });
+        self.send_raw(cmd.to_string());
+    }
+
+    pub fn send_user_discord(&self, user_id: i64, channel_id: &str, text: &str, reply_to: Option<&str>) {
+        let mut obj = serde_json::json!({
+            "target": "discord", "cmd": "send",
+            "user_id": user_id, "channel_id": channel_id, "text": text,
+        });
+        if let Some(id) = reply_to {
+            obj["reply_to"] = serde_json::Value::String(id.to_string());
+        }
+        self.send_raw(obj.to_string());
+    }
+
+    pub fn send_user_discord_typing(&self, user_id: i64, channel_id: &str) {
+        let cmd = serde_json::json!({
+            "target": "discord", "cmd": "typing",
+            "user_id": user_id, "channel_id": channel_id,
+        });
+        self.send_raw(cmd.to_string());
+    }
+
     fn send_raw(&self, cmd: String) {
         if let Ok(guard) = self.cmd_tx.lock() {
             if let Some(tx) = guard.as_ref() {
@@ -280,6 +317,8 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
     let event_type = v["event"].as_str()?;
     let source = parse_source(source_str)?;
 
+    let user_id = v["user_id"].as_i64();
+
     let ev = match event_type {
         "message" => {
             let msg = match source {
@@ -293,6 +332,7 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
                     timestamp: v["timestamp"].as_i64().unwrap_or(0),
                     is_group: !v["is_dm"].as_bool().unwrap_or(false),
                     mentions_bot: v["mentions_bot"].as_bool().unwrap_or(false),
+                    user_id,
                 },
                 Source::Slack => SidecarMessage {
                     source: Source::Slack,
@@ -304,6 +344,7 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
                     timestamp: v["timestamp"].as_i64().unwrap_or(0),
                     is_group: !v["is_dm"].as_bool().unwrap_or(false),
                     mentions_bot: v["mentions_bot"].as_bool().unwrap_or(false),
+                    user_id: None,
                 },
                 Source::WhatsApp => SidecarMessage {
                     source: Source::WhatsApp,
@@ -315,6 +356,7 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
                     timestamp: v["timestamp"].as_i64().unwrap_or(0),
                     is_group: v["is_group"].as_bool().unwrap_or(false),
                     mentions_bot: v["mentions_bot"].as_bool().unwrap_or(false),
+                    user_id: None,
                 },
             };
             SidecarEvent::Message(msg)
