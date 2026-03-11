@@ -29,7 +29,8 @@ import { SettingsPanel } from "@/components/settings-panel";
 import { StatusPanel } from "@/components/status-panel";
 import { TaskDetail } from "@/components/task-detail";
 import { TaskList } from "@/components/task-list";
-import { getSelectedWorkspaceId, switchWorkspace, useLogs, useStatus, useWorkspaces } from "@/lib/api";
+import { getSelectedWorkspaceId, switchWorkspace, useLogs, useStatus, useWorkspaces, useLinkedCredentials, startLinkedCredentialConnect, fetchLinkedCredentialConnectSession } from "@/lib/api";
+import type { LinkedCredentialConnectSession } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { DashboardModeProvider, useDashboardMode } from "@/lib/dashboard-mode";
 import { DomainProvider, useDomain } from "@/lib/domain";
@@ -130,6 +131,106 @@ export default function App() {
   );
 }
 
+function OnboardingModal() {
+  const { data, isLoading } = useLinkedCredentials();
+  const [dismissed, setDismissed] = useState(false);
+  const [busyProvider, setBusyProvider] = useState<"claude" | "openai" | null>(null);
+  const [pending, setPending] = useState<Record<string, LinkedCredentialConnectSession>>({});
+
+  useEffect(() => {
+    const activeProviders = Object.values(pending).filter((s) => s.status === "pending").map((s) => s.provider);
+    if (activeProviders.length === 0) return;
+    const timer = window.setInterval(async () => {
+      for (const provider of activeProviders) {
+        const current = pending[provider];
+        if (!current) continue;
+        try {
+          const updated = await fetchLinkedCredentialConnectSession(current.id);
+          if (updated.status === "connected") {
+            setPending((prev) => { const next = { ...prev }; delete next[provider]; return next; });
+          } else {
+            setPending((prev) => ({ ...prev, [provider]: updated }));
+          }
+        } catch {}
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [pending]);
+
+  if (isLoading || dismissed) return null;
+  const hasConnected = (data?.credentials ?? []).some((c) => c.status === "connected");
+  if (hasConnected) return null;
+
+  async function handleConnect(provider: "claude" | "openai") {
+    setBusyProvider(provider);
+    try {
+      const session = await startLinkedCredentialConnect(provider);
+      if (session.auth_url) window.open(session.auth_url, "_blank", "noopener,noreferrer");
+      setPending((prev) => ({ ...prev, [provider]: session }));
+    } finally {
+      setBusyProvider(null);
+    }
+  }
+
+  const providers = [
+    { provider: "claude" as const, label: "Claude Pro / Max", hint: "Connects via Claude Code OAuth" },
+    { provider: "openai" as const, label: "ChatGPT Plus / Pro", hint: "Connects via Codex device auth" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="mx-4 w-full max-w-md rounded-2xl border border-[#2a2520] bg-[#151412] p-6 shadow-2xl space-y-5">
+        <div>
+          <div className="text-[18px] font-semibold text-[#e8e0d4]">Connect your AI subscription</div>
+          <p className="mt-1 text-[13px] text-[#6b6459]">
+            Borg uses your Claude or ChatGPT subscription to run agents. Connect one to get started.
+          </p>
+        </div>
+        <div className="space-y-3">
+          {providers.map(({ provider, label, hint }) => {
+            const session = pending[provider];
+            const isConnected = session?.status === "connected";
+            const isPending = session?.status === "pending";
+            const isBusy = busyProvider === provider;
+            return (
+              <div key={provider} className="rounded-xl border border-[#2a2520] bg-[#0e0c0a] p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[14px] font-medium text-[#e8e0d4]">{label}</div>
+                    <div className="text-[12px] text-[#6b6459]">{hint}</div>
+                  </div>
+                  {isConnected ? (
+                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] text-emerald-400">Connected</span>
+                  ) : (
+                    <button
+                      onClick={() => handleConnect(provider)}
+                      disabled={isBusy || isPending}
+                      className="rounded-lg bg-amber-500/15 px-4 py-1.5 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                    >
+                      {isBusy ? "Opening..." : isPending ? "Waiting..." : "Connect"}
+                    </button>
+                  )}
+                </div>
+                {isPending && (
+                  <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] text-[#9c9486]">
+                    {session.message || "Follow the instructions in the opened tab, then wait here."}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <button
+          onClick={() => setDismissed(true)}
+          className="w-full rounded-lg py-2 text-[12px] text-[#4a443d] transition-colors hover:text-[#6b6459]"
+        >
+          Skip for now
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AuthGate() {
   const { ready, user, needsSetup } = useAuth();
 
@@ -150,6 +251,7 @@ function AuthGate() {
   return (
     <DashboardModeProvider>
       <DomainProvider>
+        <OnboardingModal />
         <AppWithDomain />
       </DomainProvider>
     </DashboardModeProvider>
