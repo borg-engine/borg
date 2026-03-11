@@ -482,6 +482,14 @@ impl Pipeline {
             .map(|(files, _)| files)
             .unwrap_or_default();
         let knowledge_dir = format!("{}/knowledge", self.config.data_dir);
+        let knowledge_repo_paths = self
+            .db
+            .list_all_knowledge_repos()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| r.status == "ready" && !r.local_path.is_empty())
+            .map(|r| r.local_path)
+            .collect::<Vec<_>>();
         let isolated = task.mode == "lawborg" || task.mode == "legal";
         if isolated
             && task.project_id > 0
@@ -548,6 +556,7 @@ impl Pipeline {
             disallowed_tools,
             knowledge_files,
             knowledge_dir,
+            knowledge_repo_paths,
             agent_network,
             prior_research: Vec::new(),
             revision_count: task.revision_count,

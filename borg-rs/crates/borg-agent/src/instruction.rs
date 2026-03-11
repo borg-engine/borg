@@ -94,6 +94,15 @@ pub fn build_instruction(
         s.push_str("\n\n---\n\n");
     }
 
+    if !ctx.knowledge_repo_paths.is_empty() {
+        s.push_str("## Reference Repositories\n\nThe following git repositories are cloned and available for reading:\n");
+        for path in &ctx.knowledge_repo_paths {
+            let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or(path);
+            s.push_str(&format!("- `{}` → `{}`\n", name, path));
+        }
+        s.push_str("\n---\n\n");
+    }
+
     if let Some(repo_prompt) = read_repo_prompt(ctx) {
         s.push_str("## Project Context\n\n");
         s.push_str(&repo_prompt);

@@ -1666,6 +1666,35 @@ export async function deleteAllUserKnowledgeFiles(): Promise<{ ok: boolean; dele
   return res.json();
 }
 
+// ── Knowledge Repos ───────────────────────────────────────────────────────
+
+export function useKnowledgeRepos(isOrg: boolean) {
+  return useQuery<{ repos: import("./types").KnowledgeRepo[] }>({
+    queryKey: isOrg ? ["knowledge-repos"] : ["my-knowledge-repos"],
+    queryFn: () => fetchJson(isOrg ? "/api/knowledge/repos" : "/api/knowledge/my/repos"),
+    refetchInterval: (data) => {
+      const repos = data?.state?.data?.repos ?? [];
+      return repos.some((r: import("./types").KnowledgeRepo) => r.status === "pending" || r.status === "cloning") ? 3000 : false;
+    },
+  });
+}
+
+export async function addKnowledgeRepo(isOrg: boolean, url: string, name?: string): Promise<{ repos: import("./types").KnowledgeRepo[] }> {
+  const res = await apiFetch(isOrg ? "/api/knowledge/repos" : "/api/knowledge/my/repos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, name }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function deleteKnowledgeRepo(isOrg: boolean, id: number): Promise<{ repos: import("./types").KnowledgeRepo[] }> {
+  const res = await apiFetch(isOrg ? `/api/knowledge/repos/${id}` : `/api/knowledge/my/repos/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
 // ── Container & cache ───────────────────────────────────────────────────────
 
 export interface ContainerInfo {

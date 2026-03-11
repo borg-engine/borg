@@ -260,6 +260,19 @@ pub struct KnowledgeFile {
 }
 
 #[derive(Debug, serde::Serialize, Clone)]
+pub struct KnowledgeRepo {
+    pub id: i64,
+    pub workspace_id: i64,
+    pub user_id: Option<i64>,
+    pub url: String,
+    pub name: String,
+    pub local_path: String,
+    pub status: String,
+    pub error_msg: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
 pub struct AuditEvent {
     pub id: i64,
     pub task_id: Option<i64>,
@@ -3929,6 +3942,88 @@ impl Db {
         )
         .context("mark_messages_delivered")?;
         Ok(())
+    }
+
+    // ── Knowledge Repos ───────────────────────────────────────────────────
+
+    fn row_to_knowledge_repo(row: &pg::Row<'_>) -> pg::Result<KnowledgeRepo> {
+        Ok(KnowledgeRepo {
+            id: row.get(0)?,
+            workspace_id: row.get(1)?,
+            user_id: row.get(2)?,
+            url: row.get(3)?,
+            name: row.get(4)?,
+            local_path: row.get(5)?,
+            status: row.get(6)?,
+            error_msg: row.get(7)?,
+            created_at: row.get(8)?,
+        })
+    }
+
+    pub fn list_knowledge_repos(&self, workspace_id: i64, user_id: Option<i64>) -> Result<Vec<KnowledgeRepo>> {
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let mut stmt = if user_id.is_some() {
+            conn.prepare(
+                "SELECT id, workspace_id, user_id, url, name, local_path, status, error_msg, created_at \
+                 FROM knowledge_repos WHERE workspace_id = ?1 AND user_id = ?2 ORDER BY created_at ASC",
+            )?
+        } else {
+            conn.prepare(
+                "SELECT id, workspace_id, user_id, url, name, local_path, status, error_msg, created_at \
+                 FROM knowledge_repos WHERE workspace_id = ?1 AND user_id IS NULL ORDER BY created_at ASC",
+            )?
+        };
+        let rows = if let Some(uid) = user_id {
+            stmt.query_map(params![workspace_id, uid], Self::row_to_knowledge_repo)?
+        } else {
+            stmt.query_map(params![workspace_id], Self::row_to_knowledge_repo)?
+        };
+        let mut out = Vec::new();
+        for r in rows { out.push(r?); }
+        Ok(out)
+    }
+
+    pub fn list_all_knowledge_repos(&self) -> Result<Vec<KnowledgeRepo>> {
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, workspace_id, user_id, url, name, local_path, status, error_msg, created_at \
+             FROM knowledge_repos ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map([], Self::row_to_knowledge_repo)?;
+        let mut out = Vec::new();
+        for r in rows { out.push(r?); }
+        Ok(out)
+    }
+
+    pub fn insert_knowledge_repo(&self, workspace_id: i64, user_id: Option<i64>, url: &str, name: &str) -> Result<i64> {
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        Ok(conn.execute_returning_id(
+            "INSERT INTO knowledge_repos (workspace_id, user_id, url, name, status) VALUES (?1, ?2, ?3, ?4, 'pending')",
+            params![workspace_id, user_id, url, name],
+        )?)
+    }
+
+    pub fn update_knowledge_repo_status(&self, id: i64, status: &str, local_path: &str, error_msg: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        conn.execute(
+            "UPDATE knowledge_repos SET status = ?1, local_path = ?2, error_msg = ?3 WHERE id = ?4",
+            params![status, local_path, error_msg, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_knowledge_repo(&self, id: i64, workspace_id: i64) -> Result<String> {
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let local_path: Option<String> = conn.query_row(
+            "SELECT local_path FROM knowledge_repos WHERE id = ?1 AND workspace_id = ?2",
+            params![id, workspace_id],
+            |r| r.get(0),
+        ).optional()?;
+        conn.execute(
+            "DELETE FROM knowledge_repos WHERE id = ?1 AND workspace_id = ?2",
+            params![id, workspace_id],
+        )?;
+        Ok(local_path.unwrap_or_default())
     }
 
     // ── Repos ─────────────────────────────────────────────────────────────

@@ -1005,6 +1005,23 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Sync all knowledge repos on startup
+    {
+        let db = Arc::clone(&db);
+        let data_dir = config.data_dir.clone();
+        tokio::spawn(async move {
+            let repos = db.list_all_knowledge_repos().unwrap_or_default();
+            for repo in repos {
+                let db2 = Arc::clone(&db);
+                let url = repo.url.clone();
+                let dd = data_dir.clone();
+                tokio::spawn(async move {
+                    routes::clone_knowledge_repo(repo.id, &url, &dd, &db2).await;
+                });
+            }
+        });
+    }
+
     let dashboard_dir = config.dashboard_dist_dir.clone();
     let serve_dir = ServeDir::new(&dashboard_dir).fallback(tower_http::services::ServeFile::new(
         format!("{dashboard_dir}/index.html"),
@@ -1289,6 +1306,17 @@ async fn main() -> anyhow::Result<()> {
             "/api/knowledge/my/:id/content",
             get(routes::get_user_knowledge_content),
         )
+        // Knowledge repos
+        .route(
+            "/api/knowledge/repos",
+            get(routes::list_knowledge_repos).post(routes::add_knowledge_repo),
+        )
+        .route("/api/knowledge/repos/:id", delete(routes::delete_knowledge_repo_handler))
+        .route(
+            "/api/knowledge/my/repos",
+            get(routes::list_user_knowledge_repos).post(routes::add_user_knowledge_repo),
+        )
+        .route("/api/knowledge/my/repos/:id", delete(routes::delete_user_knowledge_repo_handler))
         // BorgSearch (LLM-friendly text endpoints for project document search)
         .route("/api/borgsearch/facets", get(routes::borgsearch_facets))
         .route("/api/borgsearch/reindex", post(routes::borgsearch_reindex))

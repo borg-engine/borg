@@ -287,6 +287,18 @@ export interface KnowledgeFilePage {
   total_bytes: number;
 }
 
+export interface KnowledgeRepo {
+  id: number;
+  workspace_id: number;
+  user_id: number | null;
+  url: string;
+  name: string;
+  local_path: string;
+  status: "pending" | "cloning" | "ready" | "error";
+  error_msg: string;
+  created_at: string;
+}
+
 // sweborg phases (default fallback)
 const SWE_DISPLAY_PHASES = ["backlog", "implement", "validate", "lint_fix", "rebase", "done", "merged"] as const;
 const SWE_PHASE_LABELS: Record<string, string> = {

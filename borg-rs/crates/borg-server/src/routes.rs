@@ -4669,6 +4669,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 disallowed_tools: String::new(),
                 knowledge_files: Vec::new(),
                 knowledge_dir: String::new(),
+                knowledge_repo_paths: Vec::new(),
                 agent_network: None,
                 prior_research: Vec::new(),
                 revision_count: 0,
@@ -6298,6 +6299,142 @@ pub(crate) async fn get_user_knowledge_content(
         bytes,
     )
         .into_response())
+}
+
+// ── Knowledge Repos ───────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+pub(crate) struct AddKnowledgeRepoBody {
+    pub url: String,
+    pub name: Option<String>,
+}
+
+pub(crate) async fn list_knowledge_repos(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+) -> Result<Json<Value>, StatusCode> {
+    let repos = state.db.list_knowledge_repos(workspace.id, None).map_err(internal)?;
+    Ok(Json(json!({ "repos": repos })))
+}
+
+pub(crate) async fn add_knowledge_repo(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Json(body): Json<AddKnowledgeRepoBody>,
+) -> Result<Json<Value>, StatusCode> {
+    let url = body.url.trim().to_string();
+    if url.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let name = body.name.unwrap_or_default();
+    let name = if name.trim().is_empty() {
+        url.trim_end_matches('/').rsplit('/').next().unwrap_or("repo").trim_end_matches(".git").to_string()
+    } else {
+        name.trim().to_string()
+    };
+    let id = state.db.insert_knowledge_repo(workspace.id, None, &url, &name).map_err(internal)?;
+    let data_dir = state.config.data_dir.clone();
+    let db = Arc::clone(&state.db);
+    tokio::spawn(async move {
+        clone_knowledge_repo(id, &url, &data_dir, &db).await;
+    });
+    let repos = state.db.list_knowledge_repos(workspace.id, None).map_err(internal)?;
+    Ok(Json(json!({ "repos": repos })))
+}
+
+pub(crate) async fn delete_knowledge_repo_handler(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    let local_path = state.db.delete_knowledge_repo(id, workspace.id).map_err(internal)?;
+    if !local_path.is_empty() {
+        let _ = tokio::fs::remove_dir_all(&local_path).await;
+    }
+    let repos = state.db.list_knowledge_repos(workspace.id, None).map_err(internal)?;
+    Ok(Json(json!({ "repos": repos })))
+}
+
+pub(crate) async fn list_user_knowledge_repos(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+) -> Result<Json<Value>, StatusCode> {
+    let repos = state.db.list_knowledge_repos(workspace.id, Some(user.id)).map_err(internal)?;
+    Ok(Json(json!({ "repos": repos })))
+}
+
+pub(crate) async fn add_user_knowledge_repo(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Json(body): Json<AddKnowledgeRepoBody>,
+) -> Result<Json<Value>, StatusCode> {
+    let url = body.url.trim().to_string();
+    if url.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let name = body.name.unwrap_or_default();
+    let name = if name.trim().is_empty() {
+        url.trim_end_matches('/').rsplit('/').next().unwrap_or("repo").trim_end_matches(".git").to_string()
+    } else {
+        name.trim().to_string()
+    };
+    let id = state.db.insert_knowledge_repo(workspace.id, Some(user.id), &url, &name).map_err(internal)?;
+    let data_dir = state.config.data_dir.clone();
+    let db = Arc::clone(&state.db);
+    tokio::spawn(async move {
+        clone_knowledge_repo(id, &url, &data_dir, &db).await;
+    });
+    let repos = state.db.list_knowledge_repos(workspace.id, Some(user.id)).map_err(internal)?;
+    Ok(Json(json!({ "repos": repos })))
+}
+
+pub(crate) async fn delete_user_knowledge_repo_handler(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    // Verify the repo belongs to this user before deleting
+    let repos = state.db.list_knowledge_repos(workspace.id, Some(user.id)).map_err(internal)?;
+    if !repos.iter().any(|r| r.id == id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let local_path = state.db.delete_knowledge_repo(id, workspace.id).map_err(internal)?;
+    if !local_path.is_empty() {
+        let _ = tokio::fs::remove_dir_all(&local_path).await;
+    }
+    let repos = state.db.list_knowledge_repos(workspace.id, Some(user.id)).map_err(internal)?;
+    Ok(Json(json!({ "repos": repos })))
+}
+
+pub(crate) async fn clone_knowledge_repo(id: i64, url: &str, data_dir: &str, db: &Arc<borg_core::db::Db>) {
+    let dest = format!("{}/knowledge-repos/{}", data_dir, id);
+    let _ = std::fs::create_dir_all(&dest);
+    let result = if std::path::Path::new(&dest).join(".git").exists() {
+        tokio::process::Command::new("git")
+            .args(["-C", &dest, "pull", "--ff-only", "--quiet"])
+            .output()
+            .await
+    } else {
+        tokio::process::Command::new("git")
+            .args(["clone", "--depth=1", "--quiet", url, &dest])
+            .output()
+            .await
+    };
+    match result {
+        Ok(out) if out.status.success() => {
+            let _ = db.update_knowledge_repo_status(id, "ready", &dest, "");
+        }
+        Ok(out) => {
+            let err = String::from_utf8_lossy(&out.stderr).to_string();
+            let _ = db.update_knowledge_repo_status(id, "error", "", &err);
+        }
+        Err(e) => {
+            let _ = db.update_knowledge_repo_status(id, "error", "", &e.to_string());
+        }
+    }
 }
 
 // ── Cloud storage ─────────────────────────────────────────────────────────

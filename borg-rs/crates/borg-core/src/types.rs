@@ -502,6 +502,8 @@ pub struct PhaseContext {
     pub knowledge_files: Vec<crate::db::KnowledgeFile>,
     /// Absolute path to the knowledge directory on the host (store/knowledge/).
     pub knowledge_dir: String,
+    /// Git repos cloned for agent access (local_path of ready repos).
+    pub knowledge_repo_paths: Vec<String>,
     /// Docker bridge network name for agent containers. None = use --network host.
     pub agent_network: Option<String>,
     /// Prior research chunks from the knowledge graph (injected for lawborg tasks).

@@ -446,6 +446,21 @@ CREATE TABLE IF NOT EXISTS knowledge_files (
 );
 CREATE INDEX IF NOT EXISTS idx_knowledge_files_category_created ON knowledge_files(category, jurisdiction, created_at);
 
+-- Git repos always cloned and available to agents
+CREATE TABLE IF NOT EXISTS knowledge_repos (
+  id BIGSERIAL PRIMARY KEY,
+  workspace_id BIGINT REFERENCES workspaces(id),
+  user_id BIGINT REFERENCES users(id),
+  url TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  local_path TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  error_msg TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS'))
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_repos_workspace ON knowledge_repos(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_repos_user ON knowledge_repos(user_id, workspace_id);
+
 -- ── Vector embeddings (knowledge graph) ────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS embeddings (
