@@ -1,4 +1,5 @@
 import { FileText, Plus, Scale } from "lucide-react";
+import { useDashboardMode } from "@/lib/dashboard-mode";
 import type { PipelineModeFull } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +19,8 @@ export function ModeSidebar({
   onNew: () => void;
   onDelete: (name: string) => void;
 }) {
-  const legalMode = builtIn.find((m) => m.name === "legal" || m.name === "lawborg");
+  const { isLegal } = useDashboardMode();
+  const legalMode = isLegal ? builtIn.find((m) => m.name === "legal" || m.name === "lawborg") : null;
 
   return (
     <div className="flex h-full w-[250px] shrink-0 flex-col border-r border-[#2a2520] bg-[#0f0e0c]">

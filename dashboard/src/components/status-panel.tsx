@@ -139,10 +139,12 @@ export function StatusPanel() {
   }
 
   if (error) {
+    const msg = error instanceof Error ? error.message : "Failed to load status.";
     return (
       <div className="flex h-full items-center justify-center px-6 text-center">
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-5 py-4 text-sm text-red-200">
-          {error instanceof Error ? error.message : "Failed to load MCP status."}
+        <div className="rounded-2xl border border-red-500/20 bg-red-500/8 px-5 py-4 text-left max-w-md">
+          <p className="text-sm font-semibold text-red-300 mb-1">Oh, Borg!</p>
+          <pre className="text-xs text-red-400/80 whitespace-pre-wrap break-words">{msg}</pre>
         </div>
       </div>
     );

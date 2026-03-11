@@ -159,18 +159,6 @@ export function PhaseStrip({
                 </div>
               );
             })}
-
-            {/* Terminal "done" node */}
-            <div className="flex shrink-0 items-center" style={{ width: COL_W }}>
-              <div className="flex items-center">
-                <div className="h-px w-3 bg-[#2a2520]" />
-                <span className="text-[10px] text-[#3d3830]">&rsaquo;</span>
-                <div className="h-px w-3 bg-[#2a2520]" />
-              </div>
-              <div className="flex-1 rounded-xl border border-[#2a2520] bg-[#151412] px-3 py-2.5">
-                <div className="text-[12px] font-medium text-[#6b6459]">done</div>
-              </div>
-            </div>
           </div>
 
           {/* Loop arcs */}

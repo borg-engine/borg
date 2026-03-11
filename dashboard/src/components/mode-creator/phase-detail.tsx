@@ -173,58 +173,56 @@ export function PhaseDetail({
         </Section>
       )}
 
-      {/* Tools — SWE mode only */}
+      {/* Tools + Behavior — SWE mode only */}
       {isAgent && isSWE && (
-        <Section title="Tools">
-          <ToolChips
-            value={phase.allowed_tools}
-            onChange={(v) => onChange({ allowed_tools: v })}
-            disabled={readOnly}
-            visibleTools={profile.tools}
-          />
-        </Section>
-      )}
-
-      {/* Behavior */}
-      {isAgent && (
-        <Section title="Behavior">
-          <div className="grid grid-cols-3 gap-x-4 gap-y-2">
-            {profile.behaviorFlags.map((flag) => {
-              const key = flag as keyof PhaseConfigFull;
-              return (
-                <FlagToggle
-                  key={flag}
-                  label={FLAG_LABELS[flag] || flag}
-                  checked={!!phase[key]}
-                  disabled={readOnly}
-                  onChange={(v) => onChange({ [key]: v })}
-                />
-              );
-            })}
-          </div>
-          {phase.commits && (
-            <div className="mt-3 flex gap-3 border-t border-[#2a2520] pt-3">
-              <Field label="Commit Message" className="flex-1">
-                <input
-                  value={phase.commit_message}
-                  onChange={(e) => onChange({ commit_message: e.target.value })}
-                  disabled={readOnly}
-                  placeholder="feat: implementation from agent"
-                  className={inputCls}
-                />
-              </Field>
-              <Field label="Required Artifact" className="w-44">
-                <input
-                  value={phase.check_artifact ?? ""}
-                  onChange={(e) => onChange({ check_artifact: e.target.value || null })}
-                  disabled={readOnly}
-                  placeholder="(optional)"
-                  className={inputCls}
-                />
-              </Field>
+        <>
+          <Section title="Tools">
+            <ToolChips
+              value={phase.allowed_tools}
+              onChange={(v) => onChange({ allowed_tools: v })}
+              disabled={readOnly}
+              visibleTools={profile.tools}
+            />
+          </Section>
+          <Section title="Behavior">
+            <div className="grid grid-cols-3 gap-x-4 gap-y-2">
+              {profile.behaviorFlags.map((flag) => {
+                const key = flag as keyof PhaseConfigFull;
+                return (
+                  <FlagToggle
+                    key={flag}
+                    label={FLAG_LABELS[flag] || flag}
+                    checked={!!phase[key]}
+                    disabled={readOnly}
+                    onChange={(v) => onChange({ [key]: v })}
+                  />
+                );
+              })}
             </div>
-          )}
-        </Section>
+            {phase.commits && (
+              <div className="mt-3 flex gap-3 border-t border-[#2a2520] pt-3">
+                <Field label="Commit Message" className="flex-1">
+                  <input
+                    value={phase.commit_message}
+                    onChange={(e) => onChange({ commit_message: e.target.value })}
+                    disabled={readOnly}
+                    placeholder="feat: implementation from agent"
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Required Artifact" className="w-44">
+                  <input
+                    value={phase.check_artifact ?? ""}
+                    onChange={(e) => onChange({ check_artifact: e.target.value || null })}
+                    disabled={readOnly}
+                    placeholder="(optional)"
+                    className={inputCls}
+                  />
+                </Field>
+              </div>
+            )}
+          </Section>
+        </>
       )}
 
       {/* Advanced */}

@@ -14,7 +14,7 @@ const ALL_TOOLS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "WebSearch",
 const DOC_TOOLS = ["Read", "Write", "WebSearch", "WebFetch"];
 
 const CODE_PROFILE: CategoryProfile = {
-  phaseTypes: ["setup", "agent", "validate", "rebase", "lint_fix"],
+  phaseTypes: ["setup", "agent", "validate", "rebase", "lint_fix", "human_review"],
   behaviorFlags: [
     "commits",
     "runs_tests",

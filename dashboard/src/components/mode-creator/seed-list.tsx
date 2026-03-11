@@ -2,7 +2,6 @@ import { useDashboardMode } from "@/lib/dashboard-mode";
 import type { SeedConfigFull, SeedOutputType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AutoTextarea } from "./auto-textarea";
-import { ToolChips } from "./tool-chips";
 
 export function SeedList({
   seeds,
@@ -67,11 +66,6 @@ export function SeedList({
               >
                 {seed.output_type}
               </span>
-              {isSWE && seed.target_primary_repo && (
-                <span className="rounded-lg px-2 py-0.5 text-[10px] font-medium bg-emerald-500/15 text-emerald-300">
-                  primary
-                </span>
-              )}
             </button>
 
             {/* Expanded editor */}
@@ -119,25 +113,7 @@ export function SeedList({
                   />
                 </Field>
 
-                {isSWE && (
-                  <Field label="Allowed Tools">
-                    <ToolChips
-                      value={seed.allowed_tools}
-                      onChange={(v) => onUpdate(i, { allowed_tools: v })}
-                      disabled={readOnly}
-                    />
-                  </Field>
-                )}
-
                 <div className="flex items-center gap-4">
-                  {isSWE && (
-                    <FlagToggle
-                      label="Target Primary Repo"
-                      checked={seed.target_primary_repo}
-                      disabled={readOnly}
-                      onChange={(v) => onUpdate(i, { target_primary_repo: v })}
-                    />
-                  )}
                   {!readOnly && (
                     <button
                       onClick={() => onRemove(i)}
@@ -177,7 +153,7 @@ function Field({ label, className, children }: { label: string; className?: stri
   );
 }
 
-function FlagToggle({
+function _FlagToggle({
   label,
   checked,
   onChange,

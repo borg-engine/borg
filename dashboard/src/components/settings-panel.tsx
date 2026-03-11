@@ -2,18 +2,18 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   changeUserPassword,
+  connectTelegramBot,
   createUser,
   deleteCacheVolume,
   deleteLinkedCredential,
   deleteUser,
+  disconnectTelegramBot,
   fetchLinkedCredentialConnectSession,
   type LinkedCredential,
   type LinkedCredentialConnectSession,
   type Settings,
   setRepoBackend,
   startLinkedCredentialConnect,
-  connectTelegramBot,
-  disconnectTelegramBot,
   updateSettings,
   updateUserSettings,
   useCacheVolumes,
@@ -323,21 +323,7 @@ export function SettingsPanel() {
               </Section>
             )}
 
-            {/* Permissions */}
-            <Section title="Permissions">
-              <TextField
-                label="Chat Disallowed Tools"
-                desc="Comma-separated tools to block for chat agents (empty = all allowed)"
-                value={effective.chat_disallowed_tools}
-                onChange={(v) => update("chat_disallowed_tools", v)}
-              />
-              <TextField
-                label="Pipeline Disallowed Tools"
-                desc="Comma-separated tools to block for pipeline agents (empty = all allowed)"
-                value={effective.pipeline_disallowed_tools}
-                onChange={(v) => update("pipeline_disallowed_tools", v)}
-              />
-            </Section>
+            {/* Permissions — hidden, full access by default */}
 
             {/* Cloud Storage */}
             <Section title="Cloud Storage">
