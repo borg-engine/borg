@@ -29,6 +29,9 @@ spec.md
 # Dashboard build artifacts
 dashboard/dist/
 
+# Local deployment config
+dashboard/.env.production
+
 # SQLite databases
 *.db
 

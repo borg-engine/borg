@@ -91,10 +91,11 @@ hcloud context create borg  # paste API token from console.hetzner.cloud
 hcloud ssh-key create --name borg-key --public-key-from-file ~/.ssh/id_ed25519.pub
 
 # Create firewall (SSH only — tunnel handles HTTP)
+# Replace with your own IP/CIDR to restrict SSH access
 hcloud firewall create --name borg-fw
 hcloud firewall add-rule borg-fw \
   --direction in --protocol tcp --port 22 \
-  --source-ips 0.0.0.0/0 --source-ips ::/0
+  --source-ips <your-ip>/32
 
 # Create server (~3 min for cloud-init)
 hcloud server create \
