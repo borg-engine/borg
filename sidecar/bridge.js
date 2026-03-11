@@ -55,10 +55,17 @@ async function startDiscord() {
 
   discordClient.on('messageCreate', (msg) => {
     if (msg.author.bot) return;
-    if (!msg.content) return;
+    if (!msg.content && msg.attachments.size === 0) return;
 
     const mentionsBot = msg.mentions.has(discordClient.user) ||
-      msg.content.toLowerCase().includes('@' + ASSISTANT_NAME);
+      (msg.content || '').toLowerCase().includes('@' + ASSISTANT_NAME);
+
+    const attachments = [...msg.attachments.values()].map(a => ({
+      url: a.url,
+      filename: a.name,
+      size: a.size,
+      content_type: a.contentType || 'application/octet-stream',
+    }));
 
     emit('discord', {
       event: 'message',
@@ -66,7 +73,8 @@ async function startDiscord() {
       message_id: msg.id,
       sender_id: msg.author.id,
       sender_name: msg.member?.displayName || msg.author.displayName || msg.author.username,
-      text: msg.content,
+      text: msg.content || '',
+      attachments,
       timestamp: Math.floor(msg.createdTimestamp / 1000),
       is_dm: !msg.guild,
       mentions_bot: mentionsBot,
@@ -440,9 +448,15 @@ async function addUserDiscordBot(cmd) {
 
   client.on('messageCreate', (msg) => {
     if (msg.author.bot) return;
-    if (!msg.content) return;
+    if (!msg.content && msg.attachments.size === 0) return;
     const mentionsBot = msg.mentions.has(client.user) ||
-      msg.content.toLowerCase().includes('@' + ASSISTANT_NAME);
+      (msg.content || '').toLowerCase().includes('@' + ASSISTANT_NAME);
+    const attachments = [...msg.attachments.values()].map(a => ({
+      url: a.url,
+      filename: a.name,
+      size: a.size,
+      content_type: a.contentType || 'application/octet-stream',
+    }));
     emit('discord', {
       event: 'message',
       user_id,
@@ -450,7 +464,8 @@ async function addUserDiscordBot(cmd) {
       message_id: msg.id,
       sender_id: msg.author.id,
       sender_name: msg.member?.displayName || msg.author.displayName || msg.author.username,
-      text: msg.content,
+      text: msg.content || '',
+      attachments,
       timestamp: Math.floor(msg.createdTimestamp / 1000),
       is_dm: !msg.guild,
       mentions_bot: mentionsBot,

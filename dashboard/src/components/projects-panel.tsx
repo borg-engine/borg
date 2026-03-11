@@ -19,6 +19,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CloudBrowseItem, CloudConnection, FtsSearchResult, UploadSession } from "@/lib/api";
 import {
+  addKnowledgeRepo,
   browseProjectCloudFiles,
   completeProjectUploadSession,
   createProject,
@@ -27,6 +28,7 @@ import {
   deleteAllProjectFiles,
   deleteAllUserKnowledgeFiles,
   deleteKnowledgeFile,
+  deleteKnowledgeRepo,
   deleteProjectCloudConnection,
   deleteUserKnowledgeFile,
   fetchKnowledgeContent,
@@ -38,15 +40,13 @@ import {
   reextractProjectFile,
   retryProjectUploadSession,
   searchDocuments,
-  addKnowledgeRepo,
-  deleteKnowledgeRepo,
   uploadKnowledgeFile,
   uploadProjectUploadChunk,
   uploadUserKnowledgeFile,
   useCustomModes,
-  useKnowledgeRepos,
   useDeleteProject,
   useKnowledgeFiles,
+  useKnowledgeRepos,
   useModes,
   useProjectCloudConnections,
   useProjectDocumentVersions,
@@ -2026,7 +2026,10 @@ function KnowledgeView({ scope }: { scope: "org" | "my" }) {
           </div>
           <button
             type="button"
-            onClick={() => { setAddRepoOpen((v) => !v); setAddRepoError(null); }}
+            onClick={() => {
+              setAddRepoOpen((v) => !v);
+              setAddRepoError(null);
+            }}
             className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-colors ${accentText} hover:bg-[#232019]`}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -2064,7 +2067,12 @@ function KnowledgeView({ scope }: { scope: "org" | "my" }) {
               </button>
               <button
                 type="button"
-                onClick={() => { setAddRepoOpen(false); setAddRepoError(null); setAddRepoUrl(""); setAddRepoName(""); }}
+                onClick={() => {
+                  setAddRepoOpen(false);
+                  setAddRepoError(null);
+                  setAddRepoUrl("");
+                  setAddRepoName("");
+                }}
                 className="rounded-lg px-3 py-2 text-[13px] text-[#6b6459] hover:bg-[#232019] hover:text-[#e8e0d4]"
               >
                 Cancel
@@ -2078,16 +2086,23 @@ function KnowledgeView({ scope }: { scope: "org" | "my" }) {
         )}
 
         {repos.map((repo) => (
-          <div key={repo.id} className="flex items-center gap-3 rounded-xl border border-[#1e1b18] bg-[#0e0c0a] px-3 py-2.5">
+          <div
+            key={repo.id}
+            className="flex items-center gap-3 rounded-xl border border-[#1e1b18] bg-[#0e0c0a] px-3 py-2.5"
+          >
             <GitBranch className="h-4 w-4 shrink-0 text-[#4a443d]" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="truncate text-[13px] font-medium text-[#e8e0d4]">{repo.name}</span>
-                <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                  repo.status === "ready" ? "bg-emerald-500/10 text-emerald-400" :
-                  repo.status === "error" ? "bg-red-500/10 text-red-400" :
-                  "bg-amber-500/10 text-amber-400"
-                }`}>
+                <span
+                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                    repo.status === "ready"
+                      ? "bg-emerald-500/10 text-emerald-400"
+                      : repo.status === "error"
+                        ? "bg-red-500/10 text-red-400"
+                        : "bg-amber-500/10 text-amber-400"
+                  }`}
+                >
                   {repo.status === "pending" ? "queued" : repo.status}
                 </span>
               </div>

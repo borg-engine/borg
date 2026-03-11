@@ -363,6 +363,15 @@ export async function fetchLinkedCredentialConnectSession(id: string) {
   return r.json() as Promise<LinkedCredentialConnectSession>;
 }
 
+export async function submitCredentialConnectCode(id: string, code: string) {
+  const r = await apiFetch(`/api/user/linked-credentials/connect/${encodeURIComponent(id)}/code`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  return r.json() as Promise<{ ok: boolean }>;
+}
+
 export async function deleteLinkedCredential(provider: "claude" | "openai") {
   const r = await apiFetch(`/api/user/linked-credentials/${provider}`, {
     method: "DELETE",
@@ -1678,12 +1687,18 @@ export function useKnowledgeRepos(isOrg: boolean) {
     queryFn: () => fetchJson(isOrg ? "/api/knowledge/repos" : "/api/knowledge/my/repos"),
     refetchInterval: (data) => {
       const repos = data?.state?.data?.repos ?? [];
-      return repos.some((r: import("./types").KnowledgeRepo) => r.status === "pending" || r.status === "cloning") ? 3000 : false;
+      return repos.some((r: import("./types").KnowledgeRepo) => r.status === "pending" || r.status === "cloning")
+        ? 3000
+        : false;
     },
   });
 }
 
-export async function addKnowledgeRepo(isOrg: boolean, url: string, name?: string): Promise<{ repos: import("./types").KnowledgeRepo[] }> {
+export async function addKnowledgeRepo(
+  isOrg: boolean,
+  url: string,
+  name?: string,
+): Promise<{ repos: import("./types").KnowledgeRepo[] }> {
   const res = await apiFetch(isOrg ? "/api/knowledge/repos" : "/api/knowledge/my/repos", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1693,8 +1708,13 @@ export async function addKnowledgeRepo(isOrg: boolean, url: string, name?: strin
   return res.json();
 }
 
-export async function deleteKnowledgeRepo(isOrg: boolean, id: number): Promise<{ repos: import("./types").KnowledgeRepo[] }> {
-  const res = await apiFetch(isOrg ? `/api/knowledge/repos/${id}` : `/api/knowledge/my/repos/${id}`, { method: "DELETE" });
+export async function deleteKnowledgeRepo(
+  isOrg: boolean,
+  id: number,
+): Promise<{ repos: import("./types").KnowledgeRepo[] }> {
+  const res = await apiFetch(isOrg ? `/api/knowledge/repos/${id}` : `/api/knowledge/my/repos/${id}`, {
+    method: "DELETE",
+  });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }

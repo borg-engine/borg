@@ -14,10 +14,10 @@ import {
 import type { ErrorInfo, ReactNode } from "react";
 import { Component, useCallback, useEffect, useMemo, useState } from "react";
 import { AutoTasksPanel } from "@/components/auto-tasks-panel";
-import { ConnectionsPanel } from "@/components/connections-panel";
 import { BorgLogo, PRODUCT_WORD } from "@/components/borg-logo";
 import { ChatDrawer } from "@/components/chat-drawer";
 import { ChatPanel } from "@/components/chat-panel";
+import { ConnectionsPanel } from "@/components/connections-panel";
 import { Header } from "@/components/header";
 import { LogViewer } from "@/components/log-viewer";
 import { LoginPage } from "@/components/login-page";
@@ -29,8 +29,18 @@ import { SettingsPanel } from "@/components/settings-panel";
 import { StatusPanel } from "@/components/status-panel";
 import { TaskDetail } from "@/components/task-detail";
 import { TaskList } from "@/components/task-list";
-import { getSelectedWorkspaceId, switchWorkspace, useLogs, useStatus, useWorkspaces, useLinkedCredentials, startLinkedCredentialConnect, fetchLinkedCredentialConnectSession } from "@/lib/api";
 import type { LinkedCredentialConnectSession } from "@/lib/api";
+import {
+  fetchLinkedCredentialConnectSession,
+  getSelectedWorkspaceId,
+  startLinkedCredentialConnect,
+  submitCredentialConnectCode,
+  switchWorkspace,
+  useLinkedCredentials,
+  useLogs,
+  useStatus,
+  useWorkspaces,
+} from "@/lib/api";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { DashboardModeProvider, useDashboardMode } from "@/lib/dashboard-mode";
 import { DomainProvider, useDomain } from "@/lib/domain";
@@ -68,7 +78,17 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-type View = "tasks" | "projects" | "connections" | "creator" | "auto-tasks" | "proposals" | "logs" | "queue" | "status" | "settings";
+type View =
+  | "tasks"
+  | "projects"
+  | "connections"
+  | "creator"
+  | "auto-tasks"
+  | "proposals"
+  | "logs"
+  | "queue"
+  | "status"
+  | "settings";
 type MobileTab = "tasks" | "projects" | "queue" | "chat";
 type DashboardNavigateDetail = { view: View };
 const SHOW_SETTINGS_NAV = import.meta.env.VITE_SHOW_SETTINGS !== "false";
@@ -136,9 +156,13 @@ function OnboardingModal() {
   const [dismissed, setDismissed] = useState(false);
   const [busyProvider, setBusyProvider] = useState<"claude" | "openai" | null>(null);
   const [pending, setPending] = useState<Record<string, LinkedCredentialConnectSession>>({});
+  const [codes, setCodes] = useState<Record<string, string>>({});
+  const [submittingCode, setSubmittingCode] = useState<string | null>(null);
 
   useEffect(() => {
-    const activeProviders = Object.values(pending).filter((s) => s.status === "pending").map((s) => s.provider);
+    const activeProviders = Object.values(pending)
+      .filter((s) => s.status === "pending")
+      .map((s) => s.provider);
     if (activeProviders.length === 0) return;
     const timer = window.setInterval(async () => {
       for (const provider of activeProviders) {
@@ -147,7 +171,11 @@ function OnboardingModal() {
         try {
           const updated = await fetchLinkedCredentialConnectSession(current.id);
           if (updated.status === "connected") {
-            setPending((prev) => { const next = { ...prev }; delete next[provider]; return next; });
+            setPending((prev) => {
+              const next = { ...prev };
+              delete next[provider];
+              return next;
+            });
           } else {
             setPending((prev) => ({ ...prev, [provider]: updated }));
           }
@@ -172,6 +200,24 @@ function OnboardingModal() {
     }
   }
 
+  async function handleSubmitCode(provider: string) {
+    const session = pending[provider];
+    if (!session) return;
+    const code = codes[provider]?.trim();
+    if (!code) return;
+    setSubmittingCode(provider);
+    try {
+      await submitCredentialConnectCode(session.id, code);
+      setCodes((prev) => {
+        const next = { ...prev };
+        delete next[provider];
+        return next;
+      });
+    } finally {
+      setSubmittingCode(null);
+    }
+  }
+
   const providers = [
     { provider: "claude" as const, label: "Claude Pro / Max", hint: "Connects via Claude Code OAuth" },
     { provider: "openai" as const, label: "ChatGPT Plus / Pro", hint: "Connects via Codex device auth" },
@@ -192,6 +238,7 @@ function OnboardingModal() {
             const isConnected = session?.status === "connected";
             const isPending = session?.status === "pending";
             const isBusy = busyProvider === provider;
+            const hasAuthUrl = isPending && !!session?.auth_url && provider === "claude";
             return (
               <div key={provider} className="rounded-xl border border-[#2a2520] bg-[#0e0c0a] p-4 space-y-2">
                 <div className="flex items-center justify-between">
@@ -200,7 +247,9 @@ function OnboardingModal() {
                     <div className="text-[12px] text-[#6b6459]">{hint}</div>
                   </div>
                   {isConnected ? (
-                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] text-emerald-400">Connected</span>
+                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] text-emerald-400">
+                      Connected
+                    </span>
                   ) : (
                     <button
                       onClick={() => handleConnect(provider)}
@@ -211,7 +260,32 @@ function OnboardingModal() {
                     </button>
                   )}
                 </div>
-                {isPending && (
+                {hasAuthUrl && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-[#9c9486]">
+                      The browser tab showed an authentication code. Copy it and paste it here:
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={codes[provider] ?? ""}
+                        onChange={(e) => setCodes((prev) => ({ ...prev, [provider]: e.target.value }))}
+                        onKeyDown={(e) => e.key === "Enter" && handleSubmitCode(provider)}
+                        placeholder="Paste authentication code"
+                        className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/30 placeholder:text-[#4a4540]"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => handleSubmitCode(provider)}
+                        disabled={submittingCode === provider || !codes[provider]?.trim()}
+                        className="rounded-lg bg-amber-500/15 px-3 py-1.5 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20 disabled:opacity-40"
+                      >
+                        {submittingCode === provider ? "..." : "Submit"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {isPending && !hasAuthUrl && (
                   <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] text-[#9c9486]">
                     {session.message || "Follow the instructions in the opened tab, then wait here."}
                   </div>

@@ -255,6 +255,69 @@ const TOOLS = [
       properties: {},
     },
   },
+
+  // -- Knowledge base tools --
+  {
+    name: "upload_to_knowledge",
+    description:
+      "Upload a local file to the knowledge base. " +
+      "Use this when the user sends a file and asks to add it to org knowledge, personal knowledge, or a project. " +
+      "The file must exist at the given path on the server filesystem. " +
+      "Scope: 'org' = shared org knowledge, 'user' = your personal knowledge, 'project' = attached to a project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_path: {
+          type: "string",
+          description: "Absolute path to the file on the server filesystem",
+        },
+        scope: {
+          type: "string",
+          enum: ["org", "user", "project"],
+          description: "Where to store the file: org (shared), user (personal), or project",
+        },
+        project_id: {
+          type: "number",
+          description: "Project ID — required when scope is 'project'",
+        },
+        description: {
+          type: "string",
+          description: "Optional description for the file",
+        },
+        category: {
+          type: "string",
+          description: "Optional category (e.g. 'reference', 'template', 'contract')",
+        },
+      },
+      required: ["file_path", "scope"],
+    },
+  },
+  {
+    name: "list_knowledge_files",
+    description:
+      "List files in the knowledge base. " +
+      "Returns org-level files, your personal files, or both depending on scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["org", "user", "both"],
+          description: "Which knowledge to list (default: both)",
+        },
+      },
+    },
+  },
+  {
+    name: "list_projects",
+    description:
+      "List all projects/matters in the workspace. " +
+      "Use to find project IDs for routing files or creating tasks.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
 ];
 
 // ── Tool handlers ───────────────────────────────────────────────────────
@@ -371,6 +434,10 @@ async function handleListServices() {
   lines.push("  read_document — read full document text");
   lines.push("  create_task — create async pipeline tasks");
   lines.push("  get_task_status / list_project_tasks — track work");
+  lines.push("\n## Knowledge Management (borg-mcp)");
+  lines.push("  upload_to_knowledge — upload a local file to org/user/project knowledge");
+  lines.push("  list_knowledge_files — list org or personal knowledge files");
+  lines.push("  list_projects — list all projects with IDs");
 
   // Check which external services have API keys configured
   // These are set by the borg server when it wires MCP servers
@@ -460,6 +527,94 @@ async function handleCheckCoverage(args) {
   return apiFetch(`/api/borgsearch/coverage?${params}`);
 }
 
+async function handleUploadToKnowledge(args) {
+  const { file_path, scope, project_id, description, category } = args;
+  if (!file_path) return "file_path is required";
+  if (!scope) return "scope is required";
+
+  // Read the file
+  const { readFile } = await import("fs/promises");
+  let fileBytes;
+  try {
+    fileBytes = await readFile(file_path);
+  } catch (e) {
+    return `Cannot read file at ${file_path}: ${e.message}`;
+  }
+
+  const filename = file_path.split("/").pop();
+  const FormData = (await import("form-data")).default;
+  const form = new FormData();
+  form.append("file", fileBytes, { filename });
+  if (description) form.append("description", description);
+  if (category) form.append("category", category);
+
+  let endpoint;
+  if (scope === "user") {
+    endpoint = "/api/knowledge/my/upload";
+  } else if (scope === "project") {
+    const pid = project_id || (PROJECT_ID ? Number(PROJECT_ID) : null);
+    if (!pid) return "project_id is required for scope=project";
+    endpoint = `/api/projects/${pid}/files/upload`;
+  } else {
+    endpoint = "/api/knowledge/upload";
+  }
+
+  const url = `${API_URL}${endpoint}`;
+  const headers = { ...form.getHeaders() };
+  if (API_TOKEN) headers["Authorization"] = `Bearer ${API_TOKEN}`;
+
+  const res = await fetch(url, { method: "POST", headers, body: form.getBuffer() });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return `Upload failed (${res.status}): ${text.slice(0, 300)}`;
+  }
+  const result = await res.json().catch(() => ({}));
+  return `File "${filename}" uploaded successfully to ${scope} knowledge. ID: ${result.id || "?"}`;
+}
+
+async function handleListKnowledgeFiles(args) {
+  const scope = args.scope || "both";
+  const lines = [];
+
+  if (scope === "org" || scope === "both") {
+    const data = await apiFetch("/api/knowledge?limit=50").catch((e) => ({ files: [], error: e.message }));
+    if (data.files?.length > 0) {
+      lines.push(`## Org Knowledge (${data.total || data.files.length} files)`);
+      for (const f of data.files.slice(0, 30)) {
+        lines.push(`  [${f.id}] ${f.file_name} — ${f.description || "(no description)"}`);
+      }
+    } else {
+      lines.push("## Org Knowledge: (empty)");
+    }
+  }
+
+  if (scope === "user" || scope === "both") {
+    const data = await apiFetch("/api/knowledge/my?limit=50").catch((e) => ({ files: [], error: e.message }));
+    if (data.files?.length > 0) {
+      lines.push(`\n## My Knowledge (${data.total || data.files.length} files)`);
+      for (const f of data.files.slice(0, 30)) {
+        lines.push(`  [${f.id}] ${f.file_name} — ${f.description || "(no description)"}`);
+      }
+    } else {
+      lines.push("\n## My Knowledge: (empty)");
+    }
+  }
+
+  return lines.join("\n") || "No knowledge files found.";
+}
+
+async function handleListProjects() {
+  const data = await apiFetch("/api/projects?limit=100");
+  if (!data?.length && !Array.isArray(data)) return "No projects found.";
+  const projects = Array.isArray(data) ? data : (data.projects || []);
+  if (!projects.length) return "No projects found.";
+  const lines = [`Projects (${projects.length}):\n`];
+  for (const p of projects.slice(0, 50)) {
+    lines.push(`  #${p.id} [${p.mode || "general"}] ${p.name}`);
+  }
+  return lines.join("\n");
+}
+
 const HANDLERS = {
   search_documents: handleSearchDocuments,
   list_documents: handleListDocuments,
@@ -470,6 +625,9 @@ const HANDLERS = {
   get_task_status: handleGetTaskStatus,
   list_project_tasks: handleListProjectTasks,
   list_services: handleListServices,
+  upload_to_knowledge: handleUploadToKnowledge,
+  list_knowledge_files: handleListKnowledgeFiles,
+  list_projects: handleListProjects,
 };
 
 // ── MCP server setup ────────────────────────────────────────────────────

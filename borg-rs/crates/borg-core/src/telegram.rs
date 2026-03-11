@@ -5,6 +5,15 @@ use reqwest::Client;
 use serde_json::Value;
 use tracing::{info, warn};
 
+/// A file attached to an incoming Telegram message.
+#[derive(Debug, Clone)]
+pub struct TgFile {
+    pub file_id: String,
+    pub filename: String,
+    pub mime_type: String,
+    pub file_size: i64,
+}
+
 /// An incoming Telegram message.
 #[derive(Debug, Clone)]
 pub struct TgMessage {
@@ -15,6 +24,7 @@ pub struct TgMessage {
     pub sender_id: i64,
     pub sender_name: String,
     pub text: String,
+    pub files: Vec<TgFile>,
     pub date: i64,
     pub mentions_bot: bool,
     pub reply_to_bot: bool,
@@ -104,10 +114,67 @@ impl Telegram {
             let from = msg.get("from").unwrap_or(&Value::Null);
             let reply = msg.get("reply_to_message").unwrap_or(&Value::Null);
 
-            let text = match msg.get("text").and_then(Value::as_str) {
-                Some(t) => t.to_string(),
-                None => continue,
-            };
+            let text = msg.get("text").and_then(Value::as_str).unwrap_or("").to_string();
+
+            // Collect attached files (document, photo, audio, video, voice)
+            let mut files: Vec<TgFile> = Vec::new();
+            if let Some(doc) = msg.get("document").and_then(|d| d.as_object()) {
+                files.push(TgFile {
+                    file_id: doc["file_id"].as_str().unwrap_or("").to_string(),
+                    filename: doc
+                        .get("file_name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("file")
+                        .to_string(),
+                    mime_type: doc
+                        .get("mime_type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("application/octet-stream")
+                        .to_string(),
+                    file_size: doc.get("file_size").and_then(Value::as_i64).unwrap_or(0),
+                });
+            }
+            for field in &["audio", "video", "voice", "video_note", "animation"] {
+                if let Some(f) = msg.get(*field).and_then(|d| d.as_object()) {
+                    let ext = if *field == "audio" {
+                        "mp3"
+                    } else if *field == "voice" {
+                        "ogg"
+                    } else {
+                        "mp4"
+                    };
+                    files.push(TgFile {
+                        file_id: f["file_id"].as_str().unwrap_or("").to_string(),
+                        filename: f
+                            .get("file_name")
+                            .and_then(Value::as_str)
+                            .unwrap_or(&format!("{field}.{ext}"))
+                            .to_string(),
+                        mime_type: f
+                            .get("mime_type")
+                            .and_then(Value::as_str)
+                            .unwrap_or("application/octet-stream")
+                            .to_string(),
+                        file_size: f.get("file_size").and_then(Value::as_i64).unwrap_or(0),
+                    });
+                }
+            }
+            // Photos: take the largest (last) size
+            if let Some(photos) = msg.get("photo").and_then(|p| p.as_array()) {
+                if let Some(photo) = photos.last() {
+                    files.push(TgFile {
+                        file_id: photo["file_id"].as_str().unwrap_or("").to_string(),
+                        filename: "photo.jpg".to_string(),
+                        mime_type: "image/jpeg".to_string(),
+                        file_size: photo["file_size"].as_i64().unwrap_or(0),
+                    });
+                }
+            }
+
+            // Skip messages with neither text nor files
+            if text.is_empty() && files.is_empty() {
+                continue;
+            }
 
             let chat_id = chat["id"].as_i64().unwrap_or(0);
             let chat_type = chat["type"].as_str().unwrap_or("private").to_string();
@@ -154,6 +221,7 @@ impl Telegram {
                 sender_id,
                 sender_name,
                 text,
+                files,
                 date: msg.get("date").and_then(Value::as_i64).unwrap_or(0),
                 mentions_bot,
                 reply_to_bot,
@@ -245,6 +313,37 @@ impl Telegram {
             }
         }
         Ok(())
+    }
+
+    /// Download a file by file_id. Returns (bytes, filename_from_path).
+    pub async fn download_file(&self, file_id: &str) -> Result<(Vec<u8>, String)> {
+        let url = self.api_url(&format!("getFile?file_id={}", file_id));
+        let resp: Value = self
+            .client
+            .get(&url)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        let file_path = resp["result"]["file_path"].as_str().unwrap_or("").to_string();
+        if file_path.is_empty() {
+            anyhow::bail!("getFile returned empty file_path for {file_id}");
+        }
+
+        let dl_url = format!("https://api.telegram.org/file/bot{}/{}", self.token, file_path);
+        let bytes = self
+            .client
+            .get(&dl_url)
+            .timeout(std::time::Duration::from_secs(60))
+            .send()
+            .await?
+            .bytes()
+            .await?;
+
+        let filename = file_path.rsplit('/').next().unwrap_or("file").to_string();
+        Ok((bytes.to_vec(), filename))
     }
 
     pub async fn send_typing(&self, chat_id: i64) -> Result<()> {

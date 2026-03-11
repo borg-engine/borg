@@ -6,9 +6,9 @@ import {
   connectTelegramBot,
   disconnectDiscordBot,
   disconnectTelegramBot,
+  type UserSettings,
   updateUserSettings,
   useUserSettings,
-  type UserSettings,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -114,12 +114,12 @@ function DiscordCard() {
             <p className="font-medium text-[#e8e0d4]">Setup</p>
             <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
               <li>
-                Go to the{" "}
-                <span className="font-medium text-[#e8e0d4]">Discord Developer Portal</span>
+                Go to the <span className="font-medium text-[#e8e0d4]">Discord Developer Portal</span>
               </li>
               <li>Create a new Application, then add a Bot</li>
               <li>
-                Enable <span className="font-medium text-[#e8e0d4]">Message Content Intent</span> under Privileged Gateway Intents
+                Enable <span className="font-medium text-[#e8e0d4]">Message Content Intent</span> under Privileged
+                Gateway Intents
               </li>
               <li>Copy the bot token and paste it below</li>
             </ol>
@@ -239,7 +239,8 @@ function TelegramCard() {
                 Open <span className="font-medium text-[#e8e0d4]">@BotFather</span> in Telegram
               </li>
               <li>
-                Send <code className="rounded bg-[#2a2520] px-1.5 py-0.5 text-[11px] text-amber-300">/newbot</code> and follow the prompts
+                Send <code className="rounded bg-[#2a2520] px-1.5 py-0.5 text-[11px] text-amber-300">/newbot</code> and
+                follow the prompts
               </li>
               <li>Copy the bot token and paste it below</li>
             </ol>
@@ -306,7 +307,7 @@ function GitHubCard() {
 function GitLabIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="currentColor">
-      <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 0 1 4.82 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0 1 18.6 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.51L23 13.45a.84.84 0 0 1-.35.94z"/>
+      <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 0 1 4.82 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0 1 18.6 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.51L23 13.45a.84.84 0 0 1-.35.94z" />
     </svg>
   );
 }
@@ -332,7 +333,7 @@ function GitLabCard() {
 function CodebergIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="currentColor">
-      <path d="M11.955.49A11.955 11.955 0 0 0 0 12.444a11.955 11.955 0 0 0 11.955 11.955 11.955 11.955 0 0 0 11.955-11.955A11.955 11.955 0 0 0 11.955.489zm0 1.64a10.315 10.315 0 0 1 10.315 10.315 10.315 10.315 0 0 1-10.315 10.315A10.315 10.315 0 0 1 1.64 12.445 10.315 10.315 0 0 1 11.955 2.13zM8.682 6.968v.002c-.43 0-.863.195-1.145.571L4.1 12.119a1.452 1.452 0 0 0 0 1.714l3.437 4.578c.564.753 1.727.753 2.291 0l.604-.804-2.833-3.774a.484.484 0 0 1 0-.572l2.833-3.772-.604-.805a1.452 1.452 0 0 0-1.146-.516zm6.636 0c-.43 0-.863.195-1.145.571l-.604.805 2.833 3.772a.484.484 0 0 1 0 .572l-2.833 3.774.604.804c.564.753 1.727.753 2.291 0l3.437-4.578a1.452 1.452 0 0 0 0-1.714l-3.437-4.578a1.452 1.452 0 0 0-1.146-.428z"/>
+      <path d="M11.955.49A11.955 11.955 0 0 0 0 12.444a11.955 11.955 0 0 0 11.955 11.955 11.955 11.955 0 0 0 11.955-11.955A11.955 11.955 0 0 0 11.955.489zm0 1.64a10.315 10.315 0 0 1 10.315 10.315 10.315 10.315 0 0 1-10.315 10.315A10.315 10.315 0 0 1 1.64 12.445 10.315 10.315 0 0 1 11.955 2.13zM8.682 6.968v.002c-.43 0-.863.195-1.145.571L4.1 12.119a1.452 1.452 0 0 0 0 1.714l3.437 4.578c.564.753 1.727.753 2.291 0l.604-.804-2.833-3.774a.484.484 0 0 1 0-.572l2.833-3.772-.604-.805a1.452 1.452 0 0 0-1.146-.516zm6.636 0c-.43 0-.863.195-1.145.571l-.604.805 2.833 3.772a.484.484 0 0 1 0 .572l-2.833 3.774.604.804c.564.753 1.727.753 2.291 0l3.437-4.578a1.452 1.452 0 0 0 0-1.714l-3.437-4.578a1.452 1.452 0 0 0-1.146-.428z" />
     </svg>
   );
 }
@@ -449,7 +450,10 @@ function PatCard({
             </button>
             {isSet && (
               <button
-                onClick={() => { setEditing(false); setToken(""); }}
+                onClick={() => {
+                  setEditing(false);
+                  setToken("");
+                }}
                 className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
               >
                 Cancel
@@ -484,11 +488,7 @@ function SlackCard() {
 // ── Shared UI ─────────────────────────────────────────────────────────────
 
 function Card({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-[#2a2520] bg-[#151412] p-5 space-y-3">
-      {children}
-    </div>
-  );
+  return <div className="rounded-2xl border border-[#2a2520] bg-[#151412] p-5 space-y-3">{children}</div>;
 }
 
 function CardHeader({
@@ -508,9 +508,7 @@ function CardHeader({
 }) {
   return (
     <div className="flex items-start gap-3.5">
-      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1", iconBg)}>
-        {icon}
-      </div>
+      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1", iconBg)}>{icon}</div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2.5">
           <span className="text-[14px] font-semibold text-[#e8e0d4]">{title}</span>
@@ -546,7 +544,10 @@ function DiscordIcon() {
 function SlackIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-4.5 w-4.5">
-      <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" fill="#E01E5A" />
+      <path
+        d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"
+        fill="#E01E5A"
+      />
     </svg>
   );
 }

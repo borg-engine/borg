@@ -17,6 +17,13 @@ pub enum Source {
 }
 
 #[derive(Debug, Clone)]
+pub struct SidecarAttachment {
+    pub url: String,
+    pub filename: String,
+    pub content_type: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct SidecarMessage {
     pub source: Source,
     pub id: String,
@@ -24,6 +31,7 @@ pub struct SidecarMessage {
     pub sender: String,
     pub sender_name: String,
     pub text: String,
+    pub attachments: Vec<SidecarAttachment>,
     pub timestamp: i64,
     pub is_group: bool,
     pub mentions_bot: bool,
@@ -321,6 +329,27 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
 
     let ev = match event_type {
         "message" => {
+            let attachments = v["attachments"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|a| {
+                            let url = a["url"].as_str()?.to_string();
+                            Some(SidecarAttachment {
+                                url,
+                                filename: a["filename"]
+                                    .as_str()
+                                    .unwrap_or("file")
+                                    .to_string(),
+                                content_type: a["content_type"]
+                                    .as_str()
+                                    .unwrap_or("application/octet-stream")
+                                    .to_string(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
             let msg = match source {
                 Source::Discord => SidecarMessage {
                     source: Source::Discord,
@@ -329,6 +358,7 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
                     sender: str_val(&v, "sender_id"),
                     sender_name: str_val(&v, "sender_name"),
                     text: str_val(&v, "text"),
+                    attachments,
                     timestamp: v["timestamp"].as_i64().unwrap_or(0),
                     is_group: !v["is_dm"].as_bool().unwrap_or(false),
                     mentions_bot: v["mentions_bot"].as_bool().unwrap_or(false),
@@ -341,6 +371,7 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
                     sender: str_val(&v, "sender_id"),
                     sender_name: str_val(&v, "sender_name"),
                     text: str_val(&v, "text"),
+                    attachments: vec![],
                     timestamp: v["timestamp"].as_i64().unwrap_or(0),
                     is_group: !v["is_dm"].as_bool().unwrap_or(false),
                     mentions_bot: v["mentions_bot"].as_bool().unwrap_or(false),
@@ -353,6 +384,7 @@ fn parse_event(line: &str) -> Option<SidecarEvent> {
                     sender: str_val(&v, "sender"),
                     sender_name: str_val(&v, "sender_name"),
                     text: str_val(&v, "text"),
+                    attachments: vec![],
                     timestamp: v["timestamp"].as_i64().unwrap_or(0),
                     is_group: v["is_group"].as_bool().unwrap_or(false),
                     mentions_bot: v["mentions_bot"].as_bool().unwrap_or(false),

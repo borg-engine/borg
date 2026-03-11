@@ -13,7 +13,7 @@ use chrono::{Duration as ChronoDuration, Utc};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
     time::{sleep, Duration},
 };
@@ -116,6 +116,7 @@ fn connect_command(provider: &str, temp_home: &str) -> Command {
         _ => unreachable!(),
     };
     cmd.env("HOME", temp_home)
+        .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     cmd
@@ -223,6 +224,10 @@ async fn run_connect_session(
             return;
         },
     };
+
+    if let Some(stdin) = child.stdin.take() {
+        state.linked_credential_stdins.lock().await.insert(session_id.clone(), stdin);
+    }
 
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
@@ -392,6 +397,7 @@ async fn run_connect_session(
         },
     }
 
+    state.linked_credential_stdins.lock().await.remove(&session_id);
     let _ = tokio::fs::remove_dir_all(&temp_home).await;
 }
 
@@ -511,6 +517,33 @@ pub(crate) async fn get_linked_credential_connect_session(
         return Err(StatusCode::NOT_FOUND);
     }
     Ok(Json(json!(session)))
+}
+
+pub(crate) async fn submit_credential_connect_code(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<Value>, StatusCode> {
+    let session = snapshot_connect_session(&state, &id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if session.user_id != user.id {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let code = body["code"].as_str().unwrap_or("").trim().to_string();
+    if code.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let mut stdins = state.linked_credential_stdins.lock().await;
+    if let Some(stdin) = stdins.get_mut(&id) {
+        let line = format!("{code}\n");
+        stdin.write_all(line.as_bytes()).await.map_err(internal)?;
+        stdin.flush().await.map_err(internal)?;
+    } else {
+        return Err(StatusCode::GONE);
+    }
+    Ok(Json(json!({ "ok": true })))
 }
 
 pub(crate) async fn delete_user_linked_credential(

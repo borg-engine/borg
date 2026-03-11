@@ -257,8 +257,48 @@ async fn poll_loop(
                         let sender_name = msg.sender_name.clone();
                         let chat_id = msg.chat_id;
                         let message_id = msg.message_id;
+                        let files = msg.files.clone();
                         tokio::spawn(async move {
                             let run_id = new_chat_run_id();
+
+                            // Build messages: text + downloaded attachments
+                            let mut agent_messages: Vec<String> = Vec::new();
+                            if !text.is_empty() {
+                                agent_messages.push(text);
+                            }
+                            for file in &files {
+                                match tg2.download_file(&file.file_id).await {
+                                    Ok((bytes, dl_name)) => {
+                                        let att_dir = format!(
+                                            "{}/attachments/{}",
+                                            config2.data_dir, file.file_id
+                                        );
+                                        std::fs::create_dir_all(&att_dir).ok();
+                                        let save_name = if !file.filename.is_empty() {
+                                            file.filename.clone()
+                                        } else {
+                                            dl_name
+                                        };
+                                        let save_path =
+                                            format!("{}/{}", att_dir, save_name);
+                                        if std::fs::write(&save_path, &bytes).is_ok() {
+                                            let size_kb = bytes.len() / 1024;
+                                            agent_messages.push(format!(
+                                                "[Attached file: {} ({}KB)] Path: {}",
+                                                save_name, size_kb, save_path
+                                            ));
+                                        }
+                                    },
+                                    Err(e) => {
+                                        warn!(user_id, "download file {}: {e}", file.file_id)
+                                    },
+                                }
+                            }
+
+                            if agent_messages.is_empty() {
+                                return;
+                            }
+
                             let progress = spawn_chat_progress_forwarder(
                                 &chat_tx2,
                                 chat_key.clone(),
@@ -273,7 +313,7 @@ async fn poll_loop(
                                 &chat_key,
                                 &run_id,
                                 &sender_name,
-                                &[text],
+                                &agent_messages,
                                 &sessions2,
                                 &config2,
                                 &db2,

@@ -25,6 +25,10 @@ base64 = "0.22.1"
 hex = "0.4.3"
 aws-config = "1"
 aws-sdk-kms = "1"
+imap = { version = "3.0.0-alpha.15", features = ["native-tls"] }
+native-tls = "0.2"
+mailparse = "0.15"
+lettre = { version = "0.11", features = ["smtp-transport", "tokio1-native-tls", "builder"] }
 
 [dev-dependencies]
 tempfile = "3"

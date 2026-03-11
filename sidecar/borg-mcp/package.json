@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "form-data": "^4.0.5"
   }
 }

@@ -4585,6 +4585,33 @@ impl Db {
         Ok(result)
     }
 
+    /// Look up a user by email address.
+    /// For SSO users the username IS their email; as a fallback also checks the
+    /// `contact_email` user setting.
+    pub fn get_user_by_email(&self, email: &str) -> Result<Option<(i64, String, String, bool)>> {
+        // SSO users have their email as username
+        if let Ok(Some((id, username, display_name, _, is_admin))) =
+            self.get_user_by_username(email)
+        {
+            return Ok(Some((id, username, display_name, is_admin)));
+        }
+        let conn =
+            self.conn.lock().map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let result = conn
+            .query_row(
+                "SELECT u.id, u.username, u.display_name, u.is_admin \
+                 FROM users u \
+                 JOIN user_settings us ON us.user_id = u.id \
+                 WHERE us.key = 'contact_email' AND LOWER(us.value) = LOWER(?1) \
+                 LIMIT 1",
+                params![email],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()
+            .context("get_user_by_email")?;
+        Ok(result)
+    }
+
     pub fn get_user_by_id(&self, id: i64) -> Result<Option<(i64, String, String, bool)>> {
         let conn = self
             .conn

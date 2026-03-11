@@ -78,6 +78,8 @@ pub struct AppState {
     pub login_attempts: Arc<std::sync::Mutex<HashMap<String, (u32, std::time::Instant)>>>,
     pub(crate) linked_credential_sessions:
         Arc<TokioMutex<HashMap<String, routes::LinkedCredentialConnectSession>>>,
+    pub(crate) linked_credential_stdins:
+        Arc<TokioMutex<HashMap<String, tokio::process::ChildStdin>>>,
 }
 
 impl AppState {
@@ -776,10 +778,40 @@ async fn main() -> anyhow::Result<()> {
                         } else {
                             format!("{}:{}", source_prefix, msg.chat_id)
                         };
+                        // Download any attachments and append paths to text
+                        let mut msg_text = msg.text.clone();
+                        if !msg.attachments.is_empty() {
+                            let att_base =
+                                format!("{}/attachments", config_sc.data_dir);
+                            for att in &msg.attachments {
+                                let att_dir =
+                                    format!("{}/discord-{}", att_base, &att.filename);
+                                std::fs::create_dir_all(&att_dir).ok();
+                                let path = format!("{}/{}", att_dir, att.filename);
+                                match reqwest::get(&att.url).await {
+                                    Ok(resp) => {
+                                        if let Ok(bytes) = resp.bytes().await {
+                                            std::fs::write(&path, &bytes).ok();
+                                            let size_kb = bytes.len() / 1024;
+                                            msg_text.push_str(&format!(
+                                                "\n[Attached file: {} ({}KB)] Path: {}",
+                                                att.filename, size_kb, path
+                                            ));
+                                        }
+                                    },
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "discord attachment download failed: {e}"
+                                        )
+                                    },
+                                }
+                            }
+                        }
+
                         let incoming = borg_core::chat::IncomingMessage {
                             chat_key: chat_key.clone(),
                             sender_name: msg.sender_name.clone(),
-                            text: msg.text.clone(),
+                            text: msg_text,
                             timestamp: msg.timestamp,
                             reply_to_message_id: None,
                         };
@@ -974,6 +1006,7 @@ async fn main() -> anyhow::Result<()> {
         upload_processing_limit,
         login_attempts: Arc::new(std::sync::Mutex::new(HashMap::new())),
         linked_credential_sessions: Arc::new(TokioMutex::new(HashMap::new())),
+        linked_credential_stdins: Arc::new(TokioMutex::new(HashMap::new())),
     });
 
     routes::spawn_linked_credential_maintenance(Arc::clone(&state));
@@ -1005,6 +1038,111 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // IMAP email poller (optional — only runs when IMAP_HOST is configured)
+    if !config.imap_host.is_empty() {
+        let imap_cfg = borg_core::email::ImapConfig {
+            host: config.imap_host.clone(),
+            port: config.imap_port,
+            user: config.imap_user.clone(),
+            pass: config.imap_pass.clone(),
+            mailbox: config.imap_mailbox.clone(),
+        };
+        let imap_db = Arc::clone(&state.db);
+        let imap_config = Arc::clone(&state.config);
+        let imap_sessions = Arc::new(TokioMutex::new(HashMap::new()));
+        let imap_search = state.search.clone();
+        let imap_storage = Arc::clone(&state.file_storage);
+        let imap_chat_tx = state.chat_event_tx.clone();
+        let imap_ai_count = Arc::clone(&state.ai_request_count);
+        tokio::spawn(async move {
+            borg_core::email::run_imap_poller(imap_cfg, 60, move |emails| {
+                let db = Arc::clone(&imap_db);
+                let config = Arc::clone(&imap_config);
+                let sessions = Arc::clone(&imap_sessions);
+                let search = imap_search.clone();
+                let storage = Arc::clone(&imap_storage);
+                let chat_tx = imap_chat_tx.clone();
+                let ai_count = Arc::clone(&imap_ai_count);
+                async move {
+                    for email in emails {
+                        let user = db.get_user_by_email(&email.from).ok().flatten();
+                        let sender_name = match &user {
+                            Some((_, _, dn, _)) if !dn.is_empty() => dn.clone(),
+                            _ => {
+                                if !email.from_name.is_empty() {
+                                    email.from_name.clone()
+                                } else {
+                                    email.from.clone()
+                                }
+                            },
+                        };
+                        let att_dir = format!(
+                            "{}/attachments/email-{}",
+                            config.data_dir,
+                            chrono::Utc::now().timestamp_millis()
+                        );
+                        let att_paths = borg_core::email::save_attachments(
+                            &email.attachments,
+                            std::path::Path::new(&att_dir),
+                        )
+                        .unwrap_or_default();
+                        let mut msgs = vec![format!(
+                            "Email from {} <{}>: {}\n\n{}",
+                            sender_name, email.from, email.subject, email.body
+                        )];
+                        for p in &att_paths {
+                            let size_kb =
+                                std::fs::metadata(p).map(|m| m.len() / 1024).unwrap_or(0);
+                            let fname = p.file_name().unwrap_or_default().to_string_lossy();
+                            msgs.push(format!(
+                                "[Attached file: {} ({}KB)] Path: {}",
+                                fname,
+                                size_kb,
+                                p.display()
+                            ));
+                        }
+                        let chat_key = format!("email:{}", email.from);
+                        let run_id = messaging_progress::new_chat_run_id();
+                        let from_email = email.from.clone();
+                        let reply_subject = format!("Re: {}", email.subject);
+                        match routes::run_chat_agent(
+                            &chat_key,
+                            &run_id,
+                            &sender_name,
+                            &msgs,
+                            &sessions,
+                            &config,
+                            &db,
+                            search.clone(),
+                            &storage,
+                            &chat_tx,
+                            &ai_count,
+                        )
+                        .await
+                        {
+                            Ok(reply) if !reply.is_empty() => {
+                                let _ = borg_core::email::send_smtp_reply(
+                                    &config.smtp_host,
+                                    config.smtp_port,
+                                    &config.smtp_from,
+                                    &config.smtp_user,
+                                    &config.smtp_pass,
+                                    &from_email,
+                                    &reply_subject,
+                                    &reply,
+                                )
+                                .await;
+                            },
+                            Ok(_) => {},
+                            Err(e) => tracing::warn!("imap email agent error: {e}"),
+                        }
+                    }
+                }
+            })
+            .await;
+        });
+    }
+
     // Sync all knowledge repos on startup
     {
         let db = Arc::clone(&db);
@@ -1031,6 +1169,11 @@ async fn main() -> anyhow::Result<()> {
     let proxy_router = proxy::proxy_routes().with_state(proxy_state);
 
     let app = Router::new()
+        // Email inbound webhook (unauthenticated — verified by api_token param)
+        .route(
+            "/api/email/inbound",
+            post(routes::email_inbound).layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
+        )
         // Health (unauthenticated)
         .route("/api/health", get(routes::health))
         // Auth endpoints (unauthenticated)
@@ -1075,6 +1218,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/user/linked-credentials/connect/:id",
             get(routes::get_linked_credential_connect_session),
+        )
+        .route(
+            "/api/user/linked-credentials/connect/:id/code",
+            post(routes::submit_credential_connect_code),
         )
         .route(
             "/api/user/linked-credentials/:provider",

@@ -1526,6 +1526,140 @@ pub(crate) async fn rebuild_and_exec(repo_path: &str, build_cmd: &str) -> bool {
     }
 }
 
+// ── Email inbound ──────────────────────────────────────────────────────────
+
+/// POST /api/email/inbound
+/// Accepts raw RFC 2822 email or Postmark JSON. Auth via ?api_token= or X-Api-Token header.
+pub(crate) async fn email_inbound(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+    body: Bytes,
+) -> impl IntoResponse {
+    // Verify via api_token query param or X-Api-Token header
+    let provided = params
+        .get("api_token")
+        .cloned()
+        .or_else(|| {
+            headers
+                .get("x-api-token")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_default();
+    if provided != state.api_token {
+        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    }
+
+    let ct = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let email = match borg_core::email::parse_auto(&body, &ct) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("email_inbound: parse failed: {e}");
+            return (StatusCode::BAD_REQUEST, "Bad email format").into_response();
+        },
+    };
+
+    if email.from.is_empty() {
+        return (StatusCode::OK, "OK").into_response();
+    }
+
+    // Look up user by sender email
+    let user = state.db.get_user_by_email(&email.from).ok().flatten();
+    let (sender_name, _user_id) = match user {
+        Some((id, _, display_name, _)) => {
+            let name = if display_name.is_empty() { email.from_name.clone() } else { display_name };
+            (name, Some(id))
+        },
+        None => {
+            // Accept from unknown senders — route to global email thread
+            (
+                if email.from_name.is_empty() { email.from.clone() } else { email.from_name.clone() },
+                None,
+            )
+        },
+    };
+
+    // Save attachments
+    let att_dir = format!(
+        "{}/attachments/email-{}",
+        state.config.data_dir,
+        chrono::Utc::now().timestamp_millis()
+    );
+    let att_paths =
+        borg_core::email::save_attachments(&email.attachments, std::path::Path::new(&att_dir))
+            .unwrap_or_default();
+
+    // Build message text
+    let mut agent_messages: Vec<String> = vec![format!(
+        "Email from {} <{}>: {}\n\n{}",
+        sender_name, email.from, email.subject, email.body
+    )];
+    for path in &att_paths {
+        let size_kb = std::fs::metadata(path).map(|m| m.len() / 1024).unwrap_or(0);
+        let filename = path.file_name().unwrap_or_default().to_string_lossy();
+        agent_messages.push(format!(
+            "[Attached file: {} ({}KB)] Path: {}",
+            filename,
+            size_kb,
+            path.display()
+        ));
+    }
+
+    let chat_key = format!("email:{}", email.from);
+    let sessions = Arc::clone(&state.web_sessions);
+    let config = Arc::clone(&state.config);
+    let db = Arc::clone(&state.db);
+    let search = state.search.clone();
+    let storage = Arc::clone(&state.file_storage);
+    let chat_tx = state.chat_event_tx.clone();
+    let ai_count = Arc::clone(&state.ai_request_count);
+    let from_email = email.from.clone();
+    let reply_subject = format!("Re: {}", email.subject);
+
+    tokio::spawn(async move {
+        let run_id = crate::messaging_progress::new_chat_run_id();
+        match run_chat_agent(
+            &chat_key,
+            &run_id,
+            &sender_name,
+            &agent_messages,
+            &sessions,
+            &config,
+            &db,
+            search,
+            &storage,
+            &chat_tx,
+            &ai_count,
+        )
+        .await
+        {
+            Ok(reply) if !reply.is_empty() => {
+                let _ = borg_core::email::send_smtp_reply(
+                    &config.smtp_host,
+                    config.smtp_port,
+                    &config.smtp_from,
+                    &config.smtp_user,
+                    &config.smtp_pass,
+                    &from_email,
+                    &reply_subject,
+                    &reply,
+                )
+                .await;
+            },
+            Ok(_) => {},
+            Err(e) => tracing::warn!("email inbound agent error: {e}"),
+        }
+    });
+
+    (StatusCode::OK, "OK").into_response()
+}
+
 // ── Handlers ──────────────────────────────────────────────────────────────
 
 pub(crate) async fn health(State(state): State<Arc<AppState>>) -> Json<Value> {
@@ -5036,6 +5170,7 @@ const USER_SETTINGS_KEYS: &[&str] = &[
     "codeberg_token",
     "telegram_bot_token",
     "telegram_bot_username",
+    "contact_email",
     "discord_bot_token",
     "discord_bot_username",
     "dashboard_mode",

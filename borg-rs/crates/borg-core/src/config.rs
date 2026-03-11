@@ -157,6 +157,20 @@ pub struct Config {
     /// Emails that should be treated as Borg admins in Cloudflare Access mode.
     pub cloudflare_admin_emails: Vec<String>,
 
+    // Email ingestion
+    /// IMAP server for polling inbound emails (leave empty to disable).
+    pub imap_host: String,
+    pub imap_port: u16,
+    pub imap_user: String,
+    pub imap_pass: String,
+    pub imap_mailbox: String,
+    /// SMTP server for sending replies (leave empty to disable replies).
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_from: String,
+    pub smtp_user: String,
+    pub smtp_pass: String,
+
     /// Enable post-phase retrieval protocol enforcement for legal tasks.
     /// When false, legal tasks still get the retrieval instructions but the
     /// pipeline won't force-retry if the agent skips coverage checks.
@@ -1068,6 +1082,16 @@ impl Config {
                 "cf-access-authenticated-user-email",
             ),
             cloudflare_admin_emails: get_csv("CLOUDFLARE_ADMIN_EMAILS", &dotenv),
+            imap_host: get_str("IMAP_HOST", &dotenv, ""),
+            imap_port: get_u16("IMAP_PORT", &dotenv, 993),
+            imap_user: get_str("IMAP_USER", &dotenv, ""),
+            imap_pass: get_str("IMAP_PASS", &dotenv, ""),
+            imap_mailbox: get_str("IMAP_MAILBOX", &dotenv, "INBOX"),
+            smtp_host: get_str("SMTP_HOST", &dotenv, ""),
+            smtp_port: get_u16("SMTP_PORT", &dotenv, 587),
+            smtp_from: get_str("SMTP_FROM", &dotenv, ""),
+            smtp_user: get_str("SMTP_USER", &dotenv, ""),
+            smtp_pass: get_str("SMTP_PASS", &dotenv, ""),
             enforce_retrieval_protocol: get_bool("ENFORCE_RETRIEVAL_PROTOCOL", &dotenv, true),
         })
     }
