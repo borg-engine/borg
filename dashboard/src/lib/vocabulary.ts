@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useSettings } from "./api";
+import { useDashboardMode } from "./dashboard-mode";
 
 export interface Vocabulary {
   mode: "swe" | "law" | "knowledge" | "general";
@@ -100,9 +100,6 @@ export function getVocabulary(mode: string): Vocabulary {
 }
 
 export function useVocabulary(): Vocabulary {
-  const { data: settings } = useSettings();
-  return useMemo(() => {
-    const mode = settings?.dashboard_mode ?? "general";
-    return getVocabulary(mode);
-  }, [settings?.dashboard_mode]);
+  const { mode } = useDashboardMode();
+  return useMemo(() => getVocabulary(mode), [mode]);
 }

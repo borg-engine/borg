@@ -1899,7 +1899,7 @@ function KnowledgeView({ scope }: { scope: "org" | "my" }) {
               }
             />
             <FileListPagination
-              filePage={{ total: page?.total, has_more: page?.has_more }}
+              filePage={{ total: page?.total ?? 0, has_more: page?.has_more ?? false }}
               currentOffset={offset}
               fileCount={files.length}
               pageSize={pageSize}
@@ -1909,7 +1909,7 @@ function KnowledgeView({ scope }: { scope: "org" | "my" }) {
               }}
               canGoPrev={offset > 0}
               onPrev={() => setOffset((prev) => Math.max(0, prev - pageSize))}
-              canGoNext={page?.has_more}
+              canGoNext={page?.has_more ?? false}
               onNext={() => setOffset((prev) => prev + pageSize)}
               actions={
                 <button

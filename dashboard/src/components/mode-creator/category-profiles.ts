@@ -66,20 +66,34 @@ const ALL_PROFILE: CategoryProfile = {
   showComplianceButtons: true,
 };
 
+const GENERAL_PROFILE: CategoryProfile = {
+  phaseTypes: ["setup", "agent", "human_review", "compliance_check"],
+  behaviorFlags: ["include_task_context", "allow_no_changes", "fresh_session"],
+  integrations: [
+    { value: "git_pr", label: "Git PR" },
+    { value: "none", label: "None" },
+  ],
+  tools: ALL_TOOLS,
+  showDocker: false,
+  showTestCmd: false,
+  showComplianceButtons: true,
+};
+
 const KNOWLEDGE_PROFILE: CategoryProfile = {
-  ...DOCUMENT_PROFILE,
+  ...GENERAL_PROFILE,
   showComplianceButtons: false,
 };
 
 export function getProfile(category: string, showAll: boolean, dashboardMode?: string): CategoryProfile {
-  // Dashboard mode takes priority over category-based detection
-  if (dashboardMode === "legal") return showAll ? { ...ALL_PROFILE, showComplianceButtons: true } : DOCUMENT_PROFILE;
+  if (dashboardMode === "swe") return showAll ? ALL_PROFILE : CODE_PROFILE;
+  if (dashboardMode === "legal")
+    return showAll ? { ...GENERAL_PROFILE, showComplianceButtons: true } : DOCUMENT_PROFILE;
   if (dashboardMode === "knowledge")
-    return showAll ? { ...ALL_PROFILE, showComplianceButtons: false } : KNOWLEDGE_PROFILE;
-  if (showAll) return ALL_PROFILE;
+    return showAll ? { ...GENERAL_PROFILE, showComplianceButtons: false } : KNOWLEDGE_PROFILE;
+  // Category-based detection
   const cat = (category || "").toLowerCase();
-  if (cat.includes("engineering") || cat.includes("data")) return CODE_PROFILE;
+  if (cat.includes("engineering") || cat.includes("data")) return showAll ? ALL_PROFILE : CODE_PROFILE;
   if (cat.includes("professional") || cat.includes("legal") || cat.includes("people") || cat.includes("ops"))
-    return DOCUMENT_PROFILE;
-  return ALL_PROFILE;
+    return showAll ? { ...GENERAL_PROFILE, showComplianceButtons: true } : DOCUMENT_PROFILE;
+  return showAll ? GENERAL_PROFILE : KNOWLEDGE_PROFILE;
 }

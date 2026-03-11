@@ -5033,6 +5033,7 @@ const USER_SETTINGS_KEYS: &[&str] = &[
     "github_token",
     "telegram_bot_token",
     "telegram_bot_username",
+    "dashboard_mode",
 ];
 /// Keys that cannot be set via the generic PUT endpoint (use dedicated routes).
 const USER_SETTINGS_PROTECTED: &[&str] = &["telegram_bot_token", "telegram_bot_username"];

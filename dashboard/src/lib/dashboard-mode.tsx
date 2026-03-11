@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useContext, useMemo } from "react";
-import { useSettings } from "./api";
+import { useUserSettings } from "./api";
 
-export type DashboardMode = "general" | "legal" | "knowledge";
+export type DashboardMode = "general" | "swe" | "legal" | "knowledge";
 
 interface DashboardModeCtx {
   mode: DashboardMode;
@@ -11,13 +11,19 @@ interface DashboardModeCtx {
 
 const ctx = createContext<DashboardModeCtx>({ mode: "general", isLegal: false, isSWE: false });
 
+function parseMode(raw: string | undefined): DashboardMode {
+  if (raw === "swe") return "swe";
+  if (raw === "legal") return "legal";
+  if (raw === "knowledge") return "knowledge";
+  return "general";
+}
+
 export function DashboardModeProvider({ children }: { children: ReactNode }) {
-  const { data: settings } = useSettings();
+  const { data: userSettings } = useUserSettings();
   const value = useMemo<DashboardModeCtx>(() => {
-    const raw = settings?.dashboard_mode;
-    const mode: DashboardMode = raw === "legal" ? "legal" : raw === "knowledge" ? "knowledge" : "general";
-    return { mode, isLegal: mode === "legal", isSWE: mode === "general" };
-  }, [settings?.dashboard_mode]);
+    const mode = parseMode(userSettings?.dashboard_mode);
+    return { mode, isLegal: mode === "legal", isSWE: mode === "swe" };
+  }, [userSettings?.dashboard_mode]);
   return <ctx.Provider value={value}>{children}</ctx.Provider>;
 }
 

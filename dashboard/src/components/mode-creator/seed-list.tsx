@@ -1,4 +1,3 @@
-import { useDashboardMode } from "@/lib/dashboard-mode";
 import type { SeedConfigFull, SeedOutputType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AutoTextarea } from "./auto-textarea";
@@ -20,7 +19,6 @@ export function SeedList({
   onAdd: () => void;
   onRemove: (index: number) => void;
 }) {
-  const { isSWE } = useDashboardMode();
   return (
     <div className="space-y-3">
       {seeds.length === 0 && (
@@ -150,40 +148,5 @@ function Field({ label, className, children }: { label: string; className?: stri
       <div className="mb-1.5 text-[12px] font-medium text-[#9c9486]">{label}</div>
       {children}
     </div>
-  );
-}
-
-function _FlagToggle({
-  label,
-  checked,
-  onChange,
-  disabled,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[12px] transition-colors",
-        checked ? "text-[#e8e0d4]" : "text-[#6b6459]",
-        disabled && "cursor-not-allowed opacity-50",
-      )}
-    >
-      <span
-        className={cn(
-          "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-          checked ? "border-amber-500/40 bg-amber-500/20 text-amber-400" : "border-[#2a2520] bg-[#1c1a17]",
-        )}
-      >
-        {checked && <span className="text-[9px]">&#10003;</span>}
-      </span>
-      {label}
-    </button>
   );
 }
