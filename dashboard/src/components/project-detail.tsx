@@ -22,6 +22,7 @@ import {
   useProjectDetail,
   useProjectDocuments,
   useProjectTasks,
+  useSettings,
   useTaskStream,
   useTemplates,
   verifyTaskCitations,
@@ -41,6 +42,7 @@ import {
   useFileList,
   useFilePreview,
 } from "./file-list-shared";
+import { CloudStoragePanel } from "./cloud-storage";
 import { PhaseTracker } from "./phase-tracker";
 import { StatusBadge } from "./status-badge";
 import { TaskCreator } from "./task-creator";
@@ -381,6 +383,7 @@ function DocumentsTab({
 }) {
   const vocab = useVocabulary();
   const queryClient = useQueryClient();
+  const { data: settings = null } = useSettings();
   const { data: docs = [], isLoading } = useProjectDocuments(projectId);
   const { data: tasks = [] } = useProjectTasks(projectId);
   const { activeFiles } = useActiveFiles(tasks);
@@ -493,6 +496,12 @@ function DocumentsTab({
             fl.refetchFiles();
           }}
           subtitle={vocab.uploadSubtitle}
+        />
+
+        <CloudStoragePanel
+          projectId={projectId}
+          settings={settings}
+          onImported={() => { fl.resetPagination(); fl.refetchFiles(); }}
         />
 
         {deleteError && <div className="text-[12px] text-red-400">{deleteError}</div>}
