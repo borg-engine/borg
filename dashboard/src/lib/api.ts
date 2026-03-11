@@ -246,6 +246,10 @@ export interface UserSettings {
   model_override_active: boolean;
   github_token_set: boolean;
   github_token?: string;
+  gitlab_token_set: boolean;
+  gitlab_token?: string;
+  codeberg_token_set: boolean;
+  codeberg_token?: string;
   telegram_bot_connected: boolean;
   telegram_bot_username: string;
   discord_bot_connected: boolean;

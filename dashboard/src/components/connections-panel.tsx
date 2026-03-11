@@ -33,6 +33,8 @@ export function ConnectionsPanel() {
           <TelegramCard />
           <SlackCard />
           <GitHubCard />
+          <GitLabCard />
+          <CodebergCard />
         </div>
       </div>
     </div>
@@ -284,19 +286,101 @@ function TelegramCard() {
 // ── GitHub ─────────────────────────────────────────────────────────────────
 
 function GitHubCard() {
-  const { data: userSettings, refetch } = useUserSettings();
+  const { data: userSettings } = useUserSettings();
+  if (!userSettings) return null;
+  return (
+    <PatCard
+      icon={<Github className="h-4.5 w-4.5 text-[#e8e0d4]" />}
+      iconBg="bg-[#e8e0d4]/8 ring-[#e8e0d4]/15"
+      title="GitHub"
+      subtitle="Personal access token for pushing branches, creating PRs, and cloning private repos"
+      isSet={userSettings.github_token_set}
+      placeholder="ghp_..."
+      settingKey="github_token"
+    />
+  );
+}
+
+// ── GitLab ─────────────────────────────────────────────────────────────────
+
+function GitLabIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="currentColor">
+      <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 0 1 4.82 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0 1 18.6 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.51L23 13.45a.84.84 0 0 1-.35.94z"/>
+    </svg>
+  );
+}
+
+function GitLabCard() {
+  const { data: userSettings } = useUserSettings();
+  if (!userSettings) return null;
+  return (
+    <PatCard
+      icon={<GitLabIcon />}
+      iconBg="bg-[#FC6D26]/8 ring-[#FC6D26]/15"
+      title="GitLab"
+      subtitle="Personal access token for cloning private GitLab repos"
+      isSet={userSettings.gitlab_token_set}
+      placeholder="glpat-..."
+      settingKey="gitlab_token"
+    />
+  );
+}
+
+// ── Codeberg ───────────────────────────────────────────────────────────────
+
+function CodebergIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="currentColor">
+      <path d="M11.955.49A11.955 11.955 0 0 0 0 12.444a11.955 11.955 0 0 0 11.955 11.955 11.955 11.955 0 0 0 11.955-11.955A11.955 11.955 0 0 0 11.955.489zm0 1.64a10.315 10.315 0 0 1 10.315 10.315 10.315 10.315 0 0 1-10.315 10.315A10.315 10.315 0 0 1 1.64 12.445 10.315 10.315 0 0 1 11.955 2.13zM8.682 6.968v.002c-.43 0-.863.195-1.145.571L4.1 12.119a1.452 1.452 0 0 0 0 1.714l3.437 4.578c.564.753 1.727.753 2.291 0l.604-.804-2.833-3.774a.484.484 0 0 1 0-.572l2.833-3.772-.604-.805a1.452 1.452 0 0 0-1.146-.516zm6.636 0c-.43 0-.863.195-1.145.571l-.604.805 2.833 3.772a.484.484 0 0 1 0 .572l-2.833 3.774.604.804c.564.753 1.727.753 2.291 0l3.437-4.578a1.452 1.452 0 0 0 0-1.714l-3.437-4.578a1.452 1.452 0 0 0-1.146-.428z"/>
+    </svg>
+  );
+}
+
+function CodebergCard() {
+  const { data: userSettings } = useUserSettings();
+  if (!userSettings) return null;
+  return (
+    <PatCard
+      icon={<CodebergIcon />}
+      iconBg="bg-[#2185D0]/8 ring-[#2185D0]/15"
+      title="Codeberg"
+      subtitle="Personal access token for cloning private Codeberg repos"
+      isSet={userSettings.codeberg_token_set}
+      placeholder="codeberg PAT..."
+      settingKey="codeberg_token"
+    />
+  );
+}
+
+// ── Shared PAT card ────────────────────────────────────────────────────────
+
+function PatCard({
+  icon,
+  iconBg,
+  title,
+  subtitle,
+  isSet,
+  placeholder,
+  settingKey,
+}: {
+  icon: React.ReactNode;
+  iconBg: string;
+  title: string;
+  subtitle: string;
+  isSet: boolean;
+  placeholder: string;
+  settingKey: string;
+}) {
+  const { refetch } = useUserSettings();
   const [editing, setEditing] = useState(false);
   const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
 
-  if (!userSettings) return null;
-
-  const isSet = userSettings.github_token_set;
-
   async function handleSave() {
     setSaving(true);
     try {
-      await updateUserSettings({ github_token: token } as Partial<UserSettings>);
+      await updateUserSettings({ [settingKey]: token } as Partial<UserSettings>);
       setToken("");
       setEditing(false);
       await refetch();
@@ -308,7 +392,7 @@ function GitHubCard() {
   async function handleClear() {
     setSaving(true);
     try {
-      await updateUserSettings({ github_token: "" } as Partial<UserSettings>);
+      await updateUserSettings({ [settingKey]: "" } as Partial<UserSettings>);
       await refetch();
     } finally {
       setSaving(false);
@@ -318,14 +402,13 @@ function GitHubCard() {
   return (
     <Card>
       <CardHeader
-        icon={<Github className="h-4.5 w-4.5 text-[#e8e0d4]" />}
-        iconBg="bg-[#e8e0d4]/8 ring-[#e8e0d4]/15"
-        title="GitHub"
-        subtitle="Personal access token for pushing branches and creating PRs"
+        icon={icon}
+        iconBg={iconBg}
+        title={title}
+        subtitle={subtitle}
         status={isSet ? "connected" : undefined}
         statusLabel={isSet ? "Token configured" : undefined}
       />
-
       {isSet && !editing ? (
         <div className="flex items-center gap-2 pt-1">
           <button
@@ -349,9 +432,10 @@ function GitHubCard() {
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="ghp_..."
-              className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+              onKeyDown={(e) => e.key === "Enter" && handleSave()}
+              placeholder={placeholder}
               autoFocus={editing}
+              className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
             />
             <button
               onClick={handleSave}
@@ -365,10 +449,7 @@ function GitHubCard() {
             </button>
             {isSet && (
               <button
-                onClick={() => {
-                  setEditing(false);
-                  setToken("");
-                }}
+                onClick={() => { setEditing(false); setToken(""); }}
                 className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
               >
                 Cancel

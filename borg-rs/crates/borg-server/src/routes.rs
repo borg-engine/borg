@@ -5032,6 +5032,8 @@ const USER_SETTINGS_KEYS: &[&str] = &[
     "model",
     "backend",
     "github_token",
+    "gitlab_token",
+    "codeberg_token",
     "telegram_bot_token",
     "telegram_bot_username",
     "discord_bot_token",
@@ -5062,6 +5064,12 @@ pub(crate) async fn get_user_settings(
         match *key {
             "github_token" => {
                 obj.insert("github_token_set".to_string(), json!(!val.is_empty()));
+            },
+            "gitlab_token" => {
+                obj.insert("gitlab_token_set".to_string(), json!(!val.is_empty()));
+            },
+            "codeberg_token" => {
+                obj.insert("codeberg_token_set".to_string(), json!(!val.is_empty()));
             },
             "telegram_bot_token" => {
                 // Exposed via dedicated telegram-bot endpoints, not here
@@ -6409,17 +6417,59 @@ pub(crate) async fn delete_user_knowledge_repo_handler(
     Ok(Json(json!({ "repos": repos })))
 }
 
+/// Inject a PAT into a git HTTPS URL using the provider's required format.
+/// GitHub: https://x-access-token:TOKEN@github.com/...
+/// GitLab/Codeberg: https://oauth2:TOKEN@host/...
+fn inject_git_token(url: &str, username: &str, token: &str) -> String {
+    if token.is_empty() { return url.to_string(); }
+    for prefix in &["https://", "http://"] {
+        if let Some(rest) = url.strip_prefix(prefix) {
+            return format!("{}{}:{}@{}", prefix, username, token, rest);
+        }
+    }
+    url.to_string()
+}
+
+/// Returns (git_username, token) for the URL based on stored user settings.
+fn git_token_for_url(url: &str, settings: &std::collections::HashMap<String, String>) -> (String, String) {
+    if url.contains("github.com") {
+        ("x-access-token".into(), settings.get("github_token").cloned().unwrap_or_default())
+    } else if url.contains("gitlab.com") || url.contains("gitlab.") {
+        ("oauth2".into(), settings.get("gitlab_token").cloned().unwrap_or_default())
+    } else if url.contains("codeberg.org") {
+        ("oauth2".into(), settings.get("codeberg_token").cloned().unwrap_or_default())
+    } else {
+        (String::new(), String::new())
+    }
+}
+
 pub(crate) async fn clone_knowledge_repo(id: i64, url: &str, data_dir: &str, db: &Arc<borg_core::db::Db>) {
+    // Look up credentials: for user-scoped repos use the owner's stored tokens
+    let repos = db.list_all_knowledge_repos().unwrap_or_default();
+    let effective_url = if let Some(repo) = repos.iter().find(|r| r.id == id) {
+        if let Some(uid) = repo.user_id {
+            let settings = db.get_all_user_settings(uid).unwrap_or_default();
+            let (username, token) = git_token_for_url(url, &settings);
+            inject_git_token(url, &username, &token)
+        } else {
+            url.to_string()
+        }
+    } else {
+        url.to_string()
+    };
+
     let dest = format!("{}/knowledge-repos/{}", data_dir, id);
     let _ = std::fs::create_dir_all(&dest);
     let result = if std::path::Path::new(&dest).join(".git").exists() {
         tokio::process::Command::new("git")
             .args(["-C", &dest, "pull", "--ff-only", "--quiet"])
+            .env("GIT_TERMINAL_PROMPT", "0")
             .output()
             .await
     } else {
         tokio::process::Command::new("git")
-            .args(["clone", "--depth=1", "--quiet", url, &dest])
+            .args(["clone", "--depth=1", "--quiet", &effective_url, &dest])
+            .env("GIT_TERMINAL_PROMPT", "0")
             .output()
             .await
     };
