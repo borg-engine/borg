@@ -12,6 +12,8 @@ import {
   type Settings,
   setRepoBackend,
   startLinkedCredentialConnect,
+  connectTelegramBot,
+  disconnectTelegramBot,
   updateSettings,
   updateUserSettings,
   useCacheVolumes,
@@ -127,6 +129,7 @@ export function SettingsPanel() {
           </div>
           <UserModelPicker />
           <GitHubTokenField />
+          <TelegramBotField />
         </Section>
 
         {user && (
@@ -771,6 +774,115 @@ function GitHubTokenField() {
           >
             Cancel
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TelegramBotField() {
+  const queryClient = useQueryClient();
+  const { data: userSettings } = useUserSettings();
+  const [editing, setEditing] = useState(false);
+  const [token, setToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!userSettings) return null;
+
+  const connected = userSettings.telegram_bot_connected;
+  const botUsername = userSettings.telegram_bot_username;
+
+  async function handleConnect() {
+    setSaving(true);
+    setError("");
+    try {
+      await connectTelegramBot(token);
+      setToken("");
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to connect");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setSaving(true);
+    try {
+      await disconnectTelegramBot();
+      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <Label>Telegram Bot</Label>
+          <Desc>Connect your own Telegram bot to chat with Borg. Create one via @BotFather.</Desc>
+        </div>
+        {!editing && (
+          <div className="flex items-center gap-2">
+            {connected && (
+              <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-400">
+                @{botUsername}
+              </span>
+            )}
+            <button
+              onClick={() => setEditing(true)}
+              className="rounded-md border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+            >
+              {connected ? "Change" : "Connect"}
+            </button>
+            {connected && (
+              <button
+                onClick={handleDisconnect}
+                disabled={saving}
+                className="rounded-md border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1.5 text-[12px] text-red-400/70 hover:text-red-400 transition-colors"
+              >
+                Disconnect
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {editing && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Bot token from @BotFather"
+              className="flex-1 rounded-md border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/40 placeholder:text-[#4a4540]"
+              autoFocus
+            />
+            <button
+              onClick={handleConnect}
+              disabled={saving || !token.trim()}
+              className={cn(
+                "rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[12px] font-medium text-amber-400 transition-colors hover:bg-amber-500/20",
+                (saving || !token.trim()) && "opacity-50 cursor-not-allowed",
+              )}
+            >
+              {saving ? "Verifying..." : "Connect"}
+            </button>
+            <button
+              onClick={() => {
+                setEditing(false);
+                setToken("");
+                setError("");
+              }}
+              className="rounded-md border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+          {error && <div className="text-[11px] text-red-400">{error}</div>}
         </div>
       )}
     </div>

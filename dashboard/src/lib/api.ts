@@ -245,6 +245,8 @@ export interface UserSettings {
   model_override_active: boolean;
   github_token_set: boolean;
   github_token?: string;
+  telegram_bot_connected: boolean;
+  telegram_bot_username: string;
 }
 
 export function useUserSettings() {
@@ -261,6 +263,25 @@ export async function updateUserSettings(settings: Partial<UserSettings>): Promi
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
   });
+  return r.json();
+}
+
+export async function connectTelegramBot(token: string): Promise<{ ok: boolean; bot_username: string }> {
+  const r = await apiFetch("/api/user/telegram-bot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!r.ok) {
+    if (r.status === 422) throw new Error("Invalid bot token");
+    throw new Error(`Failed to connect bot (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function disconnectTelegramBot(): Promise<{ ok: boolean }> {
+  const r = await apiFetch("/api/user/telegram-bot", { method: "DELETE" });
+  if (!r.ok) throw new Error(`${r.status}`);
   return r.json();
 }
 
@@ -379,10 +400,31 @@ export class AuthEventSource {
   }
 }
 
+const HTTP_STATUS_TEXT: Record<number, string> = {
+  400: "Bad Request",
+  401: "Unauthorized",
+  403: "Forbidden",
+  404: "Not Found",
+  408: "Request Timeout",
+  429: "Too Many Requests",
+  500: "Internal Server Error",
+  502: "Bad Gateway",
+  503: "Service Unavailable",
+  504: "Gateway Timeout",
+};
+
 async function fetchJson<T>(path: string): Promise<T> {
   await tokenReady;
   const res = await fetch(`${apiBase()}${path}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`${res.status}`);
+  if (!res.ok) {
+    const reason = HTTP_STATUS_TEXT[res.status] ?? res.statusText ?? "Unknown";
+    let body = "";
+    try {
+      body = (await res.text()).trim().slice(0, 300);
+    } catch {}
+    const detail = body ? `\n${body}` : "";
+    throw new Error(`Error ${res.status}: ${reason}${detail}`);
+  }
   return res.json();
 }
 

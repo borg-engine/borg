@@ -5027,7 +5027,15 @@ pub(crate) async fn add_workspace_member(
 
 // ── Per-user settings ────────────────────────────────────────────────────
 
-const USER_SETTINGS_KEYS: &[&str] = &["model", "backend", "github_token"];
+const USER_SETTINGS_KEYS: &[&str] = &[
+    "model",
+    "backend",
+    "github_token",
+    "telegram_bot_token",
+    "telegram_bot_username",
+];
+/// Keys that cannot be set via the generic PUT endpoint (use dedicated routes).
+const USER_SETTINGS_PROTECTED: &[&str] = &["telegram_bot_token", "telegram_bot_username"];
 
 pub(crate) async fn get_user_settings(
     State(state): State<Arc<AppState>>,
@@ -5042,10 +5050,16 @@ pub(crate) async fn get_user_settings(
     let mut obj = serde_json::Map::new();
     for key in USER_SETTINGS_KEYS {
         let val = settings.get(*key).cloned().unwrap_or_default();
-        if *key == "github_token" {
-            obj.insert("github_token_set".to_string(), json!(!val.is_empty()));
-        } else {
-            obj.insert(key.to_string(), json!(val));
+        match *key {
+            "github_token" => {
+                obj.insert("github_token_set".to_string(), json!(!val.is_empty()));
+            },
+            "telegram_bot_token" => {
+                // Exposed via dedicated telegram-bot endpoints, not here
+            },
+            _ => {
+                obj.insert(key.to_string(), json!(val));
+            },
         }
     }
     obj.insert(
@@ -5053,6 +5067,15 @@ pub(crate) async fn get_user_settings(
         json!(model_override.unwrap_or_default()),
     );
     obj.insert("model_override_active".to_string(), json!(has_override));
+
+    // Telegram bot status
+    let tg_username = settings.get("telegram_bot_username").cloned().unwrap_or_default();
+    let tg_connected = !settings
+        .get("telegram_bot_token")
+        .map(|t| t.is_empty())
+        .unwrap_or(true);
+    obj.insert("telegram_bot_connected".to_string(), json!(tg_connected));
+    obj.insert("telegram_bot_username".to_string(), json!(tg_username));
 
     Ok(Json(Value::Object(obj)))
 }
@@ -5065,7 +5088,9 @@ pub(crate) async fn put_user_settings(
     let map = body.as_object().ok_or(StatusCode::BAD_REQUEST)?;
     let mut updated = 0usize;
     for (key, val) in map {
-        if !USER_SETTINGS_KEYS.contains(&key.as_str()) {
+        if !USER_SETTINGS_KEYS.contains(&key.as_str())
+            || USER_SETTINGS_PROTECTED.contains(&key.as_str())
+        {
             continue;
         }
         let s = match val {
@@ -5086,6 +5111,75 @@ pub(crate) async fn put_user_settings(
         updated += 1;
     }
     Ok(Json(json!({ "updated": updated })))
+}
+
+// ── Per-user Telegram bot ─────────────────────────────────────────────
+
+pub(crate) async fn connect_telegram_bot(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, StatusCode> {
+    let token = body["token"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    // Validate the token by calling getMe
+    let client = reqwest::Client::new();
+    let resp: Value = client
+        .get(format!("https://api.telegram.org/bot{token}/getMe"))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?
+        .json()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    let username = resp["result"]["username"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or(StatusCode::UNPROCESSABLE_ENTITY)?
+        .to_string();
+
+    state
+        .db
+        .set_user_setting(user.id, "telegram_bot_token", token)
+        .map_err(internal)?;
+    state
+        .db
+        .set_user_setting(user.id, "telegram_bot_username", &username)
+        .map_err(internal)?;
+
+    tracing::info!(
+        user_id = user.id,
+        bot = %username,
+        "user connected telegram bot"
+    );
+
+    Ok(Json(json!({
+        "ok": true,
+        "bot_username": username,
+    })))
+}
+
+pub(crate) async fn disconnect_telegram_bot(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+) -> Result<Json<Value>, StatusCode> {
+    state
+        .db
+        .delete_user_setting(user.id, "telegram_bot_token")
+        .map_err(internal)?;
+    state
+        .db
+        .delete_user_setting(user.id, "telegram_bot_username")
+        .map_err(internal)?;
+
+    tracing::info!(user_id = user.id, "user disconnected telegram bot");
+
+    Ok(Json(json!({ "ok": true })))
 }
 
 // SSE logs — replays ring buffer history then streams live events

@@ -9,6 +9,7 @@ mod routes;
 mod routes_modes;
 mod search;
 mod storage;
+mod user_bots;
 mod vespa;
 
 use std::{
@@ -503,6 +504,19 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Per-user Telegram bot manager
+    {
+        let mgr = Arc::new(user_bots::UserBotManager::new(
+            Arc::clone(&db),
+            Arc::clone(&config),
+            search.clone(),
+            Arc::clone(&file_storage),
+            chat_event_tx.clone(),
+            Arc::clone(&ai_request_count),
+        ));
+        tokio::spawn(async move { mgr.run().await });
+    }
+
     // Self-update detection loop
     if let Some(self_repo) = config.watched_repos.iter().find(|r| r.is_self).cloned() {
         let check_interval = config.remote_check_interval_s as u64;
@@ -975,6 +989,10 @@ async fn main() -> anyhow::Result<()> {
         // Per-user settings
         .route("/api/user/settings", get(routes::get_user_settings))
         .route("/api/user/settings", put(routes::put_user_settings))
+        .route(
+            "/api/user/telegram-bot",
+            post(routes::connect_telegram_bot).delete(routes::disconnect_telegram_bot),
+        )
         .route(
             "/api/user/linked-credentials",
             get(routes::list_user_linked_credentials),
