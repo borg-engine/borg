@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, FolderOpen, Globe, Mic, MicOff, Send, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Copy, FolderOpen, Globe, Mic, MicOff, Send, Sparkles } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StreamEvent } from "@/lib/api";
 import {
@@ -301,7 +301,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
           {sending && streamLines.length > 0 && (
             <div className="flex gap-2">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/[0.06]">
-                <span className="text-[10px] font-bold text-amber-300">B</span>
+                <span className="text-[13px]">🤖</span>
               </div>
               <div className="min-w-0 flex-1 pt-0.5">
                 <AgentTimeline lines={streamLines} streaming hideFinalOutput />
@@ -312,7 +312,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
           {sending && streamLines.length === 0 && (
             <div className="flex gap-2">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/[0.06]">
-                <span className="text-[10px] font-bold text-amber-300">B</span>
+                <span className="text-[13px]">🤖</span>
               </div>
               <div className="flex items-center gap-2 pt-2">
                 <span className="relative flex h-1.5 w-1.5">
@@ -383,21 +383,21 @@ function threadLabel(id: string, projects: { id: number; name: string }[]): stri
 
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   const isUser = msg.role === "user";
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(msg.text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   return (
-    <div className={cn("flex gap-2", isUser && "flex-row-reverse")}>
-      <div
-        className={cn(
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 ring-white/[0.06]",
-          isUser
-            ? "bg-gradient-to-br from-amber-400/20 to-yellow-500/20"
-            : "bg-gradient-to-br from-amber-500/20 to-orange-500/20",
-        )}
-      >
-        <span className={cn("text-[10px] font-bold", isUser ? "text-amber-200" : "text-amber-300")}>
-          {isUser ? "U" : "B"}
-        </span>
-      </div>
+    <div className={cn("group flex gap-2", isUser && "flex-row-reverse")}>
+      {!isUser && (
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/[0.06]">
+          <span className="text-[13px]">🤖</span>
+        </div>
+      )}
       <div className={cn("min-w-0 max-w-[85%]", isUser && "flex flex-col items-end")}>
         <div
           className={cn(
@@ -413,6 +413,13 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
             <ChatMarkdown text={msg.text} variant="bubble" />
           )}
         </div>
+        <button
+          onClick={handleCopy}
+          className="mt-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-[#4a443d] opacity-0 transition-opacity hover:text-[#9c9486] group-hover:opacity-100"
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
       </div>
     </div>
   );

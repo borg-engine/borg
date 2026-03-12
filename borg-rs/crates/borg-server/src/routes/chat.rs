@@ -62,7 +62,15 @@ pub(crate) fn project_chat_key(project_id: i64) -> String {
 }
 
 pub(crate) fn parse_project_chat_key(chat_key: &str) -> Option<i64> {
-    chat_key.strip_prefix("project:")?.parse::<i64>().ok()
+    // Direct project key: "project:3"
+    if let Some(id) = chat_key.strip_prefix("project:").and_then(|s| s.parse::<i64>().ok()) {
+        return Some(id);
+    }
+    // Web workspace-scoped: "web:workspace:1:web:project-3"
+    if let Some(rest) = chat_key.rsplit_once("web:project-") {
+        return rest.1.parse::<i64>().ok();
+    }
+    None
 }
 
 pub(crate) fn workspace_chat_prefix(workspace_id: i64) -> String {
