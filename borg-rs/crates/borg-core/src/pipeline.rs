@@ -677,6 +677,31 @@ impl Pipeline {
     /// After 3 failed attempts, clears the session ID to force a fresh start and
     /// builds a summary of previous attempts so the new session has context.
     fn fail_or_retry(&self, task: &Task, retry_status: &str, error: &str) -> Result<()> {
+        if classify_retry_error(error) == RetryClass::Authentication {
+            let reason = format!(
+                "operator action required: backend authentication failed and automatic retry will not recover it: {error}"
+            );
+            self.db
+                .update_task_status(task.id, "blocked", Some(&reason))?;
+            let project_id = if task.project_id > 0 {
+                Some(task.project_id)
+            } else {
+                None
+            };
+            let _ = self.db.log_event_full(
+                Some(task.id),
+                None,
+                project_id,
+                "pipeline",
+                "task.authentication_blocked",
+                &serde_json::json!({
+                    "phase": retry_status,
+                    "error": error,
+                }),
+            );
+            return Ok(());
+        }
+
         let repeat_count = self.note_failure_signature(task.id, retry_status, error);
         let stuck_loop_threshold = failure_repeat_block_threshold(error);
         if repeat_count >= stuck_loop_threshold {
@@ -4865,6 +4890,7 @@ enum RetryClass {
     Resource,
     Transient,
     Conflict,
+    Authentication,
     Other,
 }
 
@@ -4950,6 +4976,17 @@ fn cleanup_tmp_prefixes(base: &str, prefixes: &[&str]) -> usize {
 
 fn classify_retry_error(error: &str) -> RetryClass {
     let err = error.to_ascii_lowercase();
+    if err.contains("invalid authentication credentials")
+        || err.contains("\"type\":\"authentication_error\"")
+        || err.contains("authentication_error")
+        || err.contains("unauthorized")
+        || (err.contains("api key")
+            && (err.contains("invalid") || err.contains("missing") || err.contains("incorrect")))
+        || (err.contains("oauth token")
+            && (err.contains("invalid") || err.contains("expired") || err.contains("revoked")))
+    {
+        return RetryClass::Authentication;
+    }
     if err.contains("no space left on device")
         || err.contains("failed to copy file")
         || err.contains("inode")
@@ -6169,6 +6206,12 @@ mod legal_benchmark_clarification_guard_tests {
             failure_repeat_block_threshold("ordinary transient error"),
             3
         );
+    }
+
+    #[test]
+    fn classifies_provider_authentication_errors_separately() {
+        let sample = r#"Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}"#;
+        assert_eq!(super::classify_retry_error(sample), super::RetryClass::Authentication);
     }
 }
 
