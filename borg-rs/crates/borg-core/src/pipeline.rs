@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     ffi::CString,
+    hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -121,8 +122,14 @@ impl Pipeline {
         true
     }
 
-    fn task_session_dir(task_id: i64) -> String {
-        let rel = format!("store/sessions/task-{task_id}");
+    fn task_session_dir_rel(task: &Task) -> String {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        task.repo_path.hash(&mut hasher);
+        format!("store/sessions/task-{}-{:016x}", task.id, hasher.finish())
+    }
+
+    fn task_session_dir(task: &Task) -> String {
+        let rel = Self::task_session_dir_rel(task);
         std::fs::canonicalize(&rel)
             .unwrap_or_else(|_| std::path::PathBuf::from(&rel))
             .to_string_lossy()
@@ -1451,9 +1458,9 @@ impl Pipeline {
         phase: &PhaseConfig,
         mode: &PipelineMode,
     ) -> Result<()> {
-        let session_dir_rel = format!("store/sessions/task-{}", task.id);
+        let session_dir_rel = Self::task_session_dir_rel(task);
         tokio::fs::create_dir_all(&session_dir_rel).await.ok();
-        let session_dir = Self::task_session_dir(task.id);
+        let session_dir = Self::task_session_dir(task);
 
         // Use the task worktree as work_dir when available (created in setup_branch).
         // This ensures Docker containers bind-mount the actual repo, not the session dir.
@@ -2577,7 +2584,7 @@ and report what went wrong.",
             ..PhaseConfig::default()
         };
 
-        let session_dir_rel = format!("store/sessions/task-{}", task.id);
+        let session_dir_rel = Self::task_session_dir_rel(task);
         tokio::fs::create_dir_all(&session_dir_rel).await.ok();
         let session_dir = std::fs::canonicalize(&session_dir_rel)
             .unwrap_or_else(|_| std::path::PathBuf::from(&session_dir_rel))
@@ -2705,7 +2712,7 @@ minimal changes needed. After editing, do not run the linter yourself — the pi
             return Ok(());
         }
 
-        let session_dir = Self::task_session_dir(task.id);
+        let session_dir = Self::task_session_dir(task);
 
         for fix_attempt in 0..2u32 {
             let lint_output_text = format!("{}\n{}", lint_out.stdout, lint_out.stderr)
@@ -2806,7 +2813,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         check_cmd: &str,
         initial_errors: &str,
     ) -> Result<bool> {
-        let session_dir = Self::task_session_dir(task.id);
+        let session_dir = Self::task_session_dir(task);
 
         let mut errors = initial_errors.to_string();
 
@@ -6212,6 +6219,21 @@ mod legal_benchmark_clarification_guard_tests {
     fn classifies_provider_authentication_errors_separately() {
         let sample = r#"Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}"#;
         assert_eq!(super::classify_retry_error(sample), super::RetryClass::Authentication);
+    }
+
+    #[test]
+    fn session_dirs_do_not_collide_for_same_task_id_across_repo_paths() {
+        let mut first = sample_task();
+        first.repo_path = "/tmp/borg-a/.worktrees/task-1".into();
+
+        let mut second = sample_task();
+        second.repo_path = "/tmp/borg-b/.worktrees/task-1".into();
+
+        assert_ne!(
+            super::Pipeline::task_session_dir_rel(&first),
+            super::Pipeline::task_session_dir_rel(&second),
+            "fresh databases that reuse task ids must not share on-disk session state"
+        );
     }
 }
 
