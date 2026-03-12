@@ -304,7 +304,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
                 <span className="text-[10px] font-bold text-amber-300">B</span>
               </div>
               <div className="min-w-0 flex-1 pt-0.5">
-                <AgentTimeline lines={streamLines} streaming />
+                <AgentTimeline lines={streamLines} streaming hideFinalOutput />
               </div>
             </div>
           )}

@@ -76,11 +76,7 @@ pub(crate) fn scoped_workspace_chat_thread(workspace_id: i64, requested: &str) -
     } else {
         requested
     };
-    format!(
-        "{}{}",
-        workspace_chat_prefix(workspace_id),
-        sanitize_chat_key(requested)
-    )
+    format!("{}{}", workspace_chat_prefix(workspace_id), requested)
 }
 
 pub(crate) fn visible_workspace_chat_thread(workspace_id: i64, chat_jid: &str) -> Option<String> {
@@ -123,7 +119,8 @@ pub(crate) async fn run_chat_agent(
         config.data_dir,
         sanitize_chat_key(chat_key)
     );
-    std::fs::create_dir_all(&session_dir)?;
+    std::fs::create_dir_all(&session_dir)
+        .map_err(|e| anyhow::anyhow!("create session dir {session_dir}: {e}"))?;
 
     let ts_secs = Utc::now().timestamp();
     for (i, msg) in messages.iter().enumerate() {
@@ -356,6 +353,7 @@ pub(crate) async fn run_chat_agent(
 
     let timeout = std::time::Duration::from_secs(config.agent_timeout_s.max(300) as u64);
     ai_request_count.fetch_add(1, Ordering::Relaxed);
+    tracing::info!("spawning chat agent for {chat_key} dir={session_dir} token_len={}", token.len());
     let mut child = tokio::process::Command::new("claude")
         .args(&args)
         .current_dir(&session_dir)
@@ -365,7 +363,8 @@ pub(crate) async fn run_chat_agent(
         .env("API_TOKEN", &api_token)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("spawn claude for {chat_key}: {e}"))?;
 
     let stdout = child.stdout.take().expect("stdout piped");
     let stderr = child.stderr.take().expect("stderr piped");
@@ -459,7 +458,8 @@ pub(crate) async fn run_chat_agent(
             "run_id": run_id,
         })
         .to_string();
-        let _ = chat_event_tx.send(event);
+        let receivers = chat_event_tx.send(event).unwrap_or(0);
+        tracing::info!(chat_key, receivers, "broadcast chat_reply to SSE clients");
     }
 
     Ok(text)
@@ -469,9 +469,11 @@ pub(crate) async fn sse_chat_events(
     State(state): State<Arc<AppState>>,
     axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    tracing::info!(workspace_id = workspace.id, "SSE chat/events client connected");
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let mut live_rx = state.chat_event_tx.subscribe();
     let db = Arc::clone(&state.db);
+    let ws_id = workspace.id;
     tokio::spawn(async move {
         loop {
             match live_rx.recv().await {
@@ -483,18 +485,26 @@ pub(crate) async fn sse_chat_events(
                                 let thread = payload.get("thread")?.as_str()?;
                                 let visible = visible_chat_thread_for_workspace(
                                     db.as_ref(),
-                                    workspace.id,
+                                    ws_id,
                                     thread,
                                 )?;
+                                tracing::info!(
+                                    ws_id,
+                                    internal_thread = thread,
+                                    visible_thread = %visible,
+                                    "SSE forwarding chat event"
+                                );
                                 if let Some(obj) = payload.as_object_mut() {
                                     obj.insert("thread".into(), Value::String(visible));
                                 }
                                 serde_json::to_string(&payload).ok()
                             })
                     else {
+                        tracing::info!(ws_id, "SSE event filtered out (not in workspace)");
                         continue;
                     };
                     if tx.send(filtered).is_err() {
+                        tracing::debug!(ws_id, "SSE client disconnected");
                         return;
                     }
                 },

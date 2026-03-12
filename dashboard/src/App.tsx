@@ -33,14 +33,11 @@ import { TaskList } from "@/components/task-list";
 import type { LinkedCredentialConnectSession } from "@/lib/api";
 import {
   fetchLinkedCredentialConnectSession,
-  getSelectedWorkspaceId,
   startLinkedCredentialConnect,
   submitCredentialConnectCode,
-  switchWorkspace,
   useLinkedCredentials,
   useLogs,
   useStatus,
-  useWorkspaces,
 } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { DashboardModeProvider, useDashboardMode } from "@/lib/dashboard-mode";
@@ -314,31 +311,40 @@ function OnboardingModal() {
                 )}
                 {isOpenAIPending && (
                   <div className="space-y-2">
-                    <p className="text-[11px] text-[#9c9486]">
-                      Follow the instructions in the opened tab, then paste the device code here:
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={codes[provider] ?? ""}
-                        onChange={(e) => setCodes((prev) => ({ ...prev, [provider]: e.target.value }))}
-                        onKeyDown={(e) => e.key === "Enter" && handleSubmitCode(provider)}
-                        placeholder="Paste device code"
-                        className="flex-1 min-w-0 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/30 placeholder:text-[#4a4540]"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => handleSubmitCode(provider)}
-                        disabled={submittingCode === provider || !codes[provider]?.trim()}
-                        className="shrink-0 rounded-lg bg-amber-500/15 px-3 py-1.5 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20 disabled:opacity-40"
-                      >
-                        {submittingCode === provider ? "..." : "Submit"}
-                      </button>
-                    </div>
-                    {session.message && (
-                      <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] text-[#9c9486] break-all overflow-hidden max-w-full">
-                        {session.message}
-                      </div>
+                    {authUrl ? (
+                      <>
+                        <a
+                          href={authUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block truncate rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-amber-400 hover:text-amber-300 transition-colors"
+                          title={authUrl}
+                        >
+                          1. Click here to open OpenAI authorization
+                        </a>
+                        {session.device_code ? (
+                          <>
+                            <p className="text-[11px] text-[#9c9486]">2. Enter this code on the page:</p>
+                            <div
+                              className="flex items-center justify-center gap-2 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-4 py-3 cursor-pointer hover:border-amber-500/30 transition-colors"
+                              onClick={() => navigator.clipboard.writeText(session.device_code)}
+                              title="Click to copy"
+                            >
+                              <span className="font-mono text-[18px] font-bold tracking-widest text-[#e8e0d4]">
+                                {session.device_code}
+                              </span>
+                              <span className="text-[11px] text-[#4a4540]">(click to copy)</span>
+                            </div>
+                            <p className="text-[11px] text-[#6b6459]">
+                              3. After authorizing, this dialog will update automatically.
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-[11px] text-[#9c9486]">Waiting for device code...</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-[#9c9486]">Waiting for login instructions...</p>
                     )}
                   </div>
                 )}
@@ -426,14 +432,11 @@ function AppInner() {
   const [mobileBottomTab, setMobileBottomTab] = useState<"queue" | "proposals">("proposals");
   const { logs, connected } = useLogs();
   const { data: status } = useStatus();
-  const { data: workspaceData } = useWorkspaces();
   const { mode: uiMode } = useUIMode();
   const vocab = useVocabulary();
   const isMobile = useIsMobile();
-  const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
   const defaultView = useMemo(() => detectDefaultView(domain, status?.watched_repos), [domain, status]);
   const sidebarAlert = !!status?.guardrail_alert;
-  const selectedWorkspaceId = getSelectedWorkspaceId() ?? workspaceData?.default_workspace_id ?? 0;
   useEffect(() => {
     setView((curr) => (curr === "projects" || curr === "tasks" ? defaultView : curr));
   }, [defaultView]);
@@ -629,33 +632,6 @@ function AppInner() {
                 title={`${status?.dispatched_agents} active agent(s)`}
               >
                 <span className="text-[11px] font-bold tabular-nums text-amber-400">{status?.dispatched_agents}</span>
-              </div>
-            )}
-            {(workspaceData?.workspaces.length ?? 0) > 0 && (
-              <div className="w-full px-[10px] opacity-0 pointer-events-none group-hover/nav:pointer-events-auto group-hover/nav:opacity-100 transition-opacity duration-200">
-                <select
-                  value={selectedWorkspaceId || ""}
-                  disabled={switchingWorkspace}
-                  onChange={async (e) => {
-                    const nextId = Number(e.target.value);
-                    if (!nextId || nextId === selectedWorkspaceId) return;
-                    try {
-                      setSwitchingWorkspace(true);
-                      await switchWorkspace(nextId);
-                      window.location.reload();
-                    } finally {
-                      setSwitchingWorkspace(false);
-                    }
-                  }}
-                  className="h-7 w-full rounded-lg border border-[#2a2520] bg-amber-500/[0.03] px-2 text-[11px] text-[#9c9486] outline-none"
-                  title="Workspace"
-                >
-                  {workspaceData?.workspaces.map((workspace) => (
-                    <option key={workspace.workspace_id} value={workspace.workspace_id}>
-                      {workspace.name}
-                    </option>
-                  ))}
-                </select>
               </div>
             )}
             <div

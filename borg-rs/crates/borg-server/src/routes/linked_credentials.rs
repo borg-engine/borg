@@ -73,7 +73,29 @@ fn trim_token(text: &str) -> &str {
     })
 }
 
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                while let Some(&nc) = chars.peek() {
+                    chars.next();
+                    if nc.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn extract_first_url(text: &str) -> Option<String> {
+    let text = strip_ansi(text);
     text.split_whitespace().find_map(|token| {
         let token = trim_token(token);
         if token.starts_with("https://") || token.starts_with("http://") {
@@ -85,6 +107,7 @@ fn extract_first_url(text: &str) -> Option<String> {
 }
 
 fn extract_device_code(text: &str) -> Option<String> {
+    let text = strip_ansi(text);
     text.split_whitespace().find_map(|token| {
         let token = trim_token(token);
         let valid = token.contains('-')
@@ -960,10 +983,26 @@ mod tests {
     }
 
     #[test]
+    fn extracts_url_with_ansi_codes() {
+        assert_eq!(
+            extract_first_url("   \x1b[94mhttps://auth.openai.com/codex/device\x1b[0m"),
+            Some("https://auth.openai.com/codex/device".to_string())
+        );
+    }
+
+    #[test]
     fn extracts_device_code_tokens() {
         assert_eq!(
             extract_device_code("Enter this one-time code O078-ZFUYD"),
             Some("O078-ZFUYD".to_string())
+        );
+    }
+
+    #[test]
+    fn extracts_device_code_with_ansi_codes() {
+        assert_eq!(
+            extract_device_code("   \x1b[94mRO4V-NTCJL\x1b[0m"),
+            Some("RO4V-NTCJL".to_string())
         );
     }
 
