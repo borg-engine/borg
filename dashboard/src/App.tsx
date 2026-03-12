@@ -238,8 +238,9 @@ function OnboardingModal() {
             const isConnected = session?.status === "connected";
             const isPending = session?.status === "pending";
             const isBusy = busyProvider === provider;
-            const showCodeInput = isPending && provider === "claude";
+            const showCodeInput = isPending && provider !== "claude";
             const authUrl = session?.auth_url || "";
+            const isClaudePending = isPending && provider === "claude";
             return (
               <div key={provider} className="rounded-xl border border-[#2a2520] bg-[#0e0c0a] p-4 space-y-2">
                 <div className="flex items-center justify-between gap-3">
@@ -261,24 +262,38 @@ function OnboardingModal() {
                     </button>
                   )}
                 </div>
+                {isClaudePending && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-[#9c9486]">
+                      {authUrl
+                        ? "Click the link below to authorize, then return here. This dialog will close automatically."
+                        : "Waiting for authorization URL..."}
+                    </p>
+                    {authUrl && (
+                      <a
+                        href={authUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block truncate rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-amber-400 hover:text-amber-300 transition-colors"
+                        title={authUrl}
+                      >
+                        Open Claude authorization page
+                      </a>
+                    )}
+                  </div>
+                )}
                 {showCodeInput && (
                   <div className="space-y-2">
-                    {authUrl ? (
-                      <p className="text-[11px] text-[#9c9486]">
-                        Visit the link that opened, then paste the authentication code here:
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-[#9c9486]">
-                        Waiting for auth URL... Once a browser tab opens, authorize and paste the code here:
-                      </p>
-                    )}
+                    <p className="text-[11px] text-[#9c9486]">
+                      Follow the instructions in the opened tab, then paste the device code here:
+                    </p>
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
                         value={codes[provider] ?? ""}
                         onChange={(e) => setCodes((prev) => ({ ...prev, [provider]: e.target.value }))}
                         onKeyDown={(e) => e.key === "Enter" && handleSubmitCode(provider)}
-                        placeholder="Paste authentication code"
+                        placeholder="Paste device code"
                         className="flex-1 min-w-0 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/30 placeholder:text-[#4a4540]"
                         autoFocus
                       />
@@ -290,22 +305,11 @@ function OnboardingModal() {
                         {submittingCode === provider ? "..." : "Submit"}
                       </button>
                     </div>
-                    {authUrl && (
-                      <a
-                        href={authUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block truncate text-[11px] text-amber-400/60 hover:text-amber-400 transition-colors"
-                        title={authUrl}
-                      >
-                        {authUrl}
-                      </a>
+                    {session.message && (
+                      <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] text-[#9c9486] break-all overflow-hidden max-w-full">
+                        {session.message}
+                      </div>
                     )}
-                  </div>
-                )}
-                {isPending && !showCodeInput && (
-                  <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] text-[#9c9486] break-all overflow-hidden max-w-full">
-                    {session.message || "Follow the instructions in the opened tab, then wait here."}
                   </div>
                 )}
               </div>
