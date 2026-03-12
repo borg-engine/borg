@@ -96,12 +96,30 @@ cd borg-rs && cargo build --release && cd ..
 cd dashboard && bun install --frozen-lockfile && bun run build && cd ..
 docker build -t borg-agent -f container/Dockerfile container/
 
-cp deploy/borg.service /etc/systemd/system/${SERVICE_NAME}.service
-cp deploy/borg.socket /etc/systemd/system/${SERVICE_NAME}.socket
-systemctl daemon-reload
-systemctl enable ${SERVICE_NAME}.socket
-systemctl start ${SERVICE_NAME}.socket
-systemctl restart ${SERVICE_NAME}
+# Ensure borg user owns the entire working directory
+if id borg >/dev/null 2>&1; then
+  chown -R borg:borg ${REMOTE_DIR}/borg-rs/target/release/borg-server
+  chown -R borg:borg ${REMOTE_DIR}/dashboard/dist
+  chown -R borg:borg ${REMOTE_DIR}/store 2>/dev/null || true
+fi
+
+# Restart the borg user service (preferred) or fall back to system service
+if id borg >/dev/null 2>&1; then
+  BORG_UID=\$(id -u borg)
+  su - borg -c "export XDG_RUNTIME_DIR=/run/user/\${BORG_UID} && systemctl --user daemon-reload && systemctl --user restart ${SERVICE_NAME}" && echo "restarted user service" || {
+    echo "user service restart failed, falling back to system service"
+    cp deploy/borg.service /etc/systemd/system/${SERVICE_NAME}.service
+    systemctl daemon-reload
+    systemctl restart ${SERVICE_NAME}
+  }
+else
+  cp deploy/borg.service /etc/systemd/system/${SERVICE_NAME}.service
+  cp deploy/borg.socket /etc/systemd/system/${SERVICE_NAME}.socket
+  systemctl daemon-reload
+  systemctl enable ${SERVICE_NAME}.socket
+  systemctl start ${SERVICE_NAME}.socket
+  systemctl restart ${SERVICE_NAME}
+fi
 
 if [[ -n "${CF_TUNNEL_TOKEN}" ]]; then
   cloudflared service install "${CF_TUNNEL_TOKEN}" || true

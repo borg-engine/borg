@@ -670,16 +670,22 @@ pub(crate) async fn clone_knowledge_repo(
 
     let dest = format!("{}/knowledge-repos/{}", data_dir, id);
     let _ = std::fs::create_dir_all(&dest);
+    let safe_dir_env = [
+        ("GIT_TERMINAL_PROMPT", "0"),
+        ("GIT_CONFIG_COUNT", "1"),
+        ("GIT_CONFIG_KEY_0", "safe.directory"),
+        ("GIT_CONFIG_VALUE_0", "*"),
+    ];
     let result = if std::path::Path::new(&dest).join(".git").exists() {
         tokio::process::Command::new("git")
             .args(["-C", &dest, "pull", "--ff-only", "--quiet"])
-            .env("GIT_TERMINAL_PROMPT", "0")
+            .envs(safe_dir_env)
             .output()
             .await
     } else {
         tokio::process::Command::new("git")
             .args(["clone", "--depth=1", "--quiet", &effective_url, &dest])
-            .env("GIT_TERMINAL_PROMPT", "0")
+            .envs(safe_dir_env)
             .output()
             .await
     };

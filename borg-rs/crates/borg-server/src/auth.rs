@@ -327,6 +327,27 @@ fn is_exempt(path: &str) -> bool {
         || !path.starts_with("/api/")
 }
 
+// Sync admin workspace memberships at most once per 60s per user.
+fn sync_admin_memberships_if_stale(state: &AppState, user_id: i64) {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use std::time::Instant;
+    static LAST_SYNC: Mutex<Option<HashMap<i64, Instant>>> = Mutex::new(None);
+    let mut guard = LAST_SYNC.lock().unwrap_or_else(|e| e.into_inner());
+    let map = guard.get_or_insert_with(HashMap::new);
+    let now = Instant::now();
+    if let Some(last) = map.get(&user_id) {
+        if now.duration_since(*last).as_secs() < 60 {
+            return;
+        }
+    }
+    map.insert(user_id, now);
+    drop(guard);
+    if let Err(e) = state.db.ensure_admin_workspace_memberships(user_id) {
+        tracing::warn!(user_id, "failed to sync admin workspace memberships: {e}");
+    }
+}
+
 // ── Middleware ────────────────────────────────────────────────────────────
 
 pub async fn auth_middleware(
@@ -374,6 +395,9 @@ pub async fn auth_middleware(
     // Try JWT first
     if let Some(token) = extract_bearer(request.headers()) {
         if let Some(claims) = verify_jwt(token, &state.jwt_secret) {
+            if claims.is_admin {
+                sync_admin_memberships_if_stale(&state, claims.sub);
+            }
             let default_workspace_id = state
                 .db
                 .get_user_default_workspace_id(claims.sub)
