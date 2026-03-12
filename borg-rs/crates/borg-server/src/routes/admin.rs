@@ -1208,6 +1208,9 @@ const USER_SETTINGS_KEYS: &[&str] = &[
     "contact_email",
     "discord_bot_token",
     "discord_bot_username",
+    "slack_bot_token",
+    "slack_app_token",
+    "slack_bot_name",
     "dashboard_mode",
 ];
 const USER_SETTINGS_PROTECTED: &[&str] = &[
@@ -1215,6 +1218,9 @@ const USER_SETTINGS_PROTECTED: &[&str] = &[
     "telegram_bot_username",
     "discord_bot_token",
     "discord_bot_username",
+    "slack_bot_token",
+    "slack_app_token",
+    "slack_bot_name",
 ];
 
 pub(crate) async fn get_user_settings(
@@ -1239,8 +1245,8 @@ pub(crate) async fn get_user_settings(
             "codeberg_token" => {
                 obj.insert("codeberg_token_set".to_string(), json!(!val.is_empty()));
             },
-            "telegram_bot_token" => {
-                // Exposed via dedicated telegram-bot endpoints, not here
+            "telegram_bot_token" | "slack_bot_token" | "slack_app_token" | "slack_bot_name" => {
+                // Exposed via dedicated bot endpoints, not here
             },
             _ => {
                 obj.insert(key.to_string(), json!(val));
@@ -1268,6 +1274,14 @@ pub(crate) async fn get_user_settings(
         .unwrap_or(true);
     obj.insert("discord_bot_connected".to_string(), json!(dc_connected));
     obj.insert("discord_bot_username".to_string(), json!(dc_username));
+
+    let slack_bot_name = settings.get("slack_bot_name").cloned().unwrap_or_default();
+    let slack_connected = !settings
+        .get("slack_bot_token")
+        .map(|t| t.is_empty())
+        .unwrap_or(true);
+    obj.insert("slack_bot_connected".to_string(), json!(slack_connected));
+    obj.insert("slack_bot_name".to_string(), json!(slack_bot_name));
 
     Ok(Json(Value::Object(obj)))
 }
@@ -1447,6 +1461,115 @@ pub(crate) async fn get_whatsapp_status(
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     Json(serde_json::to_value(status).unwrap_or_default())
+}
+
+pub(crate) async fn logout_whatsapp(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, StatusCode> {
+    let sidecar_guard = state.sidecar_slot.lock().await;
+    let sidecar = sidecar_guard.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    sidecar.logout_whatsapp();
+    if let Ok(mut s) = state.wa_status.lock() {
+        s.connected = false;
+        s.jid = None;
+        s.qr = None;
+    }
+    tracing::info!("WhatsApp logout requested via dashboard");
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub(crate) async fn get_slack_status(
+    State(state): State<Arc<AppState>>,
+) -> Json<Value> {
+    let status = state
+        .slack_status
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    Json(serde_json::to_value(status).unwrap_or_default())
+}
+
+pub(crate) async fn connect_slack_bot(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, StatusCode> {
+    let bot_token = body["bot_token"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let app_token = body["app_token"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    let client = reqwest::Client::new();
+    let resp: Value = client
+        .post("https://slack.com/api/auth.test")
+        .bearer_auth(bot_token)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?
+        .json()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    if !resp["ok"].as_bool().unwrap_or(false) {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    let bot_name = resp["user"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("slack-bot")
+        .to_string();
+
+    state
+        .db
+        .set_user_setting(user.id, "slack_bot_token", bot_token)
+        .map_err(internal)?;
+    state
+        .db
+        .set_user_setting(user.id, "slack_app_token", app_token)
+        .map_err(internal)?;
+    state
+        .db
+        .set_user_setting(user.id, "slack_bot_name", &bot_name)
+        .map_err(internal)?;
+
+    tracing::info!(
+        user_id = user.id,
+        bot = %bot_name,
+        "user connected slack bot"
+    );
+
+    Ok(Json(json!({
+        "ok": true,
+        "bot_name": bot_name,
+    })))
+}
+
+pub(crate) async fn disconnect_slack_bot(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+) -> Result<Json<Value>, StatusCode> {
+    state
+        .db
+        .delete_user_setting(user.id, "slack_bot_token")
+        .map_err(internal)?;
+    state
+        .db
+        .delete_user_setting(user.id, "slack_app_token")
+        .map_err(internal)?;
+    state
+        .db
+        .delete_user_setting(user.id, "slack_bot_name")
+        .map_err(internal)?;
+
+    tracing::info!(user_id = user.id, "user disconnected slack bot");
+
+    Ok(Json(json!({ "ok": true })))
 }
 
 pub(crate) async fn sse_logs(

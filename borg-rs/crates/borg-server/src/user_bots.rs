@@ -26,10 +26,15 @@ struct RunningDiscordBot {
     token_hash: u64,
 }
 
-/// Manages per-user Telegram bot polling loops and Discord bots (via sidecar).
+struct RunningSlackBot {
+    token_hash: u64,
+}
+
+/// Manages per-user Telegram bot polling loops and Discord/Slack bots (via sidecar).
 pub struct UserBotManager {
     bots: TokioMutex<HashMap<i64, RunningBot>>,
     discord_bots: TokioMutex<HashMap<i64, RunningDiscordBot>>,
+    slack_bots: TokioMutex<HashMap<i64, RunningSlackBot>>,
     db: Arc<Db>,
     config: Arc<Config>,
     search: Option<Arc<SearchClient>>,
@@ -59,6 +64,7 @@ impl UserBotManager {
         Self {
             bots: TokioMutex::new(HashMap::new()),
             discord_bots: TokioMutex::new(HashMap::new()),
+            slack_bots: TokioMutex::new(HashMap::new()),
             db,
             config,
             search,
@@ -82,6 +88,7 @@ impl UserBotManager {
         // Telegram bots
         let mut desired_tg: HashMap<i64, String> = HashMap::new();
         let mut desired_dc: HashMap<i64, String> = HashMap::new();
+        let mut desired_slack: HashMap<i64, (String, String)> = HashMap::new();
         for (user_id, _, _, _, _) in &all_users {
             if let Ok(Some(token)) = self.db.get_user_setting(*user_id, "telegram_bot_token") {
                 if !token.is_empty() {
@@ -91,6 +98,14 @@ impl UserBotManager {
             if let Ok(Some(token)) = self.db.get_user_setting(*user_id, "discord_bot_token") {
                 if !token.is_empty() {
                     desired_dc.insert(*user_id, token);
+                }
+            }
+            if let (Ok(Some(bot_token)), Ok(Some(app_token))) = (
+                self.db.get_user_setting(*user_id, "slack_bot_token"),
+                self.db.get_user_setting(*user_id, "slack_app_token"),
+            ) {
+                if !bot_token.is_empty() && !app_token.is_empty() {
+                    desired_slack.insert(*user_id, (bot_token, app_token));
                 }
             }
         }
@@ -162,6 +177,42 @@ impl UserBotManager {
                 info!(user_id, "starting user discord bot");
                 sidecar.add_user_discord_bot(*user_id, token);
                 dc_bots.insert(*user_id, RunningDiscordBot { token_hash: th });
+            }
+
+            // Sync Slack bots via sidecar
+            let mut slack_bots = self.slack_bots.lock().await;
+
+            let to_remove: Vec<i64> = slack_bots
+                .keys()
+                .filter(|uid| {
+                    desired_slack
+                        .get(uid)
+                        .map(|(bt, at)| {
+                            hash_token(&format!("{bt}{at}")) != slack_bots[uid].token_hash
+                        })
+                        .unwrap_or(true)
+                })
+                .copied()
+                .collect();
+            for uid in to_remove {
+                if slack_bots.remove(&uid).is_some() {
+                    info!(user_id = uid, "stopping user slack bot");
+                    sidecar.remove_user_slack_bot(uid);
+                }
+            }
+
+            for (user_id, (bot_token, app_token)) in &desired_slack {
+                let th = hash_token(&format!("{bot_token}{app_token}"));
+                if slack_bots
+                    .get(user_id)
+                    .map(|b| b.token_hash == th)
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                info!(user_id, "starting user slack bot");
+                sidecar.add_user_slack_bot(*user_id, bot_token, app_token);
+                slack_bots.insert(*user_id, RunningSlackBot { token_hash: th });
             }
         }
     }

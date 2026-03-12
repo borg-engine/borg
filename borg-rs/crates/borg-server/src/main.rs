@@ -92,6 +92,20 @@ impl Default for WaStatus {
     }
 }
 
+/// Tracks the live Slack connection state from the sidecar.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SlackStatus {
+    pub connected: bool,
+    pub bot_id: Option<String>,
+    pub bot_name: Option<String>,
+}
+
+impl Default for SlackStatus {
+    fn default() -> Self {
+        Self { connected: false, bot_id: None, bot_name: None }
+    }
+}
+
 pub struct AppState {
     pub db: Arc<Db>,
     pub config: Arc<Config>,
@@ -122,6 +136,8 @@ pub struct AppState {
     pub(crate) linked_credential_stdins:
         Arc<TokioMutex<HashMap<String, tokio::process::ChildStdin>>>,
     pub wa_status: Arc<std::sync::Mutex<WaStatus>>,
+    pub slack_status: Arc<std::sync::Mutex<SlackStatus>>,
+    pub sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>>,
     pub shutdown: Arc<std::sync::atomic::AtomicBool>,
     pub active_chat_agents: Arc<std::sync::atomic::AtomicUsize>,
 }
@@ -178,7 +194,13 @@ fn send_sidecar_reply_with_user(
     reply_to: Option<&str>,
 ) {
     match source {
-        "slack" => sidecar.send_slack(chat_id, text, reply_to),
+        "slack" => {
+            if let Some(uid) = user_id {
+                sidecar.send_user_slack(uid, chat_id, text, reply_to);
+            } else {
+                sidecar.send_slack(chat_id, text, reply_to);
+            }
+        },
         "whatsapp" => sidecar.send_whatsapp(chat_id, text, reply_to),
         _ => {
             if let Some(uid) = user_id {
@@ -471,6 +493,7 @@ async fn spawn_sidecar_manager(
     ai_request_count: Arc<AtomicU64>,
     sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>>,
     wa_status: Arc<std::sync::Mutex<WaStatus>>,
+    slack_status: Arc<std::sync::Mutex<SlackStatus>>,
 ) {
     match Sidecar::spawn(
         &config.assistant_name,
@@ -593,6 +616,7 @@ async fn spawn_sidecar_manager(
                 let chat_tx_events = chat_event_tx.clone();
                 let events_ai_request_count = Arc::clone(&ai_request_count);
                 let wa_status_events = Arc::clone(&wa_status);
+                let slack_status_events = Arc::clone(&slack_status);
                 tokio::spawn(async move {
                     loop {
                         let Some(event) = event_rx.recv().await else {
@@ -616,6 +640,18 @@ async fn spawn_sidecar_manager(
                                 if let Ok(mut s) = wa_status_events.lock() {
                                     s.connected = false;
                                     s.jid = None;
+                                }
+                            },
+                            SidecarEvent::SlackReady { bot_id, bot_name } => {
+                                if let Ok(mut s) = slack_status_events.lock() {
+                                    s.connected = true;
+                                    s.bot_id = Some(bot_id.clone());
+                                    s.bot_name = Some(bot_name.clone());
+                                }
+                            },
+                            SidecarEvent::Disconnected { source: Source::Slack, .. } => {
+                                if let Ok(mut s) = slack_status_events.lock() {
+                                    s.connected = false;
                                 }
                             },
                             _ => {},
@@ -1257,6 +1293,12 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
             post(routes::connect_discord_bot).delete(routes::disconnect_discord_bot),
         )
         .route("/api/whatsapp/status", get(routes::get_whatsapp_status))
+        .route("/api/whatsapp/logout", post(routes::logout_whatsapp))
+        .route("/api/slack/status", get(routes::get_slack_status))
+        .route(
+            "/api/user/slack-bot",
+            post(routes::connect_slack_bot).delete(routes::disconnect_slack_bot),
+        )
         .route(
             "/api/user/linked-credentials",
             get(routes::list_user_linked_credentials),
@@ -1683,6 +1725,8 @@ async fn main() -> anyhow::Result<()> {
     let wa_status: Arc<std::sync::Mutex<WaStatus>> = Arc::new(std::sync::Mutex::new(
         WaStatus { disabled: config.wa_disabled, ..Default::default() },
     ));
+    let slack_status: Arc<std::sync::Mutex<SlackStatus>> =
+        Arc::new(std::sync::Mutex::new(SlackStatus::default()));
     spawn_user_bot_manager(
         Arc::clone(&db),
         Arc::clone(&config),
@@ -1712,6 +1756,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&ai_request_count),
         Arc::clone(&sidecar_slot),
         Arc::clone(&wa_status),
+        Arc::clone(&slack_status),
     )
     .await;
 
@@ -1772,6 +1817,8 @@ async fn main() -> anyhow::Result<()> {
         linked_credential_sessions: Arc::new(TokioMutex::new(HashMap::new())),
         linked_credential_stdins: Arc::new(TokioMutex::new(HashMap::new())),
         wa_status,
+        slack_status,
+        sidecar_slot,
         shutdown: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         active_chat_agents: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });

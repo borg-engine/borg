@@ -229,6 +229,9 @@ async function handleWhatsAppCommand(cmd) {
       await waSock.sendMessage(cmd.jid, { text: cmd.text }, opts);
     } else if (cmd.cmd === 'typing') {
       await waSock.sendPresenceUpdate('composing', cmd.jid);
+    } else if (cmd.cmd === 'logout') {
+      await waSock.logout();
+      emit('whatsapp', { event: 'logged_out', message: 'WhatsApp logged out by user' });
     }
   } catch (e) {
     emit('whatsapp', { event: 'error', jid: cmd.jid, message: e.message });
@@ -314,6 +317,94 @@ async function handleSlackCommand(cmd) {
     }
   } catch (e) {
     emit('slack', { event: 'error', channel_id: cmd.channel_id, message: e.message });
+  }
+}
+
+// ── Per-user Slack bots ──────────────────────────────────────────────────
+
+const userSlackBots = new Map(); // user_id -> { app, botId, botName }
+
+async function addUserSlackBot(cmd) {
+  const { user_id, bot_token, app_token } = cmd;
+  if (!user_id || !bot_token || !app_token) return;
+
+  await removeUserSlackBot({ user_id });
+
+  const { App } = await import('@slack/bolt');
+  const app = new App({
+    token: bot_token,
+    appToken: app_token,
+    socketMode: true,
+    logLevel: 'error',
+  });
+
+  let botUserId = null;
+
+  app.message(async ({ message }) => {
+    if (message.bot_id || message.subtype) return;
+    const text = message.text || '';
+    if (!text.trim()) return;
+
+    const isDm = message.channel_type === 'im';
+    const mentionsBot = botUserId
+      ? text.includes(`<@${botUserId}>`) || text.toLowerCase().includes('@' + ASSISTANT_NAME)
+      : text.toLowerCase().includes('@' + ASSISTANT_NAME);
+
+    emit('slack', {
+      event: 'message',
+      user_id,
+      channel_id: message.channel,
+      message_id: message.ts,
+      sender_id: message.user || '',
+      sender_name: message.user || '',
+      text,
+      timestamp: Math.floor(Number(message.ts)),
+      is_dm: isDm,
+      mentions_bot: mentionsBot,
+    });
+  });
+
+  app.error(async (error) => {
+    emit('slack', { event: 'error', user_id, message: error.message || String(error) });
+  });
+
+  try {
+    await app.start();
+    const info = await app.client.auth.test();
+    botUserId = info.user_id;
+    userSlackBots.set(String(user_id), { app, botId: info.user_id, botName: info.user });
+    emit('slack', { event: 'user_bot_ready', user_id, bot_id: info.user_id, bot_name: info.user });
+  } catch (e) {
+    emit('slack', { event: 'error', user_id, message: e.message });
+    try { await app.stop(); } catch {}
+  }
+}
+
+async function removeUserSlackBot(cmd) {
+  const key = String(cmd.user_id);
+  const bot = userSlackBots.get(key);
+  if (bot) {
+    try { await bot.app.stop(); } catch {}
+    userSlackBots.delete(key);
+    emit('slack', { event: 'user_bot_removed', user_id: cmd.user_id });
+  }
+}
+
+async function handleUserSlackCommand(cmd) {
+  const key = String(cmd.user_id);
+  const bot = userSlackBots.get(key);
+  if (!bot) return;
+  try {
+    if (cmd.cmd === 'send') {
+      const chunks = splitText(cmd.text, 3000);
+      for (let i = 0; i < chunks.length; i++) {
+        const opts = { channel: cmd.channel_id, text: chunks[i] };
+        if (i === 0 && cmd.reply_to) opts.thread_ts = cmd.reply_to;
+        await bot.app.client.chat.postMessage(opts);
+      }
+    }
+  } catch (e) {
+    emit('slack', { event: 'error', user_id: cmd.user_id, channel_id: cmd.channel_id, message: e.message });
   }
 }
 
@@ -427,7 +518,12 @@ rl.on('line', async (line) => {
       else await handleDiscordCommand(cmd);
     }
     else if (cmd.target === 'whatsapp') await handleWhatsAppCommand(cmd);
-    else if (cmd.target === 'slack') await handleSlackCommand(cmd);
+    else if (cmd.target === 'slack') {
+      if (cmd.cmd === 'add_user_bot') await addUserSlackBot(cmd);
+      else if (cmd.cmd === 'remove_user_bot') await removeUserSlackBot(cmd);
+      else if (cmd.user_id) await handleUserSlackCommand(cmd);
+      else await handleSlackCommand(cmd);
+    }
   } catch (e) {
     emit('system', { event: 'error', target: cmd?.target, message: e.message, stack: e.stack });
   }
@@ -437,6 +533,8 @@ rl.on('close', async () => {
   if (discordClient) discordClient.destroy();
   for (const bot of userDiscordBots.values()) bot.client.destroy();
   userDiscordBots.clear();
+  for (const bot of userSlackBots.values()) { try { await bot.app.stop(); } catch {} }
+  userSlackBots.clear();
   if (waSock?.ws) waSock.ws.close();
   if (slackApp) await slackApp.stop().catch(() => {});
   process.exit(0);

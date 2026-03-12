@@ -254,6 +254,8 @@ export interface UserSettings {
   telegram_bot_username: string;
   discord_bot_connected: boolean;
   discord_bot_username: string;
+  slack_bot_connected: boolean;
+  slack_bot_name: string;
 }
 
 export function useUserSettings() {
@@ -330,6 +332,51 @@ export function useWhatsAppStatus() {
     queryFn: fetchWhatsAppStatus,
     refetchInterval: 5000,
   });
+}
+
+export async function logoutWhatsApp(): Promise<{ ok: boolean }> {
+  const r = await apiFetch("/api/whatsapp/logout", { method: "POST" });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
+export interface SlackStatus {
+  connected: boolean;
+  bot_id: string | null;
+  bot_name: string | null;
+}
+
+export async function fetchSlackStatus(): Promise<SlackStatus> {
+  const r = await apiFetch("/api/slack/status");
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
+export function useSlackStatus() {
+  return useQuery<SlackStatus>({
+    queryKey: ["slack-status"],
+    queryFn: fetchSlackStatus,
+    refetchInterval: 5000,
+  });
+}
+
+export async function connectSlackBot(
+  bot_token: string,
+  app_token: string,
+): Promise<{ ok: boolean; bot_name: string }> {
+  const r = await apiFetch("/api/user/slack-bot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bot_token, app_token }),
+  });
+  if (!r.ok) throw new Error(r.status === 422 ? "Invalid Slack tokens" : `${r.status}`);
+  return r.json();
+}
+
+export async function disconnectSlackBot(): Promise<{ ok: boolean }> {
+  const r = await apiFetch("/api/user/slack-bot", { method: "DELETE" });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
 }
 
 export interface LinkedCredential {

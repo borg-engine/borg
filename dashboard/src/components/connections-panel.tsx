@@ -1,12 +1,15 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Github, MessageCircle, Plug } from "lucide-react";
+import { Github, Plug } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import {
   connectDiscordBot,
+  connectSlackBot,
   connectTelegramBot,
   disconnectDiscordBot,
+  disconnectSlackBot,
   disconnectTelegramBot,
+  logoutWhatsApp,
   type UserSettings,
   updateUserSettings,
   useUserSettings,
@@ -290,12 +293,24 @@ function TelegramCard() {
 // ── WhatsApp ──────────────────────────────────────────────────────────────
 
 function WhatsAppCard() {
+  const queryClient = useQueryClient();
   const { data: waStatus, isLoading } = useWhatsAppStatus();
+  const [disconnecting, setDisconnecting] = useState(false);
 
   if (isLoading || !waStatus) return null;
   if (waStatus.disabled) return null;
 
   const jidLabel = waStatus.jid ? waStatus.jid.split("@")[0].split(":")[0] : undefined;
+
+  async function handleLogout() {
+    setDisconnecting(true);
+    try {
+      await logoutWhatsApp();
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-status"] });
+    } finally {
+      setDisconnecting(false);
+    }
+  }
 
   return (
     <Card>
@@ -309,8 +324,19 @@ function WhatsAppCard() {
       />
 
       {waStatus.connected ? (
-        <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/[0.04] px-4 py-3 text-[12px] text-[#9c9486]">
-          Connected and receiving messages
+        <div className="space-y-3">
+          <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/[0.04] px-4 py-3 text-[12px] text-[#9c9486]">
+            Connected and receiving messages
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleLogout}
+              disabled={disconnecting}
+              className="rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-1.5 text-[12px] text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
+            >
+              {disconnecting ? "Disconnecting..." : "Disconnect"}
+            </button>
+          </div>
         </div>
       ) : waStatus.qr ? (
         <div className="space-y-3 pt-1">
@@ -326,9 +352,17 @@ function WhatsAppCard() {
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-3 rounded-xl border border-dashed border-[#2a2520] px-4 py-4">
-          <MessageCircle className="h-4 w-4 shrink-0 text-[#4a4540]" />
-          <span className="text-[12px] text-[#6b6459]">Waiting for connection...</span>
+        <div className="space-y-3 pt-1">
+          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
+            <p className="font-medium text-[#e8e0d4]">Connecting...</p>
+            <p>
+              The WhatsApp bridge is starting up. A QR code will appear here shortly for you to scan.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 rounded-xl border border-dashed border-[#2a2520] px-4 py-4">
+            <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#4a4540] border-t-amber-400" />
+            <span className="text-[12px] text-[#6b6459]">Waiting for QR code...</span>
+          </div>
         </div>
       )}
     </Card>
@@ -520,6 +554,45 @@ function PatCard({
 // ── Slack ──────────────────────────────────────────────────────────────────
 
 function SlackCard() {
+  const queryClient = useQueryClient();
+  const { data: userSettings } = useUserSettings();
+  const [editing, setEditing] = useState(false);
+  const [botToken, setBotToken] = useState("");
+  const [appToken, setAppToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!userSettings) return null;
+
+  const connected = userSettings.slack_bot_connected;
+  const botName = userSettings.slack_bot_name;
+
+  async function handleConnect() {
+    setSaving(true);
+    setError("");
+    try {
+      await connectSlackBot(botToken, appToken);
+      setBotToken("");
+      setAppToken("");
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to connect");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setSaving(true);
+    try {
+      await disconnectSlackBot();
+      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader
@@ -527,11 +600,90 @@ function SlackCard() {
         iconBg="bg-[#E01E5A]/8 ring-[#E01E5A]/15"
         title="Slack"
         subtitle="Chat with your agent from any Slack channel"
+        status={connected ? "connected" : undefined}
+        statusLabel={connected ? `@${botName}` : undefined}
       />
-      <div className="flex items-center gap-3 rounded-xl border border-dashed border-[#2a2520] px-4 py-4">
-        <MessageCircle className="h-4 w-4 shrink-0 text-[#4a4540]" />
-        <span className="text-[12px] text-[#6b6459]">Coming soon</span>
-      </div>
+
+      {connected && !editing ? (
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            onClick={() => setEditing(true)}
+            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+          >
+            Change Bot
+          </button>
+          <button
+            onClick={handleDisconnect}
+            disabled={saving}
+            className="rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-1.5 text-[12px] text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
+          >
+            Disconnect
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3 pt-1">
+          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
+            <p className="font-medium text-[#e8e0d4]">Setup</p>
+            <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
+              <li>
+                Go to <span className="font-medium text-[#e8e0d4]">api.slack.com/apps</span> and create a new app
+              </li>
+              <li>
+                Enable <span className="font-medium text-[#e8e0d4]">Socket Mode</span> and generate an App-Level Token{" "}
+                <code className="rounded bg-[#2a2520] px-1.5 py-0.5 text-[11px] text-amber-300">xapp-...</code>
+              </li>
+              <li>
+                Add <span className="font-medium text-[#e8e0d4]">Bot Token Scopes</span>: chat:write, app_mentions:read,
+                im:history, channels:history
+              </li>
+              <li>Install to your workspace and copy the Bot Token</li>
+            </ol>
+          </div>
+          <div className="space-y-2">
+            <input
+              type="password"
+              value={botToken}
+              onChange={(e) => setBotToken(e.target.value)}
+              placeholder="Bot Token (xoxb-...)"
+              className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+              autoFocus
+            />
+            <input
+              type="password"
+              value={appToken}
+              onChange={(e) => setAppToken(e.target.value)}
+              placeholder="App-Level Token (xapp-...)"
+              className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleConnect}
+                disabled={saving || !botToken.trim() || !appToken.trim()}
+                className={cn(
+                  "rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20",
+                  (saving || !botToken.trim() || !appToken.trim()) && "opacity-40 cursor-not-allowed",
+                )}
+              >
+                {saving ? "Verifying..." : "Connect"}
+              </button>
+              {connected && (
+                <button
+                  onClick={() => {
+                    setEditing(false);
+                    setBotToken("");
+                    setAppToken("");
+                    setError("");
+                  }}
+                  className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
+          {error && <div className="text-[12px] text-red-400">{error}</div>}
+        </div>
+      )}
     </Card>
   );
 }

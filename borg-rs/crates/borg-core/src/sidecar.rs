@@ -175,6 +175,44 @@ impl Sidecar {
         // Slack Socket Mode doesn't support typing indicators
     }
 
+    pub fn logout_whatsapp(&self) {
+        let cmd = serde_json::json!({"target": "whatsapp", "cmd": "logout"});
+        self.send_raw(cmd.to_string());
+    }
+
+    pub fn add_user_slack_bot(&self, user_id: i64, bot_token: &str, app_token: &str) {
+        let cmd = serde_json::json!({
+            "target": "slack", "cmd": "add_user_bot",
+            "user_id": user_id, "bot_token": bot_token, "app_token": app_token,
+        });
+        self.send_raw(cmd.to_string());
+    }
+
+    pub fn remove_user_slack_bot(&self, user_id: i64) {
+        let cmd = serde_json::json!({
+            "target": "slack", "cmd": "remove_user_bot",
+            "user_id": user_id,
+        });
+        self.send_raw(cmd.to_string());
+    }
+
+    pub fn send_user_slack(
+        &self,
+        user_id: i64,
+        channel_id: &str,
+        text: &str,
+        reply_to: Option<&str>,
+    ) {
+        let mut obj = serde_json::json!({
+            "target": "slack", "cmd": "send",
+            "user_id": user_id, "channel_id": channel_id, "text": text,
+        });
+        if let Some(ts) = reply_to {
+            obj["reply_to"] = serde_json::Value::String(ts.to_string());
+        }
+        self.send_raw(obj.to_string());
+    }
+
     pub fn add_user_discord_bot(&self, user_id: i64, token: &str) {
         let cmd = serde_json::json!({
             "target": "discord", "cmd": "add_user_bot",
