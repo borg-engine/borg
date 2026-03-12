@@ -4639,6 +4639,7 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
         &normalized,
         &[
             "sign position",
+            "sign recommendation",
             "signing is supportable",
             "sign is supportable",
             "sign remains supportable",
@@ -4648,6 +4649,8 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
             "proceed to sign",
             "ready to sign",
             "closing position",
+            "close recommendation",
+            "closing recommendation",
             "close is supportable",
             "closing is supportable",
             "recommend close",
@@ -4704,7 +4707,44 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
         return None;
     }
 
-    Some(first_sentence_like_excerpt(text, 220))
+    if has_pre_sign_timing {
+        return Some(first_sentence_like_excerpt(text, 220));
+    }
+
+    let has_non_dispositive_override = contains_any(
+        &normalized,
+        &[
+            "recommendation is stable",
+            "sign recommendation is stable",
+            "close recommendation is stable",
+            "does not depend on",
+            "do not depend on",
+            "not dependent on",
+            "not depend on first receiving",
+            "whichever way each resolves",
+            "whichever way that fact resolves",
+            "whichever way this resolves",
+            "not a pre-sign condition",
+            "not a pre sign condition",
+            "not a pre-sign prerequisite",
+            "not a pre sign prerequisite",
+            "not a closing condition",
+            "not a blocker",
+            "risk-reduction step, not a pre-sign prerequisite",
+            "risk reduction step, not a pre-sign prerequisite",
+            "post-close remediation",
+            "post close remediation",
+            "pre-close remediation",
+            "pre close remediation",
+            "open question",
+            "questions for seller",
+        ],
+    );
+    if !has_non_dispositive_override {
+        return None;
+    }
+
+    Some(first_sentence_like_excerpt(text, 260))
 }
 
 fn contains_any(text: &str, needles: &[&str]) -> bool {
@@ -5784,6 +5824,32 @@ mod legal_benchmark_clarification_guard_tests {
         assert!(
             detect_benchmark_clarification_escape(text).is_none(),
             "clean blocked-style recommendation should not trip the guard"
+        );
+    }
+
+    #[test]
+    fn detects_open_questions_declared_non_dispositive_to_sign_recommendation() {
+        let text = "The sign recommendation is stable whichever way each open question resolves. TitanBank Procurement/Legal confirmation and BoroughCare configuration do not depend on first receiving an answer before signing.";
+
+        let excerpt = detect_benchmark_clarification_escape(text)
+            .expect("guard should detect non-dispositive override language");
+
+        assert!(
+            excerpt.contains("stable whichever way each open question resolves"),
+            "unexpected excerpt: {excerpt}"
+        );
+    }
+
+    #[test]
+    fn detects_questions_for_seller_routed_to_post_close_or_pre_close_remediation() {
+        let text = "Proceed to sign. GenAssist configuration remains unconfirmed from the corpus, but that is a pre-close remediation action and the questions for seller do not change the recommendation.";
+
+        let excerpt = detect_benchmark_clarification_escape(text)
+            .expect("guard should detect remediation-based escape hatch");
+
+        assert!(
+            excerpt.contains("pre-close remediation"),
+            "unexpected excerpt: {excerpt}"
         );
     }
 
