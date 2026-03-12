@@ -1565,173 +1565,181 @@ function KnowledgeView({ scope }: { scope: "org" | "my" }) {
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 space-y-1.5">
-        {isLoading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
-          </div>
-        )}
-
-        {!isLoading && files.length === 0 && !hasFiles && !search && (
-          <div className="flex flex-col items-center py-12 text-center">
-            <div
-              className={`mb-4 flex h-14 w-14 items-center justify-center rounded-2xl ${accentBg} ring-1 ${accentRing}`}
-            >
-              <Icon className={`h-6 w-6 ${accentText}`} />
-            </div>
-            <p className="text-[14px] text-[#9c9486]">{emptyTitle}</p>
-            <p className="mt-1 text-[12px] text-[#6b6459]">{emptySubtitle}</p>
-          </div>
-        )}
-
-        {!isLoading && files.length === 0 && search && (
-          <div className="rounded-xl border border-dashed border-[#2a2520] px-4 py-4 text-[12px] text-[#6b6459] text-center">
-            No files match the current filter.
-          </div>
-        )}
-
-        {files.map((file, i) => (
-          <FileListItem
-            key={file.id}
-            file={file}
-            index={offset + i + 1}
-            onClick={isPreviewableKnowledge(file) ? () => handlePreview(file) : undefined}
-            extraActions={
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  handleDeleteOne(file);
-                }}
-                className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-red-500/10 hover:text-red-400"
-                title="Delete"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            }
-          />
-        ))}
-      </div>
-
-      {/* Git Repos section */}
-      <div className="shrink-0 border-t border-[#1e1b18] px-5 py-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <GitBranch className={`h-4 w-4 ${accentText}`} />
-            <span className="text-[13px] font-medium text-[#e8e0d4]">Git Repos</span>
-            {repos.length > 0 && (
-              <span className="rounded-full bg-[#232019] px-2 py-0.5 text-[11px] text-[#6b6459]">{repos.length}</span>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setAddRepoOpen((v) => !v);
-              setAddRepoError(null);
-            }}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-colors ${accentText} hover:bg-[#232019]`}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add
-          </button>
-        </div>
-
-        {addRepoOpen && (
-          <div className="space-y-2 rounded-xl border border-[#2a2520] bg-[#161310] p-3">
-            <input
-              type="text"
-              placeholder="Repository URL (https://github.com/...)"
-              value={addRepoUrl}
-              onChange={(e) => setAddRepoUrl(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddRepo()}
-              className="w-full rounded-lg border border-[#2a2520] bg-[#0e0c0a] px-3 py-2 text-[13px] text-[#e8e0d4] placeholder-[#4a443d] outline-none focus:border-[#3a3530]"
-            />
-            <input
-              type="text"
-              placeholder="Name (optional, auto-detected from URL)"
-              value={addRepoName}
-              onChange={(e) => setAddRepoName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddRepo()}
-              className="w-full rounded-lg border border-[#2a2520] bg-[#0e0c0a] px-3 py-2 text-[13px] text-[#e8e0d4] placeholder-[#4a443d] outline-none focus:border-[#3a3530]"
-            />
-            {addRepoError && <div className="text-[12px] text-red-400">{addRepoError}</div>}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleAddRepo}
-                disabled={addRepoLoading || !addRepoUrl.trim()}
-                className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-colors disabled:opacity-50 ${accentBg} ${accentText} hover:opacity-80`}
-              >
-                {addRepoLoading ? "Cloning..." : "Add Repo"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAddRepoOpen(false);
-                  setAddRepoError(null);
-                  setAddRepoUrl("");
-                  setAddRepoName("");
-                }}
-                className="rounded-lg px-3 py-2 text-[13px] text-[#6b6459] hover:bg-[#232019] hover:text-[#e8e0d4]"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {repos.length === 0 && !addRepoOpen && (
-          <p className="text-[12px] text-[#4a443d]">No repos added yet. Agents will have access to cloned repos.</p>
-        )}
-
-        {repos.map((repo) => (
-          <div
-            key={repo.id}
-            className="flex items-center gap-3 rounded-xl border border-[#1e1b18] bg-[#0e0c0a] px-3 py-2.5"
-          >
-            <GitBranch className="h-4 w-4 shrink-0 text-[#4a443d]" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-[13px] font-medium text-[#e8e0d4]">{repo.name}</span>
-                <span
-                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                    repo.status === "ready"
-                      ? "bg-emerald-500/10 text-emerald-400"
-                      : repo.status === "error"
-                        ? "bg-red-500/10 text-red-400"
-                        : "bg-amber-500/10 text-amber-400"
-                  }`}
-                >
-                  {repo.status === "pending" ? "queued" : repo.status}
-                </span>
-              </div>
-              <div className="truncate text-[11px] text-[#4a443d]">{repo.url}</div>
-              {repo.status === "error" && repo.error_msg && (
-                <div className="mt-1 text-[11px] text-red-400/80">
-                  {repoErrorHint(repo.error_msg) ?? repo.error_msg}
-                </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 space-y-4">
+        {/* Git Repos section */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <GitBranch className={`h-4 w-4 ${accentText}`} />
+              <span className="text-[13px] font-medium text-[#e8e0d4]">Git Repos</span>
+              {repos.length > 0 && (
+                <span className="rounded-full bg-[#232019] px-2 py-0.5 text-[11px] text-[#6b6459]">{repos.length}</span>
               )}
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              {repo.status === "error" && (
+            <button
+              type="button"
+              onClick={() => {
+                setAddRepoOpen((v) => !v);
+                setAddRepoError(null);
+              }}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-colors ${accentText} hover:bg-[#232019]`}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add
+            </button>
+          </div>
+
+          {addRepoOpen && (
+            <div className="space-y-2 rounded-xl border border-[#2a2520] bg-[#161310] p-3">
+              <input
+                type="text"
+                placeholder="Repository URL (https://github.com/...)"
+                value={addRepoUrl}
+                onChange={(e) => setAddRepoUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddRepo()}
+                className="w-full rounded-lg border border-[#2a2520] bg-[#0e0c0a] px-3 py-2 text-[13px] text-[#e8e0d4] placeholder-[#4a443d] outline-none focus:border-[#3a3530]"
+              />
+              <input
+                type="text"
+                placeholder="Name (optional, auto-detected from URL)"
+                value={addRepoName}
+                onChange={(e) => setAddRepoName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddRepo()}
+                className="w-full rounded-lg border border-[#2a2520] bg-[#0e0c0a] px-3 py-2 text-[13px] text-[#e8e0d4] placeholder-[#4a443d] outline-none focus:border-[#3a3530]"
+              />
+              {addRepoError && <div className="text-[12px] text-red-400">{addRepoError}</div>}
+              <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => handleRetryRepo(repo)}
-                  className="rounded-lg p-1.5 text-[#4a443d] transition-colors hover:bg-amber-500/10 hover:text-amber-400"
-                  title="Retry clone"
+                  onClick={handleAddRepo}
+                  disabled={addRepoLoading || !addRepoUrl.trim()}
+                  className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-colors disabled:opacity-50 ${accentBg} ${accentText} hover:opacity-80`}
                 >
-                  <RotateCw className="h-3.5 w-3.5" />
+                  {addRepoLoading ? "Cloning..." : "Add Repo"}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => handleDeleteRepo(repo)}
-                className="rounded-lg p-1.5 text-[#4a443d] transition-colors hover:bg-red-500/10 hover:text-red-400"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddRepoOpen(false);
+                    setAddRepoError(null);
+                    setAddRepoUrl("");
+                    setAddRepoName("");
+                  }}
+                  className="rounded-lg px-3 py-2 text-[13px] text-[#6b6459] hover:bg-[#232019] hover:text-[#e8e0d4]"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          )}
+
+          {repos.length === 0 && !addRepoOpen && (
+            <p className="text-[12px] text-[#4a443d]">No repos added yet. Agents will have access to cloned repos.</p>
+          )}
+
+          {repos.map((repo) => (
+            <div
+              key={repo.id}
+              className="flex items-center gap-3 rounded-xl border border-[#1e1b18] bg-[#0e0c0a] px-3 py-2.5"
+            >
+              <GitBranch className="h-4 w-4 shrink-0 text-[#4a443d]" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[13px] font-medium text-[#e8e0d4]">{repo.name}</span>
+                  <span
+                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                      repo.status === "ready"
+                        ? "bg-emerald-500/10 text-emerald-400"
+                        : repo.status === "error"
+                          ? "bg-red-500/10 text-red-400"
+                          : "bg-amber-500/10 text-amber-400"
+                    }`}
+                  >
+                    {repo.status === "pending" ? "queued" : repo.status}
+                  </span>
+                </div>
+                <div className="truncate text-[11px] text-[#4a443d]">{repo.url}</div>
+                {repo.status === "error" && repo.error_msg && (
+                  <div className="mt-1 text-[11px] text-red-400/80">
+                    {repoErrorHint(repo.error_msg) ?? repo.error_msg}
+                  </div>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {repo.status === "error" && (
+                  <button
+                    type="button"
+                    onClick={() => handleRetryRepo(repo)}
+                    className="rounded-lg p-1.5 text-[#4a443d] transition-colors hover:bg-amber-500/10 hover:text-amber-400"
+                    title="Retry clone"
+                  >
+                    <RotateCw className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleDeleteRepo(repo)}
+                  className="rounded-lg p-1.5 text-[#4a443d] transition-colors hover:bg-red-500/10 hover:text-red-400"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Files section */}
+        <div className="space-y-1.5">
+          {isLoading && (
+            <div className="flex items-center justify-center py-12">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
+            </div>
+          )}
+
+          {!isLoading && files.length === 0 && !hasFiles && !search && (
+            <div className="flex flex-col items-center py-12 text-center">
+              <div
+                className={`mb-4 flex h-14 w-14 items-center justify-center rounded-2xl ${accentBg} ring-1 ${accentRing}`}
+              >
+                <Icon className={`h-6 w-6 ${accentText}`} />
+              </div>
+              <p className="text-[14px] text-[#9c9486]">{emptyTitle}</p>
+              <p className="mt-1 text-[12px] text-[#6b6459]">{emptySubtitle}</p>
+            </div>
+          )}
+
+          {!isLoading && files.length === 0 && search && (
+            <div className="rounded-xl border border-dashed border-[#2a2520] px-4 py-4 text-[12px] text-[#6b6459] text-center">
+              No files match the current filter.
+            </div>
+          )}
+
+          {files.map((file, i) => (
+            <FileListItem
+              key={file.id}
+              file={file}
+              index={offset + i + 1}
+              onClick={isPreviewableKnowledge(file) ? () => handlePreview(file) : undefined}
+              extraActions={
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    handleDeleteOne(file);
+                  }}
+                  className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-red-500/10 hover:text-red-400"
+                  title="Delete"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              }
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Chat section */}
+      <div className="shrink-0 border-t border-[#1e1b18] h-[350px]">
+        <ChatBody thread={`web:knowledge-${scope}`} className="bg-[#0f0e0c]" />
       </div>
 
       {/* Knowledge preview modal */}
