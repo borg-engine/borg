@@ -1,6 +1,6 @@
-use std::{cell::Cell, fmt, marker::PhantomData, sync::Arc};
+use std::{cell::Cell, fmt, marker::PhantomData, sync::Arc, time::Duration};
 
-use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
+use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use tokio_postgres::{types::ToSql as PgToSql, NoTls, Row as PgRow};
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -250,11 +250,15 @@ impl Connection {
             .unwrap_or(32)
             .max(4);
         let mgr_config = ManagerConfig {
-            recycling_method: RecyclingMethod::Fast,
+            recycling_method: RecyclingMethod::Verified,
         };
         let manager = Manager::from_config(config, NoTls, mgr_config);
         let pool = Pool::builder(manager)
             .max_size(max_size)
+            .runtime(Runtime::Tokio1)
+            .wait_timeout(Some(Duration::from_secs(5)))
+            .create_timeout(Some(Duration::from_secs(5)))
+            .recycle_timeout(Some(Duration::from_secs(3)))
             .build()
             .map_err(|err| Error::ConfigParse(err.to_string()))?;
         Ok(Self {
@@ -265,7 +269,13 @@ impl Connection {
     fn guard(&self) -> ConnectionGuard {
         let client = match block_on(self.pool.get()) {
             Ok(client) => client,
-            Err(err) => return ConnectionGuard::failed(err.to_string()),
+            Err(_) => {
+                // Retry once — the failed connection gets recycled on the first attempt
+                match block_on(self.pool.get()) {
+                    Ok(client) => client,
+                    Err(err) => return ConnectionGuard::failed(err.to_string()),
+                }
+            }
         };
         ConnectionGuard::ready(client)
     }
