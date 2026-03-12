@@ -1842,11 +1842,11 @@ export function useProjectShares(projectId: number | null) {
   });
 }
 
-export async function addProjectShare(projectId: number, username: string, role = "viewer"): Promise<{ id: number }> {
+export async function addProjectShare(projectId: number, email: string, role = "viewer"): Promise<{ id: number }> {
   const res = await apiFetch(`/api/projects/${projectId}/shares`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, role }),
+    body: JSON.stringify({ email, role }),
   });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();

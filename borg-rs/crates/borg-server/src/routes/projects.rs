@@ -3275,7 +3275,7 @@ pub(crate) async fn get_task_outputs_handler(
 
 #[derive(Deserialize)]
 pub(crate) struct AddProjectShareBody {
-    pub username: String,
+    pub email: String,
     pub role: Option<String>,
 }
 
@@ -3314,12 +3314,11 @@ pub(crate) async fn add_project_share(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let target_user = state
+    let (target_user_id, _, _, _) = state
         .db
-        .get_user_by_username(body.username.trim())
+        .get_user_by_email(body.email.trim())
         .map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let target_user_id = target_user.0;
 
     let share_id = state
         .db

@@ -45,21 +45,21 @@ function CopyButton({ text }: { text: string }) {
 function PeopleTab({ project }: { project: Project }) {
   const qc = useQueryClient();
   const { data: shares = [], isLoading } = useProjectShares(project.id);
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [role, setRole] = useState<"viewer" | "editor">("viewer");
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
 
   async function handleAdd() {
-    if (!username.trim()) return;
+    if (!email.trim()) return;
     setAdding(true);
     setError("");
     try {
-      await addProjectShare(project.id, username.trim(), role);
+      await addProjectShare(project.id, email.trim(), role);
       qc.invalidateQueries({ queryKey: ["project_shares", project.id] });
-      setUsername("");
+      setEmail("");
     } catch (e: any) {
-      setError(e.message === "404" ? "User not found" : "Failed to share");
+      setError(e.message === "404" ? "No user with that email" : "Failed to share");
     } finally {
       setAdding(false);
     }
@@ -74,11 +74,11 @@ function PeopleTab({ project }: { project: Project }) {
     <div className="space-y-4">
       <div className="flex gap-2">
         <input
-          type="text"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-          placeholder="Username"
+          placeholder="Email address"
           className="flex-1 rounded-lg border border-white/[0.08] bg-zinc-800 px-3 py-1.5 text-[13px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-blue-500/40"
         />
         <select
@@ -91,7 +91,7 @@ function PeopleTab({ project }: { project: Project }) {
         </select>
         <button
           onClick={handleAdd}
-          disabled={adding || !username.trim()}
+          disabled={adding || !email.trim()}
           className="flex items-center gap-1.5 rounded-lg bg-blue-500/15 px-3 py-1.5 text-[12px] text-blue-300 ring-1 ring-inset ring-blue-500/20 hover:bg-blue-500/25 disabled:opacity-50"
         >
           <UserPlus size={13} />
