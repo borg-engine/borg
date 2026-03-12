@@ -97,7 +97,10 @@ pub fn build_instruction(
     if !ctx.knowledge_repo_paths.is_empty() {
         s.push_str("## Reference Repositories\n\nThe following git repositories are cloned and available for reading:\n");
         for path in &ctx.knowledge_repo_paths {
-            let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or(path);
+            let name = std::path::Path::new(path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(path);
             s.push_str(&format!("- `{}` → `{}`\n", name, path));
         }
         s.push_str("\n---\n\n");
@@ -142,7 +145,7 @@ pub fn build_instruction(
         }
     }
 
-    s.push_str(&phase.instruction);
+    s.push_str(&phase_instruction_override(task, phase));
 
     if let Some(files) = file_listing.filter(|f| !f.is_empty()) {
         s.push_str("\n\n---\n\nRepository manifest:\n```\n");
@@ -190,6 +193,27 @@ pub fn build_instruction(
     s.push_str(&build_completion_gate_section(task, phase, ctx));
 
     s
+}
+
+fn phase_instruction_override<'a>(
+    task: &Task,
+    phase: &'a PhaseConfig,
+) -> std::borrow::Cow<'a, str> {
+    if !(task.mode == "lawborg" || task.mode == "legal") {
+        return std::borrow::Cow::Borrowed(phase.instruction.as_str());
+    }
+
+    if task.task_type.trim() != "benchmark_analysis" {
+        return std::borrow::Cow::Borrowed(phase.instruction.as_str());
+    }
+
+    match phase.name.as_str() {
+        "implement" | "impl" | "retry" => {
+            std::borrow::Cow::Borrowed(LEGAL_BENCHMARK_IMPLEMENT_INSTRUCTION)
+        },
+        "review" => std::borrow::Cow::Borrowed(LEGAL_BENCHMARK_REVIEW_INSTRUCTION),
+        _ => std::borrow::Cow::Borrowed(phase.instruction.as_str()),
+    }
 }
 
 /// Build the `## Knowledge Base` section prepended to agent instructions.
@@ -271,7 +295,15 @@ pub fn select_relevant_knowledge_files(
     project_id: Option<i64>,
     max_files: usize,
 ) -> Vec<KnowledgeFile> {
-    select_relevant_knowledge_files_for_user(files, topic, mode_hint, jurisdiction_hint, project_id, None, max_files)
+    select_relevant_knowledge_files_for_user(
+        files,
+        topic,
+        mode_hint,
+        jurisdiction_hint,
+        project_id,
+        None,
+        max_files,
+    )
 }
 
 pub fn select_relevant_knowledge_files_for_user(
@@ -592,3 +624,42 @@ Flag gaps based on relationship type (e.g., MSA present but no DPA and vendor ha
 
 **Key alerts:** Approaching expirations within 90 days, expired agreements with surviving obligations \
 (confidentiality, indemnification), required agreements not yet in place.";
+
+const LEGAL_BENCHMARK_IMPLEMENT_INSTRUCTION: &str = "\
+Handle this benchmark legal task end-to-end.
+
+Focus on the explicit deliverable contract in the task description and any repository files such as `brief.md` and `deliverable_spec.json`.
+This is a corpus-bound diligence / analysis task, not a generic legal research memo assignment.
+
+Required working style:
+- inventory the uploaded corpus first
+- run multiple distinct Borg document searches for each major issue
+- read full documents for the clauses or records that drive your bottom-line conclusions
+- use coverage checks before making corpus-wide present/absent claims
+- write only the deliverable files explicitly requested by this task unless the task separately asks for more
+
+If the task is marked as requiring exhaustive corpus review:
+- treat that protocol as mandatory
+- keep your reasoning and final deliverables consistent with what you actually reviewed
+- do not claim exhaustive review unless your retrieval behavior supports it
+
+Clarification rule:
+- if a sign / close / proceed recommendation depends on a material fact that is not answerable from the corpus, do not bury it in assumptions or open questions
+- write `.borg/signal.json` with a blocked clarification instead of finalising the recommendation
+
+Do not drift into generic legal-research outputs such as `research.md`, `analysis.md`, or citation-verification work unless this task explicitly asks for them.";
+
+const LEGAL_BENCHMARK_REVIEW_INSTRUCTION: &str = "\
+Review the benchmark deliverables against the explicit task contract and the underlying corpus.
+
+Review priorities:
+1. Does the draft satisfy the exact required output files and headings?
+2. Are the bottom-line conclusions supported by the corpus review that was actually performed?
+3. Does the draft improperly convert unresolved threshold facts into caveats, assumptions, post-close fixes, or conditional sign-now recommendations?
+4. Are key document references accurate and internally consistent across deliverables?
+
+Use Borg document tools to spot-check the corpus directly.
+If a material fact was not answerable from the corpus, the correct review outcome is to require blocked clarification rather than polishing the recommendation.
+
+Do not expand this into a generic legal citation review.
+Focus on benchmark deliverable quality, corpus support, and blocker judgment.";

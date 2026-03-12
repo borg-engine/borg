@@ -392,3 +392,29 @@ fn test_queue_messages_intro_text() {
         "expected queue intro text: {result}"
     );
 }
+
+#[test]
+fn test_legal_benchmark_instruction_uses_benchmark_specific_prompt() {
+    let mut task = make_task("Title", "Desc", "");
+    task.mode = "legal".to_string();
+    task.task_type = "benchmark_analysis".to_string();
+    task.requires_exhaustive_corpus_review = true;
+
+    let phase = PhaseConfig {
+        name: "implement".to_string(),
+        instruction: "## Step 2: Write research.md\nWrite research.md and analysis.md.".to_string(),
+        ..PhaseConfig::default()
+    };
+    let ctx = make_ctx();
+
+    let result = build_instruction(&task, &phase, &ctx, None);
+
+    assert!(
+        result.contains("This is a corpus-bound diligence / analysis task"),
+        "expected benchmark-specific legal instruction: {result}"
+    );
+    assert!(
+        !result.contains("## Step 2: Write research.md"),
+        "generic legal research scaffold should be removed for benchmark_analysis: {result}"
+    );
+}
