@@ -1,0 +1,12 @@
+[Unit]
+Description=Borg API Socket
+
+[Socket]
+ListenStream=3131
+ListenStream=3132
+BindIPv6Only=both
+NoDelay=true
+Backlog=512
+
+[Install]
+WantedBy=sockets.target

@@ -1,6 +1,7 @@
 [Unit]
 Description=Borg Autonomous Work Engine
 After=network.target docker.service
+Requires=borg.socket
 
 [Service]
 Type=simple
@@ -8,6 +9,8 @@ WorkingDirectory=/opt/borg
 ExecStart=/opt/borg/borg-rs/target/release/borg-server
 Restart=always
 RestartSec=5
+TimeoutStopSec=330
+KillMode=mixed
 Environment=HOME=/root
 Environment=PATH=/root/.cargo/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/bin
 EnvironmentFile=/opt/borg/.env

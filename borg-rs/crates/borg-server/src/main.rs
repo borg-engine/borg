@@ -46,7 +46,34 @@ use tower_http::{
     cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer},
     services::ServeDir,
 };
-use tracing::info;
+use tracing::{info, warn};
+
+// ── Systemd socket activation ────────────────────────────────────────────
+
+/// Retrieve pre-opened listener FDs passed by systemd (socket activation protocol).
+/// Returns None when not running under socket activation.
+fn systemd_listen_fds() -> Option<Vec<std::os::unix::io::RawFd>> {
+    let pid: u32 = std::env::var("LISTEN_PID").ok()?.parse().ok()?;
+    if pid != std::process::id() {
+        return None;
+    }
+    let nfds: usize = std::env::var("LISTEN_FDS").ok()?.parse().ok()?;
+    if nfds == 0 {
+        return None;
+    }
+    // Unset env so child processes don't inherit stale values
+    std::env::remove_var("LISTEN_PID");
+    std::env::remove_var("LISTEN_FDS");
+    Some((0..nfds).map(|i| 3 + i as std::os::unix::io::RawFd).collect())
+}
+
+/// Convert a raw FD from systemd into a tokio TcpListener.
+fn listener_from_fd(fd: std::os::unix::io::RawFd) -> anyhow::Result<tokio::net::TcpListener> {
+    use std::os::unix::io::FromRawFd;
+    let std_listener = unsafe { std::net::TcpListener::from_raw_fd(fd) };
+    std_listener.set_nonblocking(true)?;
+    Ok(tokio::net::TcpListener::from_std(std_listener)?)
+}
 
 // ── AppState ──────────────────────────────────────────────────────────────
 
@@ -95,6 +122,8 @@ pub struct AppState {
     pub(crate) linked_credential_stdins:
         Arc<TokioMutex<HashMap<String, tokio::process::ChildStdin>>>,
     pub wa_status: Arc<std::sync::Mutex<WaStatus>>,
+    pub shutdown: Arc<std::sync::atomic::AtomicBool>,
+    pub active_chat_agents: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl AppState {
@@ -1713,6 +1742,8 @@ async fn main() -> anyhow::Result<()> {
         linked_credential_sessions: Arc::new(TokioMutex::new(HashMap::new())),
         linked_credential_stdins: Arc::new(TokioMutex::new(HashMap::new())),
         wa_status,
+        shutdown: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        active_chat_agents: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });
 
     spawn_post_state_tasks(&state, &config, &db);
@@ -1727,9 +1758,30 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{bind}:{}", config.web_port);
     let proxy_addr = format!("{bind}:{}", config.proxy_port);
 
-    info!("Listening on {addr}");
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    let proxy_listener = tokio::net::TcpListener::bind(&proxy_addr).await?;
+    // Use systemd socket activation if available, otherwise bind normally
+    let (listener, proxy_listener) = if let Some(fds) = systemd_listen_fds() {
+        if fds.len() >= 2 {
+            info!("Using systemd socket activation ({} fds)", fds.len());
+            let main = listener_from_fd(fds[0])?;
+            let proxy = listener_from_fd(fds[1])?;
+            (main, proxy)
+        } else if fds.len() == 1 {
+            info!("Using systemd socket activation (1 fd), binding proxy on {proxy_addr}");
+            let main = listener_from_fd(fds[0])?;
+            let proxy = tokio::net::TcpListener::bind(&proxy_addr).await?;
+            (main, proxy)
+        } else {
+            info!("Listening on {addr}");
+            let main = tokio::net::TcpListener::bind(&addr).await?;
+            let proxy = tokio::net::TcpListener::bind(&proxy_addr).await?;
+            (main, proxy)
+        }
+    } else {
+        info!("Listening on {addr}");
+        let main = tokio::net::TcpListener::bind(&addr).await?;
+        let proxy = tokio::net::TcpListener::bind(&proxy_addr).await?;
+        (main, proxy)
+    };
     info!("Proxy listening on {proxy_addr}");
 
     let server =
@@ -1739,12 +1791,39 @@ async fn main() -> anyhow::Result<()> {
         proxy_app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     );
 
+    // ── Graceful shutdown ────────────────────────────────────────────────
+    let shutdown_flag = Arc::clone(&state.shutdown);
+    let active_chat = Arc::clone(&state.active_chat_agents);
+    let drain_pipeline = Arc::clone(&pipeline);
+
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     tokio::select! {
         res = server => { res?; }
         res = proxy_server => { res?; }
         _ = tokio::signal::ctrl_c() => { info!("shutdown signal received (SIGINT)"); }
         _ = sigterm.recv() => { info!("shutdown signal received (SIGTERM)"); }
+    }
+
+    // Signal all subsystems to stop accepting new work
+    shutdown_flag.store(true, std::sync::atomic::Ordering::Release);
+    drain_pipeline.draining.store(true, std::sync::atomic::Ordering::Release);
+    info!("draining in-flight agents before exit...");
+
+    // Wait for running agents to finish (pipeline + chat), up to 5 minutes
+    let drain_deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(300);
+    loop {
+        let pipeline_agents = drain_pipeline.active_agent_count();
+        let chat_agents = active_chat.load(std::sync::atomic::Ordering::Acquire);
+        if pipeline_agents == 0 && chat_agents == 0 {
+            info!("all agents drained, shutting down cleanly");
+            break;
+        }
+        if tokio::time::Instant::now() >= drain_deadline {
+            warn!(pipeline_agents, chat_agents, "drain timeout reached (5m), forcing shutdown");
+            break;
+        }
+        info!(pipeline_agents, chat_agents, "waiting for agents to finish...");
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
     }
 
     if agent_network_available {

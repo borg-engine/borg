@@ -1,4 +1,4 @@
-import { Folder, X } from "lucide-react";
+import { ChevronDown, Folder, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CloudBrowseItem, CloudConnection, Settings } from "@/lib/api";
 import {
@@ -250,11 +250,28 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
     }
   }
 
+  const [expanded, setExpanded] = useState(false);
+
   return (
     <>
-      {/* Cloud Storage panel */}
-      <div className="rounded-xl border border-[#2a2520] bg-[#151412] p-4">
-        <div className="mb-3 text-[12px] font-semibold text-[#e8e0d4]">Cloud Storage</div>
+      {/* Cloud Storage dropdown */}
+      <div className="rounded-xl border border-[#2a2520] bg-[#151412]">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex w-full items-center justify-between px-4 py-3 text-[12px] font-semibold text-[#e8e0d4] hover:bg-[#1a1816] rounded-xl transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            Cloud Storage
+            {cloudConnections.length > 0 && (
+              <span className="rounded-full bg-[#2a2520] px-1.5 py-0.5 text-[10px] text-[#6b6459]">
+                {cloudConnections.length}
+              </span>
+            )}
+          </span>
+          <ChevronDown className={cn("h-3.5 w-3.5 text-[#6b6459] transition-transform", expanded && "rotate-180")} />
+        </button>
+        {expanded && <div className="px-4 pb-4">
         {!publicUrlValid && (
           <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
             Configure a valid Public URL in Settings before connecting cloud accounts.
@@ -330,6 +347,7 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
             <div className="text-[12px] text-[#6b6459]">No connected cloud accounts.</div>
           )}
         </div>
+        </div>}
       </div>
 
       {/* Cloud browser modal */}

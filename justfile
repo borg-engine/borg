@@ -150,7 +150,10 @@ install-service:
     else
         mkdir -p ~/.config/systemd/user
         cp borg.service ~/.config/systemd/user/borg.service
+        cp borg.socket ~/.config/systemd/user/borg.socket
         systemctl --user daemon-reload
+        systemctl --user enable borg.socket >/dev/null 2>&1 || true
+        systemctl --user start borg.socket >/dev/null 2>&1 || true
         systemctl --user enable borg >/dev/null 2>&1 || true
     fi
 

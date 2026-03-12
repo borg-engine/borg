@@ -31,6 +31,14 @@ use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 use super::{internal, require_project_access};
 use crate::{storage::FileStorage, AppState};
 
+/// RAII guard that decrements the active chat agent counter on drop.
+struct ChatAgentGuard(Arc<std::sync::atomic::AtomicUsize>);
+impl Drop for ChatAgentGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+
 #[derive(Deserialize)]
 pub(crate) struct ChatMessagesQuery {
     pub thread: String,
@@ -665,12 +673,18 @@ pub(crate) async fn post_project_chat(
         text_len = body.text.chars().count() as u64,
     );
 
+    if state.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+
     let state2 = Arc::clone(&state);
     let thread2 = thread.clone();
     let sender2 = sender.clone();
     let text2 = body.text.clone();
     let uid = user.id;
+    state.active_chat_agents.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     tokio::spawn(async move {
+        let _guard = ChatAgentGuard(Arc::clone(&state2.active_chat_agents));
         let run_id = crate::messaging_progress::new_chat_run_id();
         match run_chat_agent(
             &thread2,
@@ -743,12 +757,18 @@ pub(crate) async fn post_chat(
         text_len = body.text.chars().count() as u64,
     );
 
+    if state.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+
     let state2 = Arc::clone(&state);
     let thread2 = thread.clone();
     let sender2 = sender.clone();
     let text2 = body.text.clone();
     let uid = user.id;
+    state.active_chat_agents.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     tokio::spawn(async move {
+        let _guard = ChatAgentGuard(Arc::clone(&state2.active_chat_agents));
         let run_id = crate::messaging_progress::new_chat_run_id();
         match run_chat_agent(
             &thread2,

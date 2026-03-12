@@ -78,6 +78,8 @@ pub struct Pipeline {
     /// Whether the borg-agent-net Docker bridge network was successfully created at startup.
     pub agent_network_available: bool,
     pub embed_registry: crate::knowledge::EmbeddingRegistry,
+    /// Set to true during graceful shutdown — prevents dispatching new tasks.
+    pub draining: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -187,6 +189,7 @@ impl Pipeline {
             failure_signatures: std::sync::Mutex::new(HashMap::new()),
             agent_network_available,
             embed_registry: crate::knowledge::EmbeddingRegistry::from_env(),
+            draining: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
         (p, rx)
     }
@@ -915,6 +918,11 @@ impl Pipeline {
         }
 
         // Dispatch ready tasks
+        // Skip dispatch entirely when draining for graceful shutdown
+        if self.draining.load(std::sync::atomic::Ordering::Acquire) {
+            return Ok(());
+        }
+
         let tasks = self.db.list_active_tasks().context("list_active_tasks")?;
         let max_agents = self.config.pipeline_max_agents as usize;
         let mut dispatched = 0usize;

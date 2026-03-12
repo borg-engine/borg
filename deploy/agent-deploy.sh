@@ -97,8 +97,10 @@ cd dashboard && bun install --frozen-lockfile && bun run build && cd ..
 docker build -t borg-agent -f container/Dockerfile container/
 
 cp deploy/borg.service /etc/systemd/system/${SERVICE_NAME}.service
+cp deploy/borg.socket /etc/systemd/system/${SERVICE_NAME}.socket
 systemctl daemon-reload
-systemctl enable ${SERVICE_NAME}
+systemctl enable ${SERVICE_NAME}.socket
+systemctl start ${SERVICE_NAME}.socket
 systemctl restart ${SERVICE_NAME}
 
 if [[ -n "${CF_TUNNEL_TOKEN}" ]]; then
