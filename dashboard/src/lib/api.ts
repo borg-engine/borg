@@ -311,6 +311,27 @@ export async function disconnectDiscordBot(): Promise<{ ok: boolean }> {
   return r.json();
 }
 
+export interface WhatsAppStatus {
+  connected: boolean;
+  jid: string | null;
+  qr: string | null;
+  disabled: boolean;
+}
+
+export async function fetchWhatsAppStatus(): Promise<WhatsAppStatus> {
+  const r = await apiFetch("/api/whatsapp/status");
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
+export function useWhatsAppStatus() {
+  return useQuery<WhatsAppStatus>({
+    queryKey: ["whatsapp-status"],
+    queryFn: fetchWhatsAppStatus,
+    refetchInterval: 5000,
+  });
+}
+
 export interface LinkedCredential {
   id: number;
   user_id: number;
@@ -1194,7 +1215,6 @@ export async function listProjectUploadSessions(
   return fetchJson(`/api/projects/${projectId}/uploads/sessions?limit=${limit}`);
 }
 
-
 export interface CloudConnection {
   id: number;
   provider: "dropbox" | "google_drive" | "onedrive" | string;
@@ -1340,7 +1360,6 @@ export async function searchDocuments(query: string, projectId?: number, semanti
   if (semantic) params.set("semantic", "true");
   return fetchJson(`/api/search?${params}`);
 }
-
 
 export function useProjectTasks(projectId: number | null) {
   return useQuery<ProjectTask[]>({

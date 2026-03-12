@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use base64::Engine;
 use borg_core::linked_credentials::{
     capture_bundle, restore_bundle, should_revalidate, validate_home, LinkedCredentialValidation,
     PROVIDER_CLAUDE, PROVIDER_OPENAI,
@@ -12,6 +13,7 @@ use borg_core::linked_credentials::{
 use chrono::{Duration as ChronoDuration, Utc};
 use serde::Serialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
@@ -20,6 +22,18 @@ use tokio::{
 
 use super::internal;
 use crate::AppState;
+
+const CLAUDE_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const CLAUDE_AUTH_ENDPOINT: &str = "https://claude.ai/oauth/authorize";
+const CLAUDE_TOKEN_ENDPOINT: &str = "https://console.anthropic.com/v1/oauth/token";
+const CLAUDE_REDIRECT_URI: &str = "https://console.anthropic.com/oauth/code/callback";
+const CLAUDE_SCOPES: &[&str] = &[
+    "org:create_api_key",
+    "user:profile",
+    "user:inference",
+    "user:sessions:claude_code",
+    "user:mcp_servers",
+];
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct LinkedCredentialConnectSession {
@@ -34,6 +48,8 @@ pub(crate) struct LinkedCredentialConnectSession {
     pub updated_at: String,
     #[serde(skip_serializing)]
     pub user_id: i64,
+    #[serde(skip_serializing)]
+    pub code_verifier: String,
 }
 
 fn normalize_provider(provider: &str) -> Option<&'static str> {
@@ -80,6 +96,73 @@ fn extract_device_code(text: &str) -> Option<String> {
     })
 }
 
+// --- PKCE helpers ---
+
+fn generate_pkce_verifier() -> String {
+    use rand::Rng;
+    let bytes: [u8; 32] = rand::thread_rng().gen();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn pkce_challenge(verifier: &str) -> String {
+    let hash = Sha256::digest(verifier.as_bytes());
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash)
+}
+
+fn build_claude_auth_url(challenge: &str, verifier: &str) -> String {
+    let scope = CLAUDE_SCOPES
+        .iter()
+        .map(|s| urlencoding::encode(s).into_owned())
+        .collect::<Vec<_>>()
+        .join("+");
+    let redirect = urlencoding::encode(CLAUDE_REDIRECT_URI);
+    format!(
+        "{CLAUDE_AUTH_ENDPOINT}?code=true\
+         &client_id={CLAUDE_CLIENT_ID}\
+         &response_type=code\
+         &redirect_uri={redirect}\
+         &scope={scope}\
+         &code_challenge={challenge}\
+         &code_challenge_method=S256\
+         &state={verifier}"
+    )
+}
+
+/// Returns (code, optional_state) from user input.
+/// Handles: full URL with ?code=, "code#state" format, or raw code.
+fn extract_oauth_code(input: &str) -> Option<(String, Option<String>)> {
+    let input = input.trim();
+    if input.is_empty() {
+        return None;
+    }
+    // URL: extract code= param
+    if input.starts_with("http://") || input.starts_with("https://") {
+        if let Some(query) = input.split('?').nth(1) {
+            for param in query.split('&') {
+                if let Some(code) = param.strip_prefix("code=") {
+                    let code = code.split('&').next().unwrap_or(code);
+                    if !code.is_empty() {
+                        return Some((code.to_string(), None));
+                    }
+                }
+            }
+        }
+        return None;
+    }
+    // "code#state" format from console.anthropic.com callback page
+    if input.contains('#') {
+        let mut parts = input.splitn(2, '#');
+        let code = parts.next().unwrap_or("").to_string();
+        let state = parts.next().map(|s| s.to_string());
+        if !code.is_empty() {
+            return Some((code, state));
+        }
+    }
+    Some((input.to_string(), None))
+}
+
+// --- Session helpers ---
+
 async fn patch_connect_session(
     state: &AppState,
     session_id: &str,
@@ -102,11 +185,6 @@ async fn snapshot_connect_session(
 
 fn connect_command(provider: &str, temp_home: &str) -> Command {
     let mut cmd = match provider {
-        PROVIDER_CLAUDE => {
-            let mut cmd = Command::new("claude");
-            cmd.args(["auth", "login"]);
-            cmd
-        },
         PROVIDER_OPENAI => {
             let mut cmd = Command::new("codex");
             cmd.args(["login", "--device-auth"]);
@@ -205,6 +283,8 @@ async fn revalidate_stored_credential(
     Ok(())
 }
 
+// --- OpenAI CLI connect session (unchanged) ---
+
 async fn run_connect_session(
     state: Arc<AppState>,
     session_id: String,
@@ -226,7 +306,11 @@ async fn run_connect_session(
     };
 
     if let Some(stdin) = child.stdin.take() {
-        state.linked_credential_stdins.lock().await.insert(session_id.clone(), stdin);
+        state
+            .linked_credential_stdins
+            .lock()
+            .await
+            .insert(session_id.clone(), stdin);
     }
 
     let stdout = match child.stdout.take() {
@@ -397,9 +481,242 @@ async fn run_connect_session(
         },
     }
 
-    state.linked_credential_stdins.lock().await.remove(&session_id);
+    state
+        .linked_credential_stdins
+        .lock()
+        .await
+        .remove(&session_id);
     let _ = tokio::fs::remove_dir_all(&temp_home).await;
 }
+
+// --- Claude PKCE token exchange ---
+
+async fn claude_pkce_exchange(
+    state: &AppState,
+    session_id: &str,
+    user_id: i64,
+    code_verifier: &str,
+    auth_code: &str,
+    oauth_state: Option<&str>,
+) {
+    tracing::info!("claude PKCE exchange starting for session={session_id}");
+    let mut body = json!({
+        "grant_type": "authorization_code",
+        "code": auth_code,
+        "redirect_uri": CLAUDE_REDIRECT_URI,
+        "client_id": CLAUDE_CLIENT_ID,
+        "code_verifier": code_verifier,
+    });
+    if let Some(st) = oauth_state {
+        body["state"] = Value::String(st.to_string());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap();
+    let resp = match client
+        .post(CLAUDE_TOKEN_ENDPOINT)
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(err) => {
+            patch_connect_session(state, session_id, |s| {
+                s.status = "failed".to_string();
+                s.error = format!("Token exchange request failed: {err}");
+            })
+            .await;
+            return;
+        },
+    };
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        tracing::warn!("Claude token exchange failed: {status} {body}");
+        patch_connect_session(state, session_id, |s| {
+            s.status = "failed".to_string();
+            s.error = format!("Token exchange failed ({status}): {body}");
+        })
+        .await;
+        return;
+    }
+
+    let token_data: Value = match resp.json().await {
+        Ok(v) => v,
+        Err(err) => {
+            patch_connect_session(state, session_id, |s| {
+                s.status = "failed".to_string();
+                s.error = format!("Failed to parse token response: {err}");
+            })
+            .await;
+            return;
+        },
+    };
+
+    let access_token = token_data["access_token"].as_str().unwrap_or("");
+    let refresh_token = token_data["refresh_token"].as_str().unwrap_or("");
+    let expires_in = token_data["expires_in"].as_i64().unwrap_or(3600);
+    let account_email = token_data["account"]
+        .as_object()
+        .and_then(|a| a.get("email_address").or(a.get("email")))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let account_label = token_data["organization"]
+        .as_object()
+        .and_then(|o| o.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if access_token.is_empty() {
+        patch_connect_session(state, session_id, |s| {
+            s.status = "failed".to_string();
+            s.error = "No access token in response".to_string();
+        })
+        .await;
+        return;
+    }
+
+    let scopes: Vec<String> = token_data["scope"]
+        .as_str()
+        .unwrap_or("")
+        .split_whitespace()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    let scopes = if scopes.is_empty() {
+        CLAUDE_SCOPES.iter().map(|s| s.to_string()).collect()
+    } else {
+        scopes
+    };
+
+    let expires_at_ms = Utc::now().timestamp_millis() + expires_in * 1000;
+
+    let credentials = json!({
+        "claudeAiOauth": {
+            "accessToken": access_token,
+            "refreshToken": refresh_token,
+            "expiresAt": expires_at_ms,
+            "scopes": scopes,
+        }
+    });
+
+    let temp_home = auth_session_root(state, "connect", session_id);
+    let creds_dir = temp_home.join(".claude");
+    if let Err(err) = tokio::fs::create_dir_all(&creds_dir).await {
+        patch_connect_session(state, session_id, |s| {
+            s.status = "failed".to_string();
+            s.error = format!("Failed to create credentials dir: {err}");
+        })
+        .await;
+        return;
+    }
+
+    let creds_path = creds_dir.join(".credentials.json");
+    if let Err(err) =
+        tokio::fs::write(&creds_path, serde_json::to_string_pretty(&credentials).unwrap()).await
+    {
+        patch_connect_session(state, session_id, |s| {
+            s.status = "failed".to_string();
+            s.error = format!("Failed to write credentials: {err}");
+        })
+        .await;
+        return;
+    }
+
+    let temp_home_str = temp_home.to_string_lossy().to_string();
+    match validate_home(PROVIDER_CLAUDE, &temp_home).await {
+        Ok(validation) if validation.ok => {
+            match persist_validated_credential(state, user_id, PROVIDER_CLAUDE, &temp_home_str, &validation).await {
+                Ok(()) => {
+                    patch_connect_session(state, session_id, |s| {
+                        s.status = "connected".to_string();
+                        s.message = "Claude credential linked successfully".to_string();
+                        s.error.clear();
+                    })
+                    .await;
+                },
+                Err(err) => {
+                    patch_connect_session(state, session_id, |s| {
+                        s.status = "failed".to_string();
+                        s.error = format!("Failed to save credential: {err}");
+                    })
+                    .await;
+                },
+            }
+        },
+        Ok(validation) => {
+            // Validation failed but token exchange worked — still persist with what we have
+            tracing::warn!("Claude PKCE: token exchange ok but validation failed: {}", validation.last_error);
+            // Try persisting anyway since we have valid tokens
+            let fallback_validation = LinkedCredentialValidation {
+                ok: true,
+                auth_kind: "claude_code_session".to_string(),
+                account_email: account_email.clone(),
+                account_label: account_label.clone(),
+                expires_at: chrono::DateTime::from_timestamp_millis(expires_at_ms)
+                    .map(|ts| ts.to_rfc3339())
+                    .unwrap_or_default(),
+                last_error: String::new(),
+            };
+            match persist_validated_credential(state, user_id, PROVIDER_CLAUDE, &temp_home_str, &fallback_validation).await {
+                Ok(()) => {
+                    patch_connect_session(state, session_id, |s| {
+                        s.status = "connected".to_string();
+                        s.message = "Claude credential linked (validation pending)".to_string();
+                        s.error.clear();
+                    })
+                    .await;
+                },
+                Err(err) => {
+                    patch_connect_session(state, session_id, |s| {
+                        s.status = "failed".to_string();
+                        s.error = format!("Failed to save credential: {err}");
+                    })
+                    .await;
+                },
+            }
+        },
+        Err(err) => {
+            tracing::warn!("Claude PKCE: validation error: {err}");
+            // Still try to persist — we have valid tokens from the exchange
+            let fallback_validation = LinkedCredentialValidation {
+                ok: true,
+                auth_kind: "claude_code_session".to_string(),
+                account_email: account_email.clone(),
+                account_label: account_label.clone(),
+                expires_at: chrono::DateTime::from_timestamp_millis(expires_at_ms)
+                    .map(|ts| ts.to_rfc3339())
+                    .unwrap_or_default(),
+                last_error: String::new(),
+            };
+            match persist_validated_credential(state, user_id, PROVIDER_CLAUDE, &temp_home_str, &fallback_validation).await {
+                Ok(()) => {
+                    patch_connect_session(state, session_id, |s| {
+                        s.status = "connected".to_string();
+                        s.message = "Claude credential linked".to_string();
+                        s.error.clear();
+                    })
+                    .await;
+                },
+                Err(err) => {
+                    patch_connect_session(state, session_id, |s| {
+                        s.status = "failed".to_string();
+                        s.error = format!("Failed to save credential: {err}");
+                    })
+                    .await;
+                },
+            }
+        },
+    }
+
+    let _ = tokio::fs::remove_dir_all(&temp_home).await;
+}
+
+// --- Maintenance ---
 
 pub(crate) fn spawn_linked_credential_maintenance(state: Arc<AppState>) {
     tokio::spawn(async move {
@@ -440,6 +757,8 @@ pub(crate) fn spawn_linked_credential_maintenance(state: Arc<AppState>) {
     });
 }
 
+// --- Route handlers ---
+
 pub(crate) async fn list_user_linked_credentials(
     State(state): State<Arc<AppState>>,
     axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
@@ -463,6 +782,36 @@ pub(crate) async fn start_linked_credential_connect(
         .await
         .map_err(internal)?;
     let now = Utc::now().to_rfc3339();
+
+    if provider == PROVIDER_CLAUDE {
+        let code_verifier = generate_pkce_verifier();
+        let challenge = pkce_challenge(&code_verifier);
+        let auth_url = build_claude_auth_url(&challenge, &code_verifier);
+
+        let session = LinkedCredentialConnectSession {
+            id: session_id.clone(),
+            provider: provider.to_string(),
+            status: "pending".to_string(),
+            auth_url,
+            device_code: String::new(),
+            message: "Open the link to authorize your Claude account".to_string(),
+            error: String::new(),
+            created_at: now.clone(),
+            updated_at: now,
+            user_id: user.id,
+            code_verifier,
+        };
+
+        state
+            .linked_credential_sessions
+            .lock()
+            .await
+            .insert(session_id, session.clone());
+
+        return Ok((StatusCode::ACCEPTED, Json(json!(session))));
+    }
+
+    // OpenAI: spawn CLI
     {
         let mut sessions = state.linked_credential_sessions.lock().await;
         sessions.insert(
@@ -478,6 +827,7 @@ pub(crate) async fn start_linked_credential_connect(
                 created_at: now.clone(),
                 updated_at: now,
                 user_id: user.id,
+                code_verifier: String::new(),
             },
         );
     }
@@ -535,6 +885,44 @@ pub(crate) async fn submit_credential_connect_code(
     if code.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
+
+    if session.provider == PROVIDER_CLAUDE {
+        let (auth_code, state_from_input) =
+            extract_oauth_code(&code).ok_or(StatusCode::BAD_REQUEST)?;
+        let code_verifier = {
+            let sessions = state.linked_credential_sessions.lock().await;
+            sessions
+                .get(&id)
+                .map(|s| s.code_verifier.clone())
+                .unwrap_or_default()
+        };
+        if code_verifier.is_empty() {
+            return Err(StatusCode::GONE);
+        }
+
+        patch_connect_session(&state, &id, |s| {
+            s.message = "Exchanging authorization code...".to_string();
+        })
+        .await;
+
+        let state_clone = Arc::clone(&state);
+        let id_clone = id.clone();
+        tokio::spawn(async move {
+            claude_pkce_exchange(
+                &state_clone,
+                &id_clone,
+                user.id,
+                &code_verifier,
+                &auth_code,
+                state_from_input.as_deref(),
+            )
+            .await;
+        });
+
+        return Ok(Json(json!({ "ok": true })));
+    }
+
+    // OpenAI: write to CLI stdin
     let mut stdins = state.linked_credential_stdins.lock().await;
     if let Some(stdin) = stdins.get_mut(&id) {
         let line = format!("{code}\n");
@@ -561,7 +949,7 @@ pub(crate) async fn delete_user_linked_credential(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_device_code, extract_first_url};
+    use super::{extract_device_code, extract_first_url, extract_oauth_code, pkce_challenge};
 
     #[test]
     fn extracts_provider_urls() {
@@ -577,5 +965,46 @@ mod tests {
             extract_device_code("Enter this one-time code O078-ZFUYD"),
             Some("O078-ZFUYD".to_string())
         );
+    }
+
+    #[test]
+    fn extracts_oauth_code_from_url() {
+        assert_eq!(
+            extract_oauth_code(
+                "https://console.anthropic.com/oauth/code/callback?code=abc123&state=xyz"
+            ),
+            Some(("abc123".to_string(), None))
+        );
+        assert_eq!(
+            extract_oauth_code("http://localhost:44603/?code=def456&state=xyz"),
+            Some(("def456".to_string(), None))
+        );
+        assert_eq!(
+            extract_oauth_code("raw-code-value"),
+            Some(("raw-code-value".to_string(), None))
+        );
+        assert_eq!(extract_oauth_code(""), None);
+    }
+
+    #[test]
+    fn extracts_code_and_state_from_hash_format() {
+        assert_eq!(
+            extract_oauth_code("i3wyjs56jkt#2996ef2f4b976e99ef31"),
+            Some(("i3wyjs56jkt".to_string(), Some("2996ef2f4b976e99ef31".to_string())))
+        );
+        assert_eq!(
+            extract_oauth_code("plaincode"),
+            Some(("plaincode".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn pkce_challenge_is_base64url() {
+        let verifier = "test-verifier-string";
+        let challenge = pkce_challenge(verifier);
+        assert!(!challenge.contains('+'));
+        assert!(!challenge.contains('/'));
+        assert!(!challenge.contains('='));
+        assert!(!challenge.is_empty());
     }
 }

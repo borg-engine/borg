@@ -912,6 +912,7 @@ dependencies = [
  "aws-sigv4",
  "aws-types",
  "axum",
+ "base64",
  "borg-agent",
  "borg-core",
  "borg-domains",

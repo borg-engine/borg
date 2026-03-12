@@ -122,8 +122,10 @@ async function startWhatsApp() {
   const makeWASocket = baileys.default;
   const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore, getContentType } = baileys;
   const pino = (await import('pino')).default;
+  const { mkdirSync } = await import('fs');
 
   const AUTH_DIR = process.env.WA_AUTH_DIR || 'whatsapp/auth';
+  try { mkdirSync(AUTH_DIR, { recursive: true }); } catch {}
   const logger = pino({ level: 'silent' });
   let waRetries = 0;
 
@@ -140,61 +142,75 @@ async function startWhatsApp() {
     });
 
     waSock.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect, qr } = update;
+      try {
+        const { connection, lastDisconnect, qr } = update;
 
-      if (qr) emit('whatsapp', { event: 'qr', data: qr });
+        if (qr) emit('whatsapp', { event: 'qr', data: qr });
 
-      if (connection === 'close') {
-        const code = lastDisconnect?.error?.output?.statusCode;
-        const reason = lastDisconnect?.error?.message || 'unknown';
-        emit('whatsapp', { event: 'disconnected', reason });
-        if (code !== DisconnectReason.loggedOut) {
-          if (waRetries < 10) {
-            const delay = Math.min(1000 * Math.pow(2, waRetries) + Math.random() * 1000, 30000);
-            waRetries++;
-            setTimeout(connect, delay);
+        if (connection === 'close') {
+          const code = lastDisconnect?.error?.output?.statusCode;
+          const reason = lastDisconnect?.error?.message || 'unknown';
+          emit('whatsapp', { event: 'disconnected', reason });
+          if (code !== DisconnectReason.loggedOut) {
+            if (waRetries < 10) {
+              const delay = Math.min(1000 * Math.pow(2, waRetries) + Math.random() * 1000, 30000);
+              waRetries++;
+              setTimeout(() => connect().catch((e) => {
+                emit('whatsapp', { event: 'error', message: `reconnect failed: ${e.message}` });
+              }), delay);
+            } else {
+              emit('whatsapp', { event: 'error', message: 'max reconnection attempts exceeded' });
+            }
           } else {
-            emit('whatsapp', { event: 'error', message: 'max reconnection attempts exceeded' });
+            emit('whatsapp', { event: 'logged_out', message: 'WhatsApp logged out' });
           }
-        } else {
-          emit('whatsapp', { event: 'logged_out', message: 'WhatsApp logged out' });
         }
-      }
 
-      if (connection === 'open') {
-        waRetries = 0;
-        emit('whatsapp', { event: 'connected', jid: waSock.user?.id || '' });
+        if (connection === 'open') {
+          waRetries = 0;
+          emit('whatsapp', { event: 'connected', jid: waSock.user?.id || '' });
+        }
+      } catch (e) {
+        emit('whatsapp', { event: 'error', message: `connection.update: ${e.message}` });
       }
     });
 
-    waSock.ev.on('creds.update', saveCreds);
+    waSock.ev.on('creds.update', (...args) => {
+      try { saveCreds(...args); } catch (e) {
+        emit('whatsapp', { event: 'error', message: `creds.update: ${e.message}` });
+      }
+    });
 
     waSock.ev.on('messages.upsert', ({ messages, type }) => {
-      if (type !== 'notify') return;
-      for (const msg of messages) {
-        if (!msg.message || msg.key.fromMe) continue;
-        const contentType = getContentType(msg.message);
-        let text = '';
-        if (contentType === 'conversation') text = msg.message.conversation || '';
-        else if (contentType === 'extendedTextMessage') text = msg.message.extendedTextMessage?.text || '';
-        else continue;
-        if (!text) continue;
+      try {
+        if (type !== 'notify') return;
+        for (const msg of messages) {
+          if (!msg.message || msg.key.fromMe) continue;
+          const contentType = getContentType(msg.message);
+          let text = '';
+          if (contentType === 'conversation') text = msg.message.conversation || '';
+          else if (contentType === 'extendedTextMessage') text = msg.message.extendedTextMessage?.text || '';
+          else continue;
+          if (!text) continue;
 
-        const jid = msg.key.remoteJid || '';
-        const isGroup = jid.endsWith('@g.us');
-        const sender = isGroup ? (msg.key.participant || '') : jid;
-        const senderName = msg.pushName || sender.split('@')[0];
-        const mentionedJids = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        const selfJid = waSock.user?.id || '';
-        const mentionsByJid = mentionedJids.some((j) => selfJid && j.split('@')[0] === selfJid.split('@')[0]);
-        const mentionsByName = text.toLowerCase().includes('@' + ASSISTANT_NAME);
+          const jid = msg.key.remoteJid || '';
+          const isGroup = jid.endsWith('@g.us');
+          const sender = isGroup ? (msg.key.participant || '') : jid;
+          const senderName = msg.pushName || sender.split('@')[0];
+          const mentionedJids = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
+          const selfJid = waSock.user?.id || '';
+          const mentionsByJid = mentionedJids.some((j) => selfJid && j.split('@')[0] === selfJid.split('@')[0]);
+          const mentionsByName = text.toLowerCase().includes('@' + ASSISTANT_NAME);
 
-        emit('whatsapp', {
-          event: 'message',
-          jid, id: msg.key.id || '', sender, sender_name: senderName,
-          text, timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
-          is_group: isGroup, mentions_bot: mentionsByJid || mentionsByName,
-        });
+          emit('whatsapp', {
+            event: 'message',
+            jid, id: msg.key.id || '', sender, sender_name: senderName,
+            text, timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
+            is_group: isGroup, mentions_bot: mentionsByJid || mentionsByName,
+          });
+        }
+      } catch (e) {
+        emit('whatsapp', { event: 'error', message: `messages.upsert: ${e.message}` });
       }
     });
   }

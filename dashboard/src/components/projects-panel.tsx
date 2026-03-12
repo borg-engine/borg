@@ -55,6 +55,7 @@ import type { KnowledgeFile, KnowledgeRepo, ProjectDocument } from "@/lib/types"
 import { cn } from "@/lib/utils";
 import { getVocabulary, useVocabulary } from "@/lib/vocabulary";
 import { ChatBody } from "./chat-body";
+import { CloudStoragePanel } from "./cloud-storage";
 import {
   FileListItem,
   FileListPagination,
@@ -66,7 +67,6 @@ import {
   useFileList,
   useFilePreview,
 } from "./file-list-shared";
-import { CloudStoragePanel } from "./cloud-storage";
 import { ProjectDetail } from "./project-detail";
 import { MarkdownLegalViewer } from "./viewers/markdown-legal-viewer";
 import { RedlineViewer } from "./viewers/redline-viewer";
@@ -1303,7 +1303,10 @@ export function ProjectsPanel() {
                 <CloudStoragePanel
                   projectId={activeProjectId}
                   settings={settings ?? null}
-                  onImported={() => { resetPagination(); refetchFiles(); }}
+                  onImported={() => {
+                    resetPagination();
+                    refetchFiles();
+                  }}
                 />
               </div>
             </div>

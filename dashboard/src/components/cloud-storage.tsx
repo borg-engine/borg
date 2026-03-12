@@ -270,10 +270,7 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
             )}
           >
             <span>{cloudMessage.text}</span>
-            <button
-              onClick={() => setCloudMessage(null)}
-              className="shrink-0 text-[#6b6459] hover:text-[#e8e0d4]"
-            >
+            <button onClick={() => setCloudMessage(null)} className="shrink-0 text-[#6b6459] hover:text-[#e8e0d4]">
               <X className="h-3 w-3" />
             </button>
           </div>

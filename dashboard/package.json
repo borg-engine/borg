@@ -25,6 +25,7 @@
     "lucide-react": "^0.575.0",
     "pdfjs-dist": "^5.5.207",
     "pptx-preview": "^1.0.7",
+    "qrcode.react": "^4.2.0",
     "radix-ui": "^1.4.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

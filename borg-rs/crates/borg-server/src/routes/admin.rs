@@ -1437,6 +1437,17 @@ pub(crate) async fn disconnect_discord_bot(
     Ok(Json(json!({ "ok": true })))
 }
 
+pub(crate) async fn get_whatsapp_status(
+    State(state): State<Arc<AppState>>,
+) -> Json<Value> {
+    let status = state
+        .wa_status
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    Json(serde_json::to_value(status).unwrap_or_default())
+}
+
 pub(crate) async fn sse_logs(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
@@ -1940,6 +1951,7 @@ pub(crate) async fn email_inbound(
             &storage,
             &chat_tx,
             &ai_count,
+            None,
         )
         .await
         {

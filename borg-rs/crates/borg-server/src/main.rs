@@ -50,6 +50,21 @@ use tracing::info;
 
 // ── AppState ──────────────────────────────────────────────────────────────
 
+/// Tracks the live WhatsApp connection state from the sidecar.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WaStatus {
+    pub connected: bool,
+    pub jid: Option<String>,
+    pub qr: Option<String>,
+    pub disabled: bool,
+}
+
+impl Default for WaStatus {
+    fn default() -> Self {
+        Self { connected: false, jid: None, qr: None, disabled: false }
+    }
+}
+
 pub struct AppState {
     pub db: Arc<Db>,
     pub config: Arc<Config>,
@@ -79,6 +94,7 @@ pub struct AppState {
         Arc<TokioMutex<HashMap<String, routes::LinkedCredentialConnectSession>>>,
     pub(crate) linked_credential_stdins:
         Arc<TokioMutex<HashMap<String, tokio::process::ChildStdin>>>,
+    pub wa_status: Arc<std::sync::Mutex<WaStatus>>,
 }
 
 impl AppState {
@@ -307,6 +323,7 @@ fn spawn_telegram_poller(
                                     &storage2,
                                     &chat_tx2,
                                     &ai_request_count2,
+                                    None,
                                 )
                                 .await
                                 {
@@ -424,6 +441,7 @@ async fn spawn_sidecar_manager(
     chat_event_tx: broadcast::Sender<String>,
     ai_request_count: Arc<AtomicU64>,
     sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>>,
+    wa_status: Arc<std::sync::Mutex<WaStatus>>,
 ) {
     match Sidecar::spawn(
         &config.assistant_name,
@@ -500,6 +518,7 @@ async fn spawn_sidecar_manager(
                                     &storage2,
                                     &chat_tx2,
                                     &ai_request_count2,
+                                    None,
                                 )
                                 .await
                                 {
@@ -544,11 +563,34 @@ async fn spawn_sidecar_manager(
                 let search_events = search.clone();
                 let chat_tx_events = chat_event_tx.clone();
                 let events_ai_request_count = Arc::clone(&ai_request_count);
+                let wa_status_events = Arc::clone(&wa_status);
                 tokio::spawn(async move {
                     loop {
                         let Some(event) = event_rx.recv().await else {
                             break;
                         };
+                        match &event {
+                            SidecarEvent::WaConnected { jid } => {
+                                if let Ok(mut s) = wa_status_events.lock() {
+                                    s.connected = true;
+                                    s.jid = Some(jid.clone());
+                                    s.qr = None;
+                                }
+                            },
+                            SidecarEvent::WaQr { data } => {
+                                if let Ok(mut s) = wa_status_events.lock() {
+                                    s.qr = Some(data.clone());
+                                    s.connected = false;
+                                }
+                            },
+                            SidecarEvent::Disconnected { source: Source::WhatsApp, .. } => {
+                                if let Ok(mut s) = wa_status_events.lock() {
+                                    s.connected = false;
+                                    s.jid = None;
+                                }
+                            },
+                            _ => {},
+                        }
                         let SidecarEvent::Message(msg) = event else {
                             continue;
                         };
@@ -648,6 +690,7 @@ async fn spawn_sidecar_manager(
                                     &storage2,
                                     &chat_tx2,
                                     &ai_request_count2,
+                                    None,
                                 )
                                 .await
                                 {
@@ -848,6 +891,7 @@ fn spawn_imap_poller(
                         &storage,
                         &chat_tx,
                         &ai_count,
+                        None,
                     )
                     .await
                     {
@@ -1183,6 +1227,7 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
             "/api/user/discord-bot",
             post(routes::connect_discord_bot).delete(routes::disconnect_discord_bot),
         )
+        .route("/api/whatsapp/status", get(routes::get_whatsapp_status))
         .route(
             "/api/user/linked-credentials",
             get(routes::list_user_linked_credentials),
@@ -1568,6 +1613,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>> = Arc::new(TokioMutex::new(None));
+    let wa_status: Arc<std::sync::Mutex<WaStatus>> = Arc::new(std::sync::Mutex::new(
+        WaStatus { disabled: config.wa_disabled, ..Default::default() },
+    ));
     spawn_user_bot_manager(
         Arc::clone(&db),
         Arc::clone(&config),
@@ -1596,6 +1644,7 @@ async fn main() -> anyhow::Result<()> {
         chat_event_tx.clone(),
         Arc::clone(&ai_request_count),
         Arc::clone(&sidecar_slot),
+        Arc::clone(&wa_status),
     )
     .await;
 
@@ -1655,6 +1704,7 @@ async fn main() -> anyhow::Result<()> {
         login_attempts: Arc::new(std::sync::Mutex::new(HashMap::new())),
         linked_credential_sessions: Arc::new(TokioMutex::new(HashMap::new())),
         linked_credential_stdins: Arc::new(TokioMutex::new(HashMap::new())),
+        wa_status,
     });
 
     spawn_post_state_tasks(&state, &config, &db);

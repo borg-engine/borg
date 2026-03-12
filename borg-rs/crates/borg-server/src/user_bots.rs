@@ -321,6 +321,7 @@ async fn poll_loop(
                                 &storage2,
                                 &chat_tx2,
                                 &ai_count2,
+                                None,
                             )
                             .await
                             {

@@ -17,6 +17,9 @@ use axum::{
 use borg_core::{
     config::{refresh_oauth_token, Config},
     db::Db,
+    linked_credentials::{
+        claude_oauth_token_from_home, restore_bundle, PROVIDER_CLAUDE,
+    },
 };
 use chrono::Utc;
 use serde::Deserialize;
@@ -113,6 +116,7 @@ pub(crate) async fn run_chat_agent(
     storage: &Arc<FileStorage>,
     chat_event_tx: &broadcast::Sender<String>,
     ai_request_count: &Arc<AtomicU64>,
+    user_id: Option<i64>,
 ) -> anyhow::Result<String> {
     let session_dir = format!(
         "{}/sessions/chat-{}",
@@ -292,7 +296,29 @@ pub(crate) async fn run_chat_agent(
     args.push("--print".to_string());
     args.push(prompt);
 
-    let token = refresh_oauth_token(&config.credentials_path, &config.oauth_token);
+    let mut token = refresh_oauth_token(&config.credentials_path, &config.oauth_token);
+    if token.is_empty() {
+        if let Some(uid) = user_id {
+            if let Ok(Some(secret)) = db.get_user_linked_credential(uid, PROVIDER_CLAUDE) {
+                if secret.entry.status == "connected" {
+                    let session_path = std::path::Path::new(&session_dir);
+                    if restore_bundle(&secret.bundle, session_path).is_ok() {
+                        if let Some(t) = claude_oauth_token_from_home(session_path) {
+                            tracing::info!("chat agent using linked credential token for user {uid}");
+                            token = t;
+                        } else {
+                            tracing::warn!("linked credential restored but no OAuth token found for user {uid}");
+                        }
+                    } else {
+                        tracing::warn!("failed to restore linked credential bundle for user {uid}");
+                    }
+                }
+            }
+        }
+        if token.is_empty() {
+            tracing::warn!("chat agent has no OAuth token — will likely fail");
+        }
+    }
 
     if !api_token.is_empty() {
         let project_id_hint = project_for_chat
@@ -342,8 +368,19 @@ pub(crate) async fn run_chat_agent(
         .spawn()?;
 
     let stdout = child.stdout.take().expect("stdout piped");
+    let stderr = child.stderr.take().expect("stderr piped");
     let mut reader = tokio::io::BufReader::new(stdout).lines();
     let mut raw_lines: Vec<String> = Vec::new();
+
+    let stderr_handle = tokio::spawn(async move {
+        let mut stderr_reader = tokio::io::BufReader::new(stderr).lines();
+        let mut lines = Vec::new();
+        while let Ok(Some(line)) = stderr_reader.next_line().await {
+            lines.push(line);
+        }
+        lines
+    });
+
     let stream_result = tokio::time::timeout(timeout, async {
         while let Some(line) = reader.next_line().await? {
             raw_lines.push(line.clone());
@@ -370,9 +407,16 @@ pub(crate) async fn run_chat_agent(
         anyhow::bail!("chat agent timed out after {}s", timeout.as_secs());
     }
 
+    let stderr_lines = stderr_handle.await.unwrap_or_default();
+
     if let Some(st) = status {
         if !st.success() {
-            tracing::warn!("chat agent failed ({}) exit={:?}", chat_key, st.code());
+            let stderr_text = stderr_lines.join("\n");
+            tracing::warn!(
+                "chat agent failed ({}) exit={:?} stderr={stderr_text}",
+                chat_key,
+                st.code()
+            );
         }
     }
 
@@ -591,6 +635,7 @@ pub(crate) async fn post_project_chat(
     let thread2 = thread.clone();
     let sender2 = sender.clone();
     let text2 = body.text.clone();
+    let uid = user.id;
     tokio::spawn(async move {
         let run_id = crate::messaging_progress::new_chat_run_id();
         match run_chat_agent(
@@ -605,6 +650,7 @@ pub(crate) async fn post_project_chat(
             &state2.file_storage,
             &state2.chat_event_tx,
             &state2.ai_request_count,
+            Some(uid),
         )
         .await
         {
@@ -667,6 +713,7 @@ pub(crate) async fn post_chat(
     let thread2 = thread.clone();
     let sender2 = sender.clone();
     let text2 = body.text.clone();
+    let uid = user.id;
     tokio::spawn(async move {
         let run_id = crate::messaging_progress::new_chat_run_id();
         match run_chat_agent(
@@ -681,6 +728,7 @@ pub(crate) async fn post_chat(
             &state2.file_storage,
             &state2.chat_event_tx,
             &state2.ai_request_count,
+            Some(uid),
         )
         .await
         {

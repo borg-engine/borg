@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   FolderOpen,
@@ -152,6 +153,7 @@ export default function App() {
 }
 
 function OnboardingModal() {
+  const queryClient = useQueryClient();
   const { data, isLoading } = useLinkedCredentials();
   const [dismissed, setDismissed] = useState(false);
   const [busyProvider, setBusyProvider] = useState<"claude" | "openai" | null>(null);
@@ -176,6 +178,7 @@ function OnboardingModal() {
               delete next[provider];
               return next;
             });
+            queryClient.invalidateQueries({ queryKey: ["linked-credentials"] });
           } else {
             setPending((prev) => ({ ...prev, [provider]: updated }));
           }
@@ -183,7 +186,7 @@ function OnboardingModal() {
       }
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [pending]);
+  }, [pending, queryClient.invalidateQueries]);
 
   if (isLoading || dismissed) return null;
   const hasConnected = (data?.credentials ?? []).some((c) => c.status === "connected");
@@ -213,6 +216,11 @@ function OnboardingModal() {
         delete next[provider];
         return next;
       });
+    } catch (err) {
+      setPending((prev) => ({
+        ...prev,
+        [provider]: { ...prev[provider]!, status: "failed", error: String(err) },
+      }));
     } finally {
       setSubmittingCode(null);
     }
@@ -237,10 +245,11 @@ function OnboardingModal() {
             const session = pending[provider];
             const isConnected = session?.status === "connected";
             const isPending = session?.status === "pending";
+            const isFailed = session?.status === "failed";
             const isBusy = busyProvider === provider;
-            const showCodeInput = isPending && provider !== "claude";
             const authUrl = session?.auth_url || "";
             const isClaudePending = isPending && provider === "claude";
+            const isOpenAIPending = isPending && provider !== "claude";
             return (
               <div key={provider} className="rounded-xl border border-[#2a2520] bg-[#0e0c0a] p-4 space-y-2">
                 <div className="flex items-center justify-between gap-3">
@@ -264,11 +273,6 @@ function OnboardingModal() {
                 </div>
                 {isClaudePending && (
                   <div className="space-y-2">
-                    <p className="text-[11px] text-[#9c9486]">
-                      {authUrl
-                        ? "Click the link below to authorize, then return here. This dialog will close automatically."
-                        : "Waiting for authorization URL..."}
-                    </p>
                     {authUrl && (
                       <a
                         href={authUrl}
@@ -277,12 +281,38 @@ function OnboardingModal() {
                         className="block truncate rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-amber-400 hover:text-amber-300 transition-colors"
                         title={authUrl}
                       >
-                        Open Claude authorization page
+                        1. Click here to open Claude authorization
                       </a>
+                    )}
+                    <p className="text-[11px] text-[#9c9486]">
+                      2. Authorize in the browser, then copy the code shown on the page and paste it below.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={codes[provider] ?? ""}
+                        onChange={(e) => setCodes((prev) => ({ ...prev, [provider]: e.target.value }))}
+                        onKeyDown={(e) => e.key === "Enter" && handleSubmitCode(provider)}
+                        placeholder="Paste authorization code"
+                        className="flex-1 min-w-0 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/30 placeholder:text-[#4a4540]"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => handleSubmitCode(provider)}
+                        disabled={submittingCode === provider || !codes[provider]?.trim()}
+                        className="shrink-0 rounded-lg bg-amber-500/15 px-3 py-1.5 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20 disabled:opacity-40"
+                      >
+                        {submittingCode === provider ? "..." : "Submit"}
+                      </button>
+                    </div>
+                    {session.message && session.message !== "Open the link to authorize your Claude account" && (
+                      <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] text-[#9c9486] break-all overflow-hidden max-w-full">
+                        {session.message}
+                      </div>
                     )}
                   </div>
                 )}
-                {showCodeInput && (
+                {isOpenAIPending && (
                   <div className="space-y-2">
                     <p className="text-[11px] text-[#9c9486]">
                       Follow the instructions in the opened tab, then paste the device code here:
@@ -310,6 +340,23 @@ function OnboardingModal() {
                         {session.message}
                       </div>
                     )}
+                  </div>
+                )}
+                {isFailed && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-red-400">{session?.error || "Connection failed"}</p>
+                    <button
+                      onClick={() => {
+                        setPending((prev) => {
+                          const next = { ...prev };
+                          delete next[provider];
+                          return next;
+                        });
+                      }}
+                      className="text-[11px] text-[#6b6459] hover:text-[#9c9486] underline"
+                    >
+                      Try again
+                    </button>
                   </div>
                 )}
               </div>

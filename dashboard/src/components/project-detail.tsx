@@ -31,6 +31,7 @@ import { useDashboardMode } from "@/lib/dashboard-mode";
 import type { Project, ProjectDocument, ProjectTask } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useVocabulary } from "@/lib/vocabulary";
+import { CloudStoragePanel } from "./cloud-storage";
 import {
   FileListItem,
   FileListPagination,
@@ -42,7 +43,6 @@ import {
   useFileList,
   useFilePreview,
 } from "./file-list-shared";
-import { CloudStoragePanel } from "./cloud-storage";
 import { PhaseTracker } from "./phase-tracker";
 import { StatusBadge } from "./status-badge";
 import { TaskCreator } from "./task-creator";
@@ -501,7 +501,10 @@ function DocumentsTab({
         <CloudStoragePanel
           projectId={projectId}
           settings={settings}
-          onImported={() => { fl.resetPagination(); fl.refetchFiles(); }}
+          onImported={() => {
+            fl.resetPagination();
+            fl.refetchFiles();
+          }}
         />
 
         {deleteError && <div className="text-[12px] text-red-400">{deleteError}</div>}
