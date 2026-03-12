@@ -109,7 +109,7 @@ const ALL_NAV_ITEMS = [
   { key: "creator" as const, label: "Pipelines", Icon: Wrench, minimalVisible: true },
   { key: "auto-tasks" as const, label: "Auto Tasks", Icon: Zap, minimalVisible: true },
   { key: "proposals" as const, label: "Proposals", Icon: Lightbulb, minimalVisible: false },
-  { key: "status" as const, label: "MCP", Icon: Activity, minimalVisible: true },
+  { key: "status" as const, label: "Status", Icon: Activity, minimalVisible: true },
   { key: "logs" as const, label: "Logs", Icon: Terminal, minimalVisible: false },
   { key: "queue" as const, label: "Queue", Icon: GitMerge, minimalVisible: false },
   { key: "settings" as const, label: "Settings", Icon: Settings, minimalVisible: true },

@@ -36,7 +36,7 @@ const VIEW_TITLES: Record<View, string> = {
   proposals: "Proposals",
   logs: "System Logs",
   queue: "Integration Queue",
-  status: "MCP Status",
+  status: "Status",
   chat: "Chat",
   knowledge: "Knowledge Base",
   settings: "Settings",
