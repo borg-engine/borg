@@ -323,6 +323,7 @@ fn is_exempt(path: &str) -> bool {
         || path == "/api/auth/status"
         || path.starts_with("/api/auth/sso/")
         || path == "/api/email/inbound"
+        || path.starts_with("/api/public/")
         || !path.starts_with("/api/")
 }
 
@@ -1055,6 +1056,13 @@ mod tests {
         assert!(!is_exempt("/api/logs"));
         assert!(!is_exempt("/api/tasks/1/stream"));
         assert!(!is_exempt("/api/chat/events"));
+    }
+
+    #[test]
+    fn is_exempt_public_share_paths() {
+        assert!(is_exempt("/api/public/projects/abc123"));
+        assert!(is_exempt("/api/public/projects/abc123/tasks"));
+        assert!(is_exempt("/api/public/projects/abc123/documents"));
     }
 
     #[test]

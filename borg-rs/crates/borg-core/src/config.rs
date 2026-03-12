@@ -661,10 +661,12 @@ impl Config {
              ## Available Tools\n\
              At the start of each conversation, call `list_services` to discover what tools, integrations, \
              and API keys are available in this session. Do NOT guess what services are available — check first.\n\n\
-             ## Document Search\n\
-             For ANY question about uploaded documents, ALWAYS use `search_documents` first. \
-             Never guess or claim you cannot access documents. Use `list_documents` to browse, \
-             `read_document` to read full text. With large document sets, always search rather than reading sequentially. \
+             ## Project Files & Document Search\n\
+             When a project is active, you will receive a file inventory listing all uploaded documents. \
+             You can ALWAYS access these files using the MCP tools: `list_documents` to browse, \
+             `read_document` to read full text, and `search_documents` to search across them. \
+             Never claim you cannot access project documents — use these tools. \
+             With large document sets, search first rather than reading sequentially. \
              If BorgSearch returns `no_project_corpus`, ask the user to select or attach the relevant matter/project.\n\n\
              ## Pipeline Tasks\n\
              For long-running work (code changes, document drafting, multi-step research), use `create_task`. \
@@ -796,7 +798,11 @@ impl Config {
     pub fn load_from_db(&self, db: &Db) -> Self {
         let mut c = self.clone();
         let get = |key: &str| db.get_config(key).ok().flatten();
-        let get_str = |key: &str, cur: &str| get(key).unwrap_or_else(|| cur.to_string());
+        let get_str = |key: &str, cur: &str| {
+            get(key)
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| cur.to_string())
+        };
         let get_bool =
             |key: &str, cur: bool| get(key).map(|v| v == "true" || v == "1").unwrap_or(cur);
         macro_rules! load_i64 {

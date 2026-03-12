@@ -1397,6 +1397,25 @@ export function useProjectDetail(projectId: number | null) {
   });
 }
 
+export function useUpdateProject() {
+  const queryClient = useQueryClient();
+  return useMutation<Project, Error, { projectId: number; body: Record<string, unknown> }>({
+    mutationFn: async ({ projectId, body }) => {
+      const res = await apiFetch(`/api/projects/${projectId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project", vars.projectId] });
+    },
+  });
+}
+
 export function useDeleteProject() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, number>({
@@ -1743,6 +1762,101 @@ export function useCacheVolumes() {
 
 export async function deleteCacheVolume(name: string): Promise<{ ok: boolean }> {
   const res = await apiFetch(`/api/cache/${encodeURIComponent(name)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+// ── Project sharing ─────────────────────────────────────────────────────
+
+export interface ProjectShare {
+  id: number;
+  project_id: number;
+  user_id: number;
+  role: string;
+  username: string;
+  display_name: string;
+  created_at: string;
+}
+
+export interface ProjectShareLink {
+  id: number;
+  project_id: number;
+  token: string;
+  label: string;
+  expires_at: string;
+  revoked: boolean;
+  created_at: string;
+}
+
+export function useProjectShares(projectId: number | null) {
+  return useQuery<ProjectShare[]>({
+    queryKey: ["project_shares", projectId],
+    queryFn: () => fetchJson(`/api/projects/${projectId}/shares`),
+    enabled: projectId !== null,
+  });
+}
+
+export async function addProjectShare(
+  projectId: number,
+  username: string,
+  role = "viewer",
+): Promise<{ id: number }> {
+  const res = await apiFetch(`/api/projects/${projectId}/shares`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, role }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function removeProjectShare(projectId: number, userId: number): Promise<void> {
+  const res = await apiFetch(`/api/projects/${projectId}/shares/${userId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+export function useProjectShareLinks(projectId: number | null) {
+  return useQuery<ProjectShareLink[]>({
+    queryKey: ["project_share_links", projectId],
+    queryFn: () => fetchJson(`/api/projects/${projectId}/share-links`),
+    enabled: projectId !== null,
+  });
+}
+
+export async function createProjectShareLink(
+  projectId: number,
+  label = "",
+  expiresInHours = 72,
+): Promise<{ id: number; token: string; expires_at: string }> {
+  const res = await apiFetch(`/api/projects/${projectId}/share-links`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label, expires_in_hours: expiresInHours }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function revokeProjectShareLink(
+  projectId: number,
+  linkId: number,
+): Promise<void> {
+  const res = await apiFetch(`/api/projects/${projectId}/share-links/${linkId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+// Public (unauthenticated) project access via share link
+export async function fetchPublicProject(token: string): Promise<Project> {
+  const res = await fetch(`${apiBase()}/api/public/projects/${token}`);
+  if (res.status === 410) throw new Error("expired");
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
+export async function fetchPublicProjectTasks(token: string): Promise<ProjectTask[]> {
+  const res = await fetch(`${apiBase()}/api/public/projects/${token}/tasks`);
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }

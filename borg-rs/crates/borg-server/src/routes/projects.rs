@@ -938,8 +938,39 @@ pub(crate) async fn build_project_context(
         context.push_str(&entry);
         remaining -= entry.len();
     }
+    // Always include full file inventory so agent knows what exists
+    if stats.total_files > 0 && remaining > 256 {
+        let all_files = db
+            .list_recent_project_files(project.id, 50, false)
+            .unwrap_or_default();
+        if !all_files.is_empty() {
+            let heading = "\nProject file inventory (use `read_document` or `list_documents` MCP tools to access any file):\n";
+            if heading.len() < remaining {
+                context.push_str(heading);
+                remaining -= heading.len();
+            }
+            for f in &all_files {
+                if remaining < 128 {
+                    break;
+                }
+                let has_text = !f.extracted_text.trim().is_empty();
+                let entry = format!(
+                    "  - {} [{}; {}{}]\n",
+                    f.file_name,
+                    f.mime_type,
+                    format_compact_bytes(f.size_bytes),
+                    if has_text { "; text extracted" } else { "" },
+                );
+                if entry.len() >= remaining {
+                    break;
+                }
+                context.push_str(&entry);
+                remaining -= entry.len();
+            }
+        }
+    }
     if staged_files.is_empty() && stats.total_files > 0 && remaining > 256 {
-        let note = "No corpus files were auto-staged for this request. Work from project metadata and ask for a narrower document target if document-specific analysis is required.\n";
+        let note = "No files were auto-staged for this request (e.g. no extracted text for binary files). Use MCP `read_document` tool to access any file listed above.\n";
         if note.len() < remaining {
             context.push_str(note);
             remaining -= note.len();
@@ -1458,17 +1489,40 @@ async fn process_uploaded_zip(
 
 pub(crate) async fn list_projects(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
     axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
 ) -> Result<Json<Value>, StatusCode> {
-    let projects = state
+    let mut projects = state
         .db
         .list_projects_in_workspace(workspace.id)
         .map_err(internal)?;
-    let out: Vec<ProjectJson> = projects
+
+    // Include projects shared directly with this user from other workspaces
+    let mut shared_roles: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+    if user.id > 0 {
+        let shared = state
+            .db
+            .list_user_shared_projects(user.id)
+            .map_err(internal)?;
+        let existing_ids: HashSet<i64> = projects.iter().map(|p| p.id).collect();
+        for (p, role) in shared {
+            if !existing_ids.contains(&p.id) {
+                shared_roles.insert(p.id, role);
+                projects.push(p);
+            }
+        }
+    }
+
+    let out: Vec<Value> = projects
         .into_iter()
         .map(|p| {
-            let counts = state.db.project_task_status_counts(p.id).ok();
-            ProjectJson::from_row(p, counts)
+            let pid = p.id;
+            let counts = state.db.project_task_status_counts(pid).ok();
+            let mut j = serde_json::to_value(ProjectJson::from_row(p, counts)).unwrap();
+            if let Some(role) = shared_roles.get(&pid) {
+                j["shared_role"] = json!(role);
+            }
+            j
         })
         .collect();
     Ok(Json(json!(out)))
@@ -1476,12 +1530,14 @@ pub(crate) async fn list_projects(
 
 pub(crate) async fn search_projects(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
     axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Query(params): Query<SearchQuery>,
 ) -> Result<Json<Value>, StatusCode> {
     let q = params.q.unwrap_or_default();
     if q.is_empty() {
-        return list_projects(State(state), axum::Extension(workspace)).await;
+        return list_projects(State(state), axum::Extension(user), axum::Extension(workspace))
+            .await;
     }
     let projects = state
         .db
@@ -3213,6 +3269,205 @@ pub(crate) async fn get_task_outputs_handler(
             Ok(Json(json!({ "outputs": outputs_json })))
         },
     }
+}
+
+// ── Project sharing ─────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub(crate) struct AddProjectShareBody {
+    pub username: String,
+    pub role: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CreateShareLinkBody {
+    pub label: Option<String>,
+    pub expires_in_hours: Option<i64>,
+}
+
+pub(crate) async fn list_project_shares(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    let (_project, role) =
+        super::require_project_access_with_shares(state.as_ref(), &user, &workspace, id)?;
+    super::require_min_role(&role, "viewer")?;
+    let shares = state.db.list_project_shares(id).map_err(internal)?;
+    Ok(Json(json!(shares)))
+}
+
+pub(crate) async fn add_project_share(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path(id): Path<i64>,
+    Json(body): Json<AddProjectShareBody>,
+) -> Result<(StatusCode, Json<Value>), StatusCode> {
+    let (_project, role) =
+        super::require_project_access_with_shares(state.as_ref(), &user, &workspace, id)?;
+    super::require_min_role(&role, "editor")?;
+
+    let role_to_grant = body.role.as_deref().unwrap_or("viewer");
+    if !["owner", "editor", "viewer"].contains(&role_to_grant) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let target_user = state
+        .db
+        .get_user_by_username(body.username.trim())
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let target_user_id = target_user.0;
+
+    let share_id = state
+        .db
+        .add_project_share(id, target_user_id, role_to_grant, user.id)
+        .map_err(internal)?;
+
+    Ok((StatusCode::CREATED, Json(json!({ "id": share_id }))))
+}
+
+pub(crate) async fn remove_project_share(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path((id, target_user_id)): Path<(i64, i64)>,
+) -> Result<Json<Value>, StatusCode> {
+    let (_project, role) =
+        super::require_project_access_with_shares(state.as_ref(), &user, &workspace, id)?;
+    super::require_min_role(&role, "editor")?;
+
+    let removed = state
+        .db
+        .remove_project_share(id, target_user_id)
+        .map_err(internal)?;
+    Ok(Json(json!({ "removed": removed })))
+}
+
+pub(crate) async fn list_project_share_links(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    let (_project, role) =
+        super::require_project_access_with_shares(state.as_ref(), &user, &workspace, id)?;
+    super::require_min_role(&role, "editor")?;
+    let links = state.db.list_project_share_links(id).map_err(internal)?;
+    Ok(Json(json!(links)))
+}
+
+pub(crate) async fn create_project_share_link(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path(id): Path<i64>,
+    Json(body): Json<CreateShareLinkBody>,
+) -> Result<(StatusCode, Json<Value>), StatusCode> {
+    let (_project, role) =
+        super::require_project_access_with_shares(state.as_ref(), &user, &workspace, id)?;
+    super::require_min_role(&role, "editor")?;
+
+    let token = crate::auth::generate_token();
+    let hours = body.expires_in_hours.unwrap_or(72).max(1).min(720);
+    let expires_at = (Utc::now() + chrono::Duration::hours(hours))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    let label = body.label.as_deref().unwrap_or("");
+
+    let link_id = state
+        .db
+        .create_project_share_link(id, &token, label, &expires_at, user.id)
+        .map_err(internal)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "id": link_id,
+            "token": token,
+            "expires_at": expires_at,
+        })),
+    ))
+}
+
+pub(crate) async fn revoke_project_share_link(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path((id, link_id)): Path<(i64, i64)>,
+) -> Result<Json<Value>, StatusCode> {
+    let (_project, role) =
+        super::require_project_access_with_shares(state.as_ref(), &user, &workspace, id)?;
+    super::require_min_role(&role, "editor")?;
+
+    let revoked = state
+        .db
+        .revoke_project_share_link(link_id)
+        .map_err(internal)?;
+    Ok(Json(json!({ "revoked": revoked })))
+}
+
+fn resolve_public_share(
+    state: &AppState,
+) -> impl Fn(&str) -> Result<(borg_core::db::ProjectShareLinkRow, ProjectRow), StatusCode> + '_ {
+    move |token: &str| {
+        let link = state
+            .db
+            .get_project_share_link_by_token(token)
+            .map_err(internal)?
+            .ok_or(StatusCode::NOT_FOUND)?;
+        if link.revoked {
+            return Err(StatusCode::NOT_FOUND);
+        }
+        let expires =
+            chrono::NaiveDateTime::parse_from_str(&link.expires_at, "%Y-%m-%d %H:%M:%S")
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if Utc::now().naive_utc() > expires {
+            return Err(StatusCode::GONE);
+        }
+        let project = state
+            .db
+            .get_project(link.project_id)
+            .map_err(internal)?
+            .ok_or(StatusCode::NOT_FOUND)?;
+        Ok((link, project))
+    }
+}
+
+pub(crate) async fn get_public_project(
+    State(state): State<Arc<AppState>>,
+    Path(token): Path<String>,
+) -> Result<Json<Value>, StatusCode> {
+    let (_link, project) = resolve_public_share(state.as_ref())(&token)?;
+    let counts = state.db.project_task_status_counts(project.id).ok();
+    Ok(Json(json!(ProjectJson::from_row(project, counts))))
+}
+
+pub(crate) async fn get_public_project_tasks(
+    State(state): State<Arc<AppState>>,
+    Path(token): Path<String>,
+) -> Result<Json<Value>, StatusCode> {
+    let (_link, project) = resolve_public_share(state.as_ref())(&token)?;
+    let tasks = state
+        .db
+        .list_project_tasks(project.id)
+        .map_err(internal)?;
+    Ok(Json(json!(tasks)))
+}
+
+pub(crate) async fn get_public_project_documents(
+    State(state): State<Arc<AppState>>,
+    Path(token): Path<String>,
+) -> Result<Json<Value>, StatusCode> {
+    let (_link, project) = resolve_public_share(state.as_ref())(&token)?;
+    let files = state
+        .db
+        .list_project_files(project.id)
+        .map_err(internal)?;
+    let public_files: Vec<_> = files.into_iter().filter(|f| !f.privileged).collect();
+    Ok(Json(json!(public_files)))
 }
 
 #[cfg(test)]

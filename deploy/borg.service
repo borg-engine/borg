@@ -1,7 +1,6 @@
 [Unit]
 Description=Borg Autonomous Work Engine
 After=network.target docker.service
-Requires=borg.socket
 
 [Service]
 Type=simple

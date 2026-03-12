@@ -544,3 +544,29 @@ EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_files_user ON knowledge_files(user_id, workspace_id, created_at DESC);
+
+-- ── Project sharing ─────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS project_shares (
+  id BIGSERIAL PRIMARY KEY,
+  project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'viewer',  -- owner | editor | viewer
+  granted_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_shares_project_user ON project_shares(project_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_project_shares_user ON project_shares(user_id, project_id);
+
+CREATE TABLE IF NOT EXISTS project_share_links (
+  id BIGSERIAL PRIMARY KEY,
+  project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL DEFAULT '',
+  expires_at TEXT NOT NULL,
+  created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  revoked BIGINT NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS'))
+);
+CREATE INDEX IF NOT EXISTS idx_project_share_links_token ON project_share_links(token);
+CREATE INDEX IF NOT EXISTS idx_project_share_links_project ON project_share_links(project_id);

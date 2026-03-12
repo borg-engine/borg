@@ -50,6 +50,55 @@ pub(crate) fn require_project_access(
         .ok_or(StatusCode::NOT_FOUND)
 }
 
+/// Like `require_project_access` but also checks per-project shares as fallback.
+/// Returns the project and the effective role ("owner"/"admin"/"member"/"viewer"/"editor").
+pub(crate) fn require_project_access_with_shares(
+    state: &crate::AppState,
+    user: &crate::auth::AuthUser,
+    workspace: &crate::auth::WorkspaceContext,
+    project_id: i64,
+) -> Result<(ProjectRow, String), StatusCode> {
+    if let Some(project) = state
+        .db
+        .get_project_in_workspace(workspace.id, project_id)
+        .map_err(internal)?
+    {
+        return Ok((project, workspace.role.clone()));
+    }
+    if user.id > 0 {
+        if let Some(share) = state
+            .db
+            .get_user_project_share(project_id, user.id)
+            .map_err(internal)?
+        {
+            let project = state
+                .db
+                .get_project(project_id)
+                .map_err(internal)?
+                .ok_or(StatusCode::NOT_FOUND)?;
+            return Ok((project, share.role));
+        }
+    }
+    Err(StatusCode::NOT_FOUND)
+}
+
+pub(crate) fn role_level(role: &str) -> u8 {
+    match role {
+        "owner" | "admin" => 3,
+        "editor" | "member" => 2,
+        "viewer" => 1,
+        _ => 0,
+    }
+}
+
+pub(crate) fn require_min_role(role: &str, minimum: &str) -> Result<(), StatusCode> {
+    if role_level(role) >= role_level(minimum) {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
 pub(crate) fn require_task_access(
     state: &crate::AppState,
     workspace: &crate::auth::WorkspaceContext,

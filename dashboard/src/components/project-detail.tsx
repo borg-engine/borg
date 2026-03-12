@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Edit2, FileText, RotateCcw, Trash2 } from "lucide-react";
+import { Edit2, FileText, RotateCcw, Share2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CitationVerification, RevisionHistory } from "@/lib/api";
 import {
@@ -17,6 +17,7 @@ import {
   type StreamEvent,
   tokenReady,
   useDeleteProject,
+  useUpdateProject,
   useFullModes,
   useProjectAudit,
   useProjectDetail,
@@ -44,6 +45,7 @@ import {
   useFilePreview,
 } from "./file-list-shared";
 import { PhaseTracker } from "./phase-tracker";
+import { ProjectShareDialog } from "./project-share-dialog";
 import { StatusBadge } from "./status-badge";
 import { TaskCreator } from "./task-creator";
 
@@ -126,9 +128,29 @@ function ProjectHeader({ project, onDelete }: { project: Project; onDelete?: () 
   const [exportingAll, setExportingAll] = useState(false);
   const [exportMenu, setExportMenu] = useState(false);
   const [exportTemplateId, setExportTemplateId] = useState<number | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(project.name);
+  const renameInput = useRef<HTMLInputElement>(null);
+  const updateProject = useUpdateProject();
   const { data: templates = [] } = useTemplates("template");
   const { isSWE } = useDashboardMode();
   const isLegalProject = project.mode === "lawborg" || project.mode === "legal";
+
+  useEffect(() => {
+    if (editing && renameInput.current) {
+      renameInput.current.focus();
+      renameInput.current.select();
+    }
+  }, [editing]);
+
+  function commitRename() {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== project.name) {
+      updateProject.mutate({ projectId: project.id, body: { name: trimmed } });
+    }
+    setEditing(false);
+  }
 
   async function exportAll(format: "pdf" | "docx") {
     setExportMenu(false);
@@ -163,9 +185,29 @@ function ProjectHeader({ project, onDelete }: { project: Project; onDelete?: () 
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-[15px] font-semibold text-zinc-100">
+            <h2 className="text-[15px] font-semibold text-zinc-100 flex items-center gap-1">
               <span className="text-[12px] text-[#6b6459] tabular-nums mr-1.5">#{project.id}</span>
-              {project.name}
+              {editing ? (
+                <input
+                  ref={renameInput}
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename();
+                    if (e.key === "Escape") { setEditName(project.name); setEditing(false); }
+                  }}
+                  className="bg-transparent border-b border-amber-500/40 outline-none text-zinc-100 text-[15px] font-semibold px-0 py-0 min-w-[120px]"
+                />
+              ) : (
+                <span
+                  className="cursor-pointer hover:text-amber-400 transition-colors"
+                  onDoubleClick={() => { setEditName(project.name); setEditing(true); }}
+                  title="Double-click to rename"
+                >
+                  {project.name}
+                </span>
+              )}
             </h2>
             {project.jurisdiction && (
               <span className="rounded-lg bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-400">
@@ -187,6 +229,17 @@ function ProjectHeader({ project, onDelete }: { project: Project; onDelete?: () 
             defaultMode={project.mode || "sweborg"}
             buttonLabel={isLegalProject ? "New Matter Task" : "New Task"}
           />
+          <button
+            onClick={() => setShareOpen(true)}
+            className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-[12px] text-zinc-400 hover:border-blue-500/30 hover:text-blue-400 transition-colors flex items-center gap-1.5"
+            title="Share project"
+          >
+            <Share2 size={13} />
+            Share
+          </button>
+          {shareOpen && (
+            <ProjectShareDialog project={project} onClose={() => setShareOpen(false)} />
+          )}
           <div className="relative">
             <button
               onClick={() => setExportMenu((v) => !v)}

@@ -197,6 +197,30 @@ pub struct ProjectRow {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ProjectShareRow {
+    pub id: i64,
+    pub project_id: i64,
+    pub user_id: i64,
+    pub role: String,
+    pub granted_by: Option<i64>,
+    pub username: String,
+    pub display_name: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ProjectShareLinkRow {
+    pub id: i64,
+    pub project_id: i64,
+    pub token: String,
+    pub label: String,
+    pub expires_at: String,
+    pub created_by: Option<i64>,
+    pub revoked: bool,
+    pub created_at: String,
+}
+
 #[derive(serde::Serialize, Clone)]
 pub struct ProjectFileRow {
     pub id: i64,
@@ -1743,6 +1767,225 @@ impl Db {
             .execute("DELETE FROM projects WHERE id=?1", params![id])
             .context("delete_project")?;
         tx.commit().context("delete_project commit")?;
+        Ok(affected > 0)
+    }
+
+    // ── Project sharing ──────────────────────────────────────────────────
+
+    pub fn add_project_share(
+        &self,
+        project_id: i64,
+        user_id: i64,
+        role: &str,
+        granted_by: i64,
+    ) -> Result<i64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let created_at = now_str();
+        let id = conn.execute_returning_id(
+            "INSERT INTO project_shares (project_id, user_id, role, granted_by, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role",
+            params![project_id, user_id, role, granted_by, created_at],
+        )
+        .context("add_project_share")?;
+        Ok(id)
+    }
+
+    pub fn remove_project_share(&self, project_id: i64, user_id: i64) -> Result<bool> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let affected = conn
+            .execute(
+                "DELETE FROM project_shares WHERE project_id = ?1 AND user_id = ?2",
+                params![project_id, user_id],
+            )
+            .context("remove_project_share")?;
+        Ok(affected > 0)
+    }
+
+    pub fn list_project_shares(&self, project_id: i64) -> Result<Vec<ProjectShareRow>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let mut stmt = conn.prepare(
+            "SELECT ps.id, ps.project_id, ps.user_id, ps.role, ps.granted_by, \
+                    u.username, u.display_name, ps.created_at \
+             FROM project_shares ps JOIN users u ON u.id = ps.user_id \
+             WHERE ps.project_id = ?1 ORDER BY ps.created_at",
+        )?;
+        let rows = stmt
+            .query_map(params![project_id], |row| {
+                Ok(ProjectShareRow {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    user_id: row.get(2)?,
+                    role: row.get(3)?,
+                    granted_by: row.get(4)?,
+                    username: row.get(5)?,
+                    display_name: row.get(6)?,
+                    created_at: row.get(7)?,
+                })
+            })?
+            .collect::<pg::Result<Vec<_>>>()
+            .context("list_project_shares")?;
+        Ok(rows)
+    }
+
+    pub fn get_user_project_share(
+        &self,
+        project_id: i64,
+        user_id: i64,
+    ) -> Result<Option<ProjectShareRow>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let row = conn
+            .query_row(
+                "SELECT ps.id, ps.project_id, ps.user_id, ps.role, ps.granted_by, \
+                        u.username, u.display_name, ps.created_at \
+                 FROM project_shares ps JOIN users u ON u.id = ps.user_id \
+                 WHERE ps.project_id = ?1 AND ps.user_id = ?2",
+                params![project_id, user_id],
+                |row| {
+                    Ok(ProjectShareRow {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        user_id: row.get(2)?,
+                        role: row.get(3)?,
+                        granted_by: row.get(4)?,
+                        username: row.get(5)?,
+                        display_name: row.get(6)?,
+                        created_at: row.get(7)?,
+                    })
+                },
+            )
+            .optional()
+            .context("get_user_project_share")?;
+        Ok(row)
+    }
+
+    pub fn list_user_shared_projects(&self, user_id: i64) -> Result<Vec<(ProjectRow, String)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let sql = format!(
+            "SELECT {PROJECT_COLS}, ps.role FROM projects p \
+             JOIN project_shares ps ON ps.project_id = p.id \
+             WHERE ps.user_id = ?1 ORDER BY p.id DESC"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params![user_id], |row| {
+                let project = row_to_project(row)?;
+                let role: String = row.get(16)?;
+                Ok((project, role))
+            })?
+            .collect::<pg::Result<Vec<_>>>()
+            .context("list_user_shared_projects")?;
+        Ok(rows)
+    }
+
+    pub fn create_project_share_link(
+        &self,
+        project_id: i64,
+        token: &str,
+        label: &str,
+        expires_at: &str,
+        created_by: i64,
+    ) -> Result<i64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let created_at = now_str();
+        let id = conn.execute_returning_id(
+            "INSERT INTO project_share_links (project_id, token, label, expires_at, created_by, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![project_id, token, label, expires_at, created_by, created_at],
+        )
+        .context("create_project_share_link")?;
+        Ok(id)
+    }
+
+    pub fn get_project_share_link_by_token(
+        &self,
+        token: &str,
+    ) -> Result<Option<ProjectShareLinkRow>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let row = conn
+            .query_row(
+                "SELECT id, project_id, token, label, expires_at, created_by, revoked, created_at \
+                 FROM project_share_links WHERE token = ?1 AND revoked = 0",
+                params![token],
+                |row| {
+                    let revoked_int: i64 = row.get(6)?;
+                    Ok(ProjectShareLinkRow {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        token: row.get(2)?,
+                        label: row.get(3)?,
+                        expires_at: row.get(4)?,
+                        created_by: row.get(5)?,
+                        revoked: revoked_int != 0,
+                        created_at: row.get(7)?,
+                    })
+                },
+            )
+            .optional()
+            .context("get_project_share_link_by_token")?;
+        Ok(row)
+    }
+
+    pub fn list_project_share_links(&self, project_id: i64) -> Result<Vec<ProjectShareLinkRow>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, token, label, expires_at, created_by, revoked, created_at \
+             FROM project_share_links WHERE project_id = ?1 ORDER BY created_at DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![project_id], |row| {
+                let revoked_int: i64 = row.get(6)?;
+                Ok(ProjectShareLinkRow {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    token: row.get(2)?,
+                    label: row.get(3)?,
+                    expires_at: row.get(4)?,
+                    created_by: row.get(5)?,
+                    revoked: revoked_int != 0,
+                    created_at: row.get(7)?,
+                })
+            })?
+            .collect::<pg::Result<Vec<_>>>()
+            .context("list_project_share_links")?;
+        Ok(rows)
+    }
+
+    pub fn revoke_project_share_link(&self, id: i64) -> Result<bool> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let affected = conn
+            .execute(
+                "UPDATE project_share_links SET revoked = 1 WHERE id = ?1",
+                params![id],
+            )
+            .context("revoke_project_share_link")?;
         Ok(affected > 0)
     }
 

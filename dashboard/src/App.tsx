@@ -24,6 +24,7 @@ import { LogViewer } from "@/components/log-viewer";
 import { LoginPage } from "@/components/login-page";
 import { ModeCreatorPanel } from "@/components/mode-creator-panel";
 import { ProjectsPanel } from "@/components/projects-panel";
+import { PublicProjectView } from "@/components/public-project-view";
 import { ProposalsPanel } from "@/components/proposals-panel";
 import { QueuePanel } from "@/components/queue-panel";
 import { SettingsPanel } from "@/components/settings-panel";
@@ -139,12 +140,31 @@ function detectDefaultView(
   return "projects";
 }
 
+function SharedViewCheck() {
+  const [sharedToken, setSharedToken] = useState<string | null>(null);
+  useEffect(() => {
+    function checkHash() {
+      const match = window.location.hash.match(/^#\/shared\/([a-f0-9]+)$/);
+      setSharedToken(match ? match[1] : null);
+    }
+    checkHash();
+    window.addEventListener("hashchange", checkHash);
+    return () => window.removeEventListener("hashchange", checkHash);
+  }, []);
+  if (sharedToken) {
+    return <PublicProjectView token={sharedToken} />;
+  }
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <AuthGate />
-      </AuthProvider>
+      <SharedViewCheck />
     </ErrorBoundary>
   );
 }

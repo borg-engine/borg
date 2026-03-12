@@ -1416,6 +1416,36 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
             "/api/projects/:id/documents/:task_id",
             delete(routes::delete_project_document),
         )
+        // Project sharing
+        .route(
+            "/api/projects/:id/shares",
+            get(routes::list_project_shares).post(routes::add_project_share),
+        )
+        .route(
+            "/api/projects/:id/shares/:user_id",
+            delete(routes::remove_project_share),
+        )
+        .route(
+            "/api/projects/:id/share-links",
+            get(routes::list_project_share_links).post(routes::create_project_share_link),
+        )
+        .route(
+            "/api/projects/:id/share-links/:link_id",
+            delete(routes::revoke_project_share_link),
+        )
+        // Public share link views (no auth required)
+        .route(
+            "/api/public/projects/:token",
+            get(routes::get_public_project),
+        )
+        .route(
+            "/api/public/projects/:token/tasks",
+            get(routes::get_public_project_tasks),
+        )
+        .route(
+            "/api/public/projects/:token/documents",
+            get(routes::get_public_project_documents),
+        )
         // Modes
         .route("/api/modes", get(routes::get_modes))
         .route("/api/modes/full", get(routes::get_full_modes))

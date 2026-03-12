@@ -125,7 +125,7 @@ pub(crate) const SETTINGS_DEFAULTS: &[(&str, &str)] = &[
     ("sqs_queue_url", ""),
     ("sqs_region", "us-east-1"),
     ("search_backend", "vespa"),
-    ("vespa_url", "http://127.0.0.1:8080"),
+    ("vespa_url", "http://127.0.0.1:8090"),
     ("vespa_namespace", "borg"),
     ("vespa_document_type", "project_file"),
     ("experimental_domains", "false"),
