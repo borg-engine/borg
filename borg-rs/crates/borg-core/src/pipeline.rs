@@ -5056,7 +5056,7 @@ fn should_reuse_prior_retrieval_pass(
         return false;
     }
     let last_error = task.last_error.trim();
-    last_error.starts_with("Material fact missing:") && last_error.contains("\n\nQuestion:")
+    last_error.starts_with("Material fact missing") && last_error.contains("\n\nQuestion:")
 }
 
 fn inspect_legal_retrieval_trace(raw_stream: &str) -> LegalRetrievalTrace {
@@ -5726,6 +5726,25 @@ mod legal_retrieval_protocol_tests {
         assert!(
             should_reuse_prior_retrieval_pass(&task, true, false),
             "clarification-driven retry should be able to reuse prior exhaustive review"
+        );
+    }
+
+    #[test]
+    fn clarification_resume_reuses_prior_pass_with_non_colon_material_fact_prefix() {
+        let mut task = sample_task(
+            "benchmark_analysis",
+            "legal-ew-003",
+            "Benchmark clarification retry",
+        );
+        task.mode = "legal".into();
+        task.requires_exhaustive_corpus_review = true;
+        task.attempt = 2;
+        task.last_error = "Material fact missing — Mariner notice position\n\nQuestion: Has either side served notice and when does it expire?"
+            .into();
+
+        assert!(
+            should_reuse_prior_retrieval_pass(&task, true, false),
+            "clarification retries should not depend on a colon after the material-fact prefix"
         );
     }
 
