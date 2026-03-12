@@ -219,9 +219,12 @@ pub(crate) async fn run_chat_agent(
         }
     }
 
-    // Include cloned knowledge repos in system prompt
+    // Include cloned knowledge repos (org + user) in system prompt
     if let Some(project) = project_for_chat.as_ref() {
-        let all_repos = db.list_knowledge_repos(project.workspace_id, None).unwrap_or_default();
+        let mut all_repos = db.list_knowledge_repos(project.workspace_id, None).unwrap_or_default();
+        if let Some(uid) = user_id {
+            all_repos.extend(db.list_knowledge_repos(project.workspace_id, Some(uid)).unwrap_or_default());
+        }
         let ready_repos: Vec<_> = all_repos.iter().filter(|r| r.status == "ready" && !r.local_path.is_empty()).collect();
         if !ready_repos.is_empty() {
             system_prompt.push_str("\n\n## Available Git Repositories\n\n");
