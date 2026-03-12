@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, Copy, FolderOpen, Globe, Mic, MicOff, Send, Sparkles } from "lucide-react";
+import { ArrowDown, Check, ChevronDown, Copy, FolderOpen, Globe, Mic, MicOff, Send, Sparkles } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StreamEvent } from "@/lib/api";
 import {
@@ -189,6 +189,19 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
   }, [thread]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+      setIsScrolledUp(!nearBottom);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -197,11 +210,10 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
       return;
     }
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-    if (nearBottom) {
+    if (!isScrolledUp) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }
-  }, [messages.length]);
+  }, [messages.length, streamEvents.length, isScrolledUp]);
 
   async function handleSend() {
     const text = input.trim();
@@ -322,6 +334,20 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
 
           <div ref={bottomRef} />
         </div>
+
+        {/* Scroll to live button */}
+        {isScrolledUp && sending && (
+          <button
+            onClick={() => {
+              setIsScrolledUp(false);
+              bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+            }}
+            className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-amber-500/90 px-3 py-1.5 text-[11px] font-medium text-white shadow-lg shadow-amber-500/25 transition-all hover:bg-amber-400"
+          >
+            <ArrowDown className="h-3 w-3" />
+            Follow live output
+          </button>
+        )}
       </div>
 
       {/* Input */}
