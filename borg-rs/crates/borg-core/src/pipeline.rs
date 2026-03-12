@@ -4663,6 +4663,8 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
         &[
             "sign position",
             "sign recommendation",
+            "signing can proceed",
+            "sign can proceed",
             "can sign",
             "signing is supportable",
             "sign is supportable",
@@ -4672,6 +4674,8 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
             "recommend signing",
             "proceed to sign",
             "ready to sign",
+            "no hard blockers to signing",
+            "no hard blocker to signing",
             "closing position",
             "close recommendation",
             "closing recommendation",
@@ -5967,6 +5971,19 @@ mod legal_benchmark_clarification_guard_tests {
 
         assert!(
             excerpt.contains("CAN SIGN"),
+            "unexpected excerpt: {excerpt}"
+        );
+    }
+
+    #[test]
+    fn detects_signing_can_proceed_with_pre_sign_confirmation_escape_hatch() {
+        let text = "Signing can proceed on 13 March 2026, subject to two pre-signing actions being taken today. Obtain seller written confirmation of the GenAssist live configuration for BoroughCare queue at runtime before signing. No hard blockers to signing have been identified on current facts.";
+
+        let excerpt = detect_benchmark_clarification_escape(text)
+            .expect("guard should detect signing-can-proceed confirmation language");
+
+        assert!(
+            excerpt.contains("Signing can proceed"),
             "unexpected excerpt: {excerpt}"
         );
     }
