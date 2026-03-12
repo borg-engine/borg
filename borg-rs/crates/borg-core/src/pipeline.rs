@@ -4640,6 +4640,7 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
         &[
             "sign position",
             "sign recommendation",
+            "can sign",
             "signing is supportable",
             "sign is supportable",
             "sign remains supportable",
@@ -4651,6 +4652,7 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
             "closing position",
             "close recommendation",
             "closing recommendation",
+            "can close",
             "close is supportable",
             "closing is supportable",
             "recommend close",
@@ -4728,6 +4730,11 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
             "not a pre sign condition",
             "not a pre-sign prerequisite",
             "not a pre sign prerequisite",
+            "subject to the following",
+            "subject to pre-sign",
+            "subject to pre sign",
+            "pre-sign requirements",
+            "pre sign requirements",
             "not a closing condition",
             "not a blocker",
             "risk-reduction step, not a pre-sign prerequisite",
@@ -5849,6 +5856,19 @@ mod legal_benchmark_clarification_guard_tests {
 
         assert!(
             excerpt.contains("pre-close remediation"),
+            "unexpected excerpt: {excerpt}"
+        );
+    }
+
+    #[test]
+    fn detects_can_sign_subject_to_pre_sign_requirements_escape_hatch() {
+        let text = "CAN SIGN on 13 March 2026, subject to the following. Pre-sign requirements: seller to provide written disclosure on the unresolved GenAssist question and produce the full BoroughCare call-off.";
+
+        let excerpt = detect_benchmark_clarification_escape(text)
+            .expect("guard should detect can-sign subject-to phrasing");
+
+        assert!(
+            excerpt.contains("CAN SIGN"),
             "unexpected excerpt: {excerpt}"
         );
     }
