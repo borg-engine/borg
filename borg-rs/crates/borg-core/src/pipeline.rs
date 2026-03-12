@@ -5121,7 +5121,8 @@ fn should_reuse_prior_retrieval_pass(
         return false;
     }
     let last_error = task.last_error.trim();
-    last_error.starts_with("Material fact missing") && last_error.contains("\n\nQuestion:")
+    (last_error.starts_with("Material fact missing") && last_error.contains("\n\nQuestion:"))
+        || last_error.starts_with("Benchmark clarification guard failed.")
 }
 
 fn inspect_legal_retrieval_trace(raw_stream: &str) -> LegalRetrievalTrace {
@@ -5824,6 +5825,25 @@ mod legal_retrieval_protocol_tests {
         assert!(
             !should_reuse_prior_retrieval_pass(&task, true, false),
             "non-clarification retries must still satisfy the retrieval protocol themselves"
+        );
+    }
+
+    #[test]
+    fn clarification_guard_retry_can_reuse_prior_passed_retrieval() {
+        let mut task = sample_task(
+            "benchmark_analysis",
+            "legal-ew-003",
+            "Clarification guard retry",
+        );
+        task.mode = "legal".into();
+        task.requires_exhaustive_corpus_review = true;
+        task.attempt = 1;
+        task.last_error = "Benchmark clarification guard failed.\nThe task output still treats an unresolved pre-sign/pre-close fact as a caveat instead of blocking for clarification."
+            .into();
+
+        assert!(
+            should_reuse_prior_retrieval_pass(&task, true, false),
+            "clarification-guard retries should not need to rerun an already-passed exhaustive review"
         );
     }
 }
