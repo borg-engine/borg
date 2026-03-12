@@ -1876,11 +1876,14 @@ impl Db {
             .conn
             .lock()
             .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
-        let sql = format!(
-            "SELECT {PROJECT_COLS}, ps.role FROM projects p \
+        let sql =
+            "SELECT p.id, p.workspace_id, p.name, p.mode, p.repo_path, p.client_name, \
+             p.case_number, p.jurisdiction, p.matter_type, p.opposing_counsel, p.deadline, \
+             p.privilege_level, p.status, p.default_template_id, p.created_at, p.session_privileged, \
+             ps.role \
+             FROM projects p \
              JOIN project_shares ps ON ps.project_id = p.id \
-             WHERE ps.user_id = ?1 ORDER BY p.id DESC"
-        );
+             WHERE ps.user_id = ?1 ORDER BY p.id DESC";
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt
             .query_map(params![user_id], |row| {
