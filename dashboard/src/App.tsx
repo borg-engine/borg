@@ -238,7 +238,8 @@ function OnboardingModal() {
             const isConnected = session?.status === "connected";
             const isPending = session?.status === "pending";
             const isBusy = busyProvider === provider;
-            const hasAuthUrl = isPending && !!session?.auth_url && provider === "claude";
+            const showCodeInput = isPending && provider === "claude";
+            const authUrl = session?.auth_url || "";
             return (
               <div key={provider} className="rounded-xl border border-[#2a2520] bg-[#0e0c0a] p-4 space-y-2">
                 <div className="flex items-center justify-between gap-3">
@@ -260,11 +261,17 @@ function OnboardingModal() {
                     </button>
                   )}
                 </div>
-                {hasAuthUrl && (
+                {showCodeInput && (
                   <div className="space-y-2">
-                    <p className="text-[11px] text-[#9c9486]">
-                      The browser tab showed an authentication code. Copy it and paste it here:
-                    </p>
+                    {authUrl ? (
+                      <p className="text-[11px] text-[#9c9486]">
+                        Visit the link that opened, then paste the authentication code here:
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-[#9c9486]">
+                        Waiting for auth URL... Once a browser tab opens, authorize and paste the code here:
+                      </p>
+                    )}
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
@@ -272,21 +279,32 @@ function OnboardingModal() {
                         onChange={(e) => setCodes((prev) => ({ ...prev, [provider]: e.target.value }))}
                         onKeyDown={(e) => e.key === "Enter" && handleSubmitCode(provider)}
                         placeholder="Paste authentication code"
-                        className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/30 placeholder:text-[#4a4540]"
+                        className="flex-1 min-w-0 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/30 placeholder:text-[#4a4540]"
                         autoFocus
                       />
                       <button
                         onClick={() => handleSubmitCode(provider)}
                         disabled={submittingCode === provider || !codes[provider]?.trim()}
-                        className="rounded-lg bg-amber-500/15 px-3 py-1.5 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20 disabled:opacity-40"
+                        className="shrink-0 rounded-lg bg-amber-500/15 px-3 py-1.5 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20 disabled:opacity-40"
                       >
                         {submittingCode === provider ? "..." : "Submit"}
                       </button>
                     </div>
+                    {authUrl && (
+                      <a
+                        href={authUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block truncate text-[11px] text-amber-400/60 hover:text-amber-400 transition-colors"
+                        title={authUrl}
+                      >
+                        {authUrl}
+                      </a>
+                    )}
                   </div>
                 )}
-                {isPending && !hasAuthUrl && (
-                  <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] text-[#9c9486] break-all overflow-hidden">
+                {isPending && !showCodeInput && (
+                  <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] text-[#9c9486] break-all overflow-hidden max-w-full">
                     {session.message || "Follow the instructions in the opened tab, then wait here."}
                   </div>
                 )}
