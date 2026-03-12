@@ -4674,6 +4674,9 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
             "signing is supportable",
             "sign is supportable",
             "sign remains supportable",
+            "sign recommendation",
+            "signing recommendation",
+            "recommended sign position",
             "supportable with",
             "recommend sign",
             "recommend signing",
@@ -4684,6 +4687,7 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
             "closing position",
             "close recommendation",
             "closing recommendation",
+            "recommended close position",
             "can close",
             "close is supportable",
             "closing is supportable",
@@ -4702,8 +4706,11 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
             "pre sign",
             "before sign",
             "before signing",
+            "before execution",
+            "before execute",
             "prior to sign",
             "prior to signing",
+            "prior to execution",
             "subject to",
             "pre-close",
             "pre close",
@@ -4731,6 +4738,8 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
             "not confirmed",
             "not yet confirmed",
             "seller confirmation",
+            "open factual question",
+            "open factual questions",
             "management-presentation answers",
             "management presentation answers",
             "management presentation",
@@ -4758,8 +4767,15 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
             "recommendation is stable",
             "sign recommendation is stable",
             "close recommendation is stable",
+            "recommendation is the same",
+            "sign recommendation is the same",
+            "close recommendation is the same",
+            "same in all scenarios",
             "does not depend on",
             "do not depend on",
+            "does not depend on resolving",
+            "does not depend on receiving",
+            "not dependent on resolving",
             "not dependent on",
             "not depend on first receiving",
             "whichever way each resolves",
@@ -6028,6 +6044,20 @@ mod legal_benchmark_clarification_guard_tests {
 
         assert!(
             excerpt.contains("Recommended position: sign on 13 March"),
+            "unexpected excerpt: {excerpt}"
+        );
+    }
+
+    #[test]
+    fn detects_same_in_all_scenarios_escape_hatch() {
+        let text = "The sign recommendation is the same in all scenarios. It does not depend on resolving the open factual questions before execution because the SPA architecture is calibrated for the worst case.";
+
+        let excerpt = detect_benchmark_clarification_escape(text)
+            .expect("guard should detect same-in-all-scenarios language");
+
+        assert!(
+            excerpt.contains("same in all scenarios")
+                || excerpt.contains("does not depend on resolving"),
             "unexpected excerpt: {excerpt}"
         );
     }
