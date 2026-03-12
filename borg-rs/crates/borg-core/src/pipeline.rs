@@ -541,6 +541,23 @@ impl Pipeline {
             Vec::new()
         };
 
+        let prior_report = self
+            .db
+            .get_task_structured_data(task.id)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+        let prior_passed = prior_report
+            .as_ref()
+            .and_then(prior_retrieval_protocol_passed_from_structured_data)
+            .unwrap_or(false);
+        let clarification_resume_reuses_prior_review =
+            should_offer_retrieval_reuse_guidance(task, prior_passed);
+        let clarification_resume_question = if clarification_resume_reuses_prior_review {
+            clarification_resume_question(&task.last_error).unwrap_or_default()
+        } else {
+            String::new()
+        };
+
         PhaseContext {
             task: task.clone(),
             repo_config: self.repo_config(task),
@@ -579,6 +596,8 @@ impl Pipeline {
                 .to_string(),
             chat_context,
             github_token: self.resolve_gh_token(&task.created_by),
+            clarification_resume_reuses_prior_review,
+            clarification_resume_question,
         }
     }
 
@@ -5117,24 +5136,44 @@ fn should_reuse_prior_retrieval_pass(
     prior_passed: bool,
     current_passed: bool,
 ) -> bool {
-    if current_passed || !prior_passed || task.attempt <= 0 {
+    if current_passed || !should_offer_retrieval_reuse_guidance(task, prior_passed) {
         return false;
     }
-    let last_error = task.last_error.trim();
-    let clarification_retry =
-        last_error.starts_with("Material fact missing") && last_error.contains("\n\nQuestion:");
-    let clarification_guard_retry = last_error.starts_with("Benchmark clarification guard failed.");
-    let summarized_latest_error = last_error
+    true
+}
+
+fn should_offer_retrieval_reuse_guidance(task: &Task, prior_passed: bool) -> bool {
+    if !prior_passed || task.attempt <= 0 {
+        return false;
+    }
+    let last_error = latest_retry_error(&task.last_error);
+    is_clarification_resume_error(last_error)
+}
+
+fn latest_retry_error(last_error: &str) -> &str {
+    last_error
+        .trim()
         .split("\nLatest error:\n")
         .nth(1)
         .map(str::trim)
-        .unwrap_or("");
+        .unwrap_or_else(|| last_error.trim())
+}
 
-    clarification_retry
-        || clarification_guard_retry
-        || ((summarized_latest_error.starts_with("Material fact missing")
-            && summarized_latest_error.contains("\n\nQuestion:"))
-            || summarized_latest_error.starts_with("Benchmark clarification guard failed."))
+fn is_clarification_resume_error(error: &str) -> bool {
+    let clarification_retry =
+        error.starts_with("Material fact missing") && error.contains("\n\nQuestion:");
+    let clarification_guard_retry = error.starts_with("Benchmark clarification guard failed.");
+    clarification_retry || clarification_guard_retry
+}
+
+fn clarification_resume_question(last_error: &str) -> Option<String> {
+    let error = latest_retry_error(last_error);
+    let question = error.split("\n\nQuestion:").nth(1)?.trim();
+    if question.is_empty() {
+        None
+    } else {
+        Some(question.to_string())
+    }
 }
 
 fn inspect_legal_retrieval_trace(raw_stream: &str) -> LegalRetrievalTrace {
@@ -5639,8 +5678,9 @@ mod legal_retrieval_protocol_tests {
     use serde_json::json;
 
     use super::{
-        inspect_legal_retrieval_trace, legal_retrieval_protocol_trigger,
-        prior_retrieval_protocol_passed_from_structured_data, should_reuse_prior_retrieval_pass,
+        clarification_resume_question, inspect_legal_retrieval_trace,
+        legal_retrieval_protocol_trigger, prior_retrieval_protocol_passed_from_structured_data,
+        should_offer_retrieval_reuse_guidance, should_reuse_prior_retrieval_pass,
     };
     use crate::{
         db::ProjectFileStats,
@@ -5805,6 +5845,14 @@ mod legal_retrieval_protocol_tests {
             should_reuse_prior_retrieval_pass(&task, true, false),
             "clarification-driven retry should be able to reuse prior exhaustive review"
         );
+        assert!(
+            should_offer_retrieval_reuse_guidance(&task, true),
+            "clarification-driven retries should also get prompt-level reuse guidance"
+        );
+        assert_eq!(
+            clarification_resume_question(&task.last_error).as_deref(),
+            Some("Is GenAssist enabled on the live BoroughCare queue?")
+        );
     }
 
     #[test]
@@ -5881,6 +5929,29 @@ The task output still treats an unresolved pre-sign/pre-close fact as a caveat i
         assert!(
             should_reuse_prior_retrieval_pass(&task, true, false),
             "fresh-retry summaries should preserve clarification-driven retrieval reuse"
+        );
+    }
+
+    #[test]
+    fn clarification_guard_retry_offers_prompt_level_reuse_guidance() {
+        let mut task = sample_task(
+            "benchmark_analysis",
+            "legal-ew-003",
+            "Clarification guard retry",
+        );
+        task.mode = "legal".into();
+        task.requires_exhaustive_corpus_review = true;
+        task.attempt = 1;
+        task.last_error = "Benchmark clarification guard failed.\nThe task output still treats an unresolved pre-sign/pre-close fact as a caveat instead of blocking for clarification."
+            .into();
+
+        assert!(
+            should_offer_retrieval_reuse_guidance(&task, true),
+            "clarification-guard retries should get prompt-level reuse guidance too"
+        );
+        assert!(
+            clarification_resume_question(&task.last_error).is_none(),
+            "guard failures do not carry a question unless the error text includes one"
         );
     }
 }

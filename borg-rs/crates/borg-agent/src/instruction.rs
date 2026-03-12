@@ -158,6 +158,24 @@ pub fn build_instruction(
         s.push_str(&phase.error_instruction.replace("{ERROR}", &task.last_error));
     }
 
+    if ctx.clarification_resume_reuses_prior_review {
+        s.push_str(
+            "\n\n---\n\n## Clarification Resume\n\n\
+             This run is resuming after a blocked clarification or clarification-guard retry, \
+             and the earlier exhaustive corpus review already counts for retrieval-protocol purposes.\n\
+             Reuse the prior corpus review instead of restarting it from scratch.\n\
+             Focus this run on:\n\
+             - integrating the clarification answer now available in the queued messages\n\
+             - revising blocker judgment and deliverables to reflect that answer\n\
+             - spot-checking only the documents directly affected by the clarification if needed\n\
+             - avoiding a fresh full-corpus inventory/search loop unless the new fact genuinely changes what documents must be reviewed\n",
+        );
+        if !ctx.clarification_resume_question.trim().is_empty() {
+            s.push_str("\nClarification question carried into this retry:\n");
+            s.push_str(&format!("- {}\n", ctx.clarification_resume_question.trim()));
+        }
+    }
+
     if !ctx.prior_research.is_empty() {
         s.push_str("\n\n---\n\n## Prior Research (from knowledge graph)\nThe following relevant excerpts were found from prior tasks. Use them to avoid duplicating research:\n\n");
         for (i, chunk) in ctx.prior_research.iter().enumerate() {
@@ -646,6 +664,11 @@ If the task is marked as requiring exhaustive corpus review:
 Clarification rule:
 - if a sign / close / proceed recommendation depends on a material fact that is not answerable from the corpus, do not bury it in assumptions or open questions
 - write `.borg/signal.json` with a blocked clarification instead of finalising the recommendation
+
+If this run is resuming after a blocked clarification and the prior exhaustive review already happened:
+- do not restart the corpus review from zero
+- reuse the earlier document review unless the clarification changes which documents are material
+- focus on integrating the clarification answer, targeted spot-checking, and revising the deliverables
 
 Do not drift into generic legal-research outputs such as `research.md`, `analysis.md`, or citation-verification work unless this task explicitly asks for them.";
 

@@ -76,6 +76,8 @@ fn make_ctx() -> PhaseContext {
         chat_context: vec![],
         github_token: String::new(),
         knowledge_repo_paths: vec![],
+        clarification_resume_reuses_prior_review: false,
+        clarification_resume_question: String::new(),
     }
 }
 
@@ -416,5 +418,58 @@ fn test_legal_benchmark_instruction_uses_benchmark_specific_prompt() {
     assert!(
         !result.contains("## Step 2: Write research.md"),
         "generic legal research scaffold should be removed for benchmark_analysis: {result}"
+    );
+}
+
+#[test]
+fn test_clarification_resume_section_is_injected_when_reusing_prior_review() {
+    let task = make_task("Title", "Desc", "Material fact missing\n\nQuestion: Is GenAssist live?");
+    let phase = PhaseConfig {
+        instruction: "Do work.".to_string(),
+        ..PhaseConfig::default()
+    };
+    let mut ctx = make_ctx();
+    ctx.clarification_resume_reuses_prior_review = true;
+    ctx.clarification_resume_question = "Is GenAssist live?".to_string();
+    ctx.pending_messages = vec![(
+        "user".to_string(),
+        "Yes, it is live on the BoroughCare queue.".to_string(),
+    )];
+
+    let result = build_instruction(&task, &phase, &ctx, None);
+
+    assert!(
+        result.contains("## Clarification Resume"),
+        "expected clarification resume section: {result}"
+    );
+    assert!(
+        result.contains("Reuse the prior corpus review instead of restarting it from scratch."),
+        "expected explicit reuse guidance: {result}"
+    );
+    assert!(
+        result.contains("Clarification question carried into this retry"),
+        "expected clarification question context: {result}"
+    );
+}
+
+#[test]
+fn test_legal_benchmark_instruction_mentions_clarification_resume_narrowing() {
+    let mut task = make_task("Title", "Desc", "");
+    task.mode = "legal".to_string();
+    task.task_type = "benchmark_analysis".to_string();
+    task.requires_exhaustive_corpus_review = true;
+
+    let phase = PhaseConfig {
+        name: "implement".to_string(),
+        instruction: "Do work.".to_string(),
+        ..PhaseConfig::default()
+    };
+    let ctx = make_ctx();
+
+    let result = build_instruction(&task, &phase, &ctx, None);
+
+    assert!(
+        result.contains("do not restart the corpus review from zero"),
+        "expected clarification-resume narrowing in benchmark instruction: {result}"
     );
 }
