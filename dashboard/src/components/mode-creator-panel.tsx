@@ -20,7 +20,7 @@ export function ModeCreatorPanel() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const { isSWE, mode: dashboardMode } = useDashboardMode();
+  const { isSWE, isLegal: isDashLegal, mode: dashboardMode } = useDashboardMode();
   const allowExperimental = settings?.experimental_domains === true;
   const visibleCats = useMemo(() => {
     const raw = settings?.visible_categories ?? "";
@@ -46,12 +46,14 @@ export function ModeCreatorPanel() {
   const autoLoaded = useRef(false);
   useEffect(() => {
     if (autoLoaded.current || builtInModes.length === 0) return;
-    const legal = builtInModes.find((m) => m.name === "legal" || m.name === "lawborg");
-    if (legal) {
-      dispatch({ type: "LOAD_MODE", mode: legal, readOnly: true });
-      autoLoaded.current = true;
+    if (isDashLegal) {
+      const legal = builtInModes.find((m) => m.name === "legal" || m.name === "lawborg");
+      if (legal) {
+        dispatch({ type: "LOAD_MODE", mode: legal, readOnly: true });
+        autoLoaded.current = true;
+      }
     }
-  }, [builtInModes]);
+  }, [builtInModes, isDashLegal]);
 
   const handleSelect = useCallback((mode: PipelineModeFull, readOnly: boolean) => {
     dispatch({ type: "LOAD_MODE", mode, readOnly });
