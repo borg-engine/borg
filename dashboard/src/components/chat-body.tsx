@@ -279,7 +279,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
               </div>
               <p className="text-[13px] font-medium text-[#9c9486]">{scopeLabel}</p>
               <p className="mt-1 text-[11px] text-[#6b6459]">
-                {thread === "web:dashboard" ? "Chat with global knowledge" : "Scoped to this project"}
+                {thread === "web:dashboard" ? "Chat with global knowledge" : "Scoped to this workspace"}
               </p>
             </div>
           </div>
@@ -368,7 +368,7 @@ function threadLabel(id: string, projects: { id: number; name: string }[]): stri
   const match = id.match(/^web:project-(\d+)$/);
   if (match) {
     const proj = projects.find((p) => p.id === Number(match[1]));
-    return proj?.name ?? `Project #${match[1]}`;
+    return proj?.name ?? `#${match[1]}`;
   }
   return id.replace("web:", "");
 }

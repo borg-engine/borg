@@ -10,7 +10,7 @@ function threadLabel(id: string, projects: { id: number; name: string }[]): stri
   const match = id.match(/^web:project-(\d+)$/);
   if (match) {
     const proj = projects.find((p) => p.id === Number(match[1]));
-    return proj?.name ?? `Project #${match[1]}`;
+    return proj?.name ?? `#${match[1]}`;
   }
   return id.replace("web:", "");
 }

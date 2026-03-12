@@ -41,7 +41,7 @@ export function PublicProjectView({ token }: { token: string }) {
         } else if (e.message === "404") {
           setError("Share link not found or has been revoked.");
         } else {
-          setError("Failed to load shared project.");
+          setError("Failed to load shared workspace.");
         }
       } finally {
         if (!cancelled) setLoading(false);

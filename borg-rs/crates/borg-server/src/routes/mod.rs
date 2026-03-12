@@ -33,8 +33,7 @@ pub(crate) use crate::routes_modes::{
 };
 
 pub(crate) fn internal(e: impl std::fmt::Debug + std::fmt::Display) -> StatusCode {
-    tracing::error!("internal error: {e:#}");
-    tracing::debug!("internal error detail: {e:?}");
+    tracing::error!("internal error: {e:?}");
     StatusCode::INTERNAL_SERVER_ERROR
 }
 

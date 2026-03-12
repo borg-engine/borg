@@ -238,7 +238,7 @@ function ProjectHeader({ project, onDelete }: { project: Project; onDelete?: () 
           <button
             onClick={() => setShareOpen(true)}
             className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-[12px] text-zinc-400 hover:border-blue-500/30 hover:text-blue-400 transition-colors flex items-center gap-1.5"
-            title="Share project"
+            title="Share"
           >
             <Share2 size={13} />
             Share
@@ -1355,7 +1355,7 @@ export function ProjectDetail({ projectId, onDocumentSelect, onDelete }: Project
   };
 
   if (isLoading || !project) {
-    return <div className="flex h-full items-center justify-center text-[13px] text-zinc-400">Loading project...</div>;
+    return <div className="flex h-full items-center justify-center text-[13px] text-zinc-400">Loading...</div>;
   }
 
   return (

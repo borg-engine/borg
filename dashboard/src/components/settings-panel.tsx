@@ -364,7 +364,7 @@ export function SettingsPanel() {
               />
               <TextField
                 label="S3 Bucket"
-                desc="Bucket name for project file storage"
+                desc="Bucket name for workspace file storage"
                 value={effective.s3_bucket}
                 onChange={(v) => update("s3_bucket", v)}
               />
@@ -438,8 +438,8 @@ export function SettingsPanel() {
                 min={30}
               />
               <NumberField
-                label="Project Max Bytes"
-                desc="Maximum bytes allowed per project file corpus"
+                label="Workspace Max Bytes"
+                desc="Maximum bytes allowed per workspace file corpus"
                 value={effective.project_max_bytes}
                 onChange={(v) => update("project_max_bytes", v)}
                 min={1}
@@ -482,7 +482,7 @@ export function SettingsPanel() {
               />
               <SelectField
                 label="Search Backend"
-                desc="External retrieval engine for project documents"
+                desc="External retrieval engine for workspace documents"
                 value={effective.search_backend}
                 onChange={(v) => update("search_backend", v)}
                 options={[{ value: "vespa", label: "Vespa" }]}
@@ -501,7 +501,7 @@ export function SettingsPanel() {
               />
               <TextField
                 label="Vespa Document Type"
-                desc="Vespa document type for indexed project files"
+                desc="Vespa document type for indexed workspace files"
                 value={effective.vespa_document_type}
                 onChange={(v) => update("vespa_document_type", v)}
               />

@@ -17,8 +17,8 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Postgres(err) => write!(f, "postgres error: {err}"),
-            Self::Pool(err) => write!(f, "postgres pool error: {err}"),
+            Self::Postgres(err) => write!(f, "postgres error: {err:?}"),
+            Self::Pool(err) => write!(f, "postgres pool error: {err:?}"),
             Self::QueryReturnedNoRows => write!(f, "query returned no rows"),
             Self::ConfigParse(err) => write!(f, "postgres config parse error: {err}"),
             Self::SessionUnavailable(err) => write!(f, "postgres session unavailable: {err}"),
@@ -261,9 +261,13 @@ impl Connection {
             .recycle_timeout(Some(Duration::from_secs(3)))
             .build()
             .map_err(|err| Error::ConfigParse(err.to_string()))?;
-        Ok(Self {
+        let conn = Self {
             pool: Arc::new(pool),
-        })
+        };
+        conn.guard()
+            .execute_batch("SELECT 1")
+            .map_err(|e| Error::ConfigParse(format!("startup connectivity check failed: {e}")))?;
+        Ok(conn)
     }
 
     fn guard(&self) -> ConnectionGuard {

@@ -1048,7 +1048,7 @@ export function ProjectsPanel() {
                   setFileSearch(v);
                   resetPagination();
                 }}
-                placeholder="Search project files..."
+                placeholder={`Search ${vocab.projectSingular} files...`}
                 stats={
                   <>
                     {fileSummary?.total_files ?? files.length} files {formatFileSize(totalBytes)}/
@@ -1148,7 +1148,7 @@ export function ProjectsPanel() {
                       <p className="mt-1 text-[12px] text-[#6b6459]">
                         {filePage && filePage.total > 0
                           ? "Try a different search term"
-                          : "Upload files to make them available for this project"}
+                          : `Upload files to make them available for this ${vocab.projectSingular}`}
                       </p>
                     </div>
                   )}
@@ -1366,15 +1366,16 @@ function MatterStatusDot({ counts }: { counts?: import("@/lib/types").ProjectTas
 }
 
 function KnowledgeView({ scope }: { scope: "org" | "my" }) {
+  const vocab = useVocabulary();
   const isOrg = scope === "org";
   const queryKey = isOrg ? "knowledge" : "my-knowledge";
   const title = isOrg ? "Org Knowledge" : "My Knowledge";
   const subtitle = isOrg
-    ? "Shared across all projects in this workspace"
+    ? `Shared across all ${vocab.projectPlural} in this workspace`
     : "Personal knowledge — only your agents see this";
   const emptyTitle = isOrg ? "No org documents yet" : "No personal documents yet";
   const emptySubtitle = isOrg
-    ? "Upload files to make them available to all users and projects"
+    ? `Upload files to make them available to all users and ${vocab.projectPlural}`
     : "Upload files that only your agents will use";
   const accentBg = isOrg ? "bg-violet-500/10" : "bg-amber-500/10";
   const accentRing = isOrg ? "ring-violet-500/20" : "ring-amber-500/20";

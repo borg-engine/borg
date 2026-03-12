@@ -29,7 +29,7 @@ type View =
 
 const VIEW_TITLES: Record<View, string> = {
   tasks: "Pipeline Tasks",
-  projects: "Projects",
+  projects: "Workspace",
   connections: "Connections",
   creator: "Pipelines",
   "auto-tasks": "Auto Tasks",

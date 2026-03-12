@@ -20,7 +20,7 @@ function threadLabel(id: string, projects: { id: number; name: string }[]): stri
   const match = id.match(/^web:project-(\d+)$/);
   if (match) {
     const proj = projects.find((p) => p.id === Number(match[1]));
-    return proj?.name ?? `Project #${match[1]}`;
+    return proj?.name ?? `#${match[1]}`;
   }
   return id.replace("web:", "");
 }
@@ -286,7 +286,7 @@ export function ChatPanel() {
               <p className="mt-1.5 text-[13px] text-[#6b6459]">
                 {thread === "web:dashboard"
                   ? "Chat with access to the global knowledge base"
-                  : "Chat scoped to this project's documents"}
+                  : "Chat scoped to this workspace's documents"}
               </p>
             </div>
           )}
