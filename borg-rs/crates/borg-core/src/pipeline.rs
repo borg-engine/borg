@@ -1915,6 +1915,15 @@ impl Pipeline {
         let Some(trigger_source) = legal_retrieval_protocol_trigger(task, phase, &stats) else {
             return None;
         };
+        let prior_report = self
+            .db
+            .get_task_structured_data(task.id)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+        let prior_passed = prior_report
+            .as_ref()
+            .and_then(prior_retrieval_protocol_passed_from_structured_data)
+            .unwrap_or(false);
 
         let mut report = inspect_legal_retrieval_trace(raw_stream);
         report.enforced = true;
@@ -1942,9 +1951,15 @@ impl Pipeline {
             );
         }
 
+        let reused_prior_pass =
+            should_reuse_prior_retrieval_pass(task, prior_passed, missing.is_empty());
+        if reused_prior_pass {
+            missing.clear();
+        }
+
         report.missing_steps = missing.clone();
         report.passed = missing.is_empty();
-        self.persist_retrieval_protocol_report(task.id, &report);
+        self.persist_retrieval_protocol_report(task.id, &report, reused_prior_pass);
 
         if report.passed {
             return None;
@@ -1972,11 +1987,17 @@ impl Pipeline {
         ))
     }
 
-    fn persist_retrieval_protocol_report(&self, task_id: i64, report: &LegalRetrievalTrace) {
+    fn persist_retrieval_protocol_report(
+        &self,
+        task_id: i64,
+        report: &LegalRetrievalTrace,
+        reused_prior_pass: bool,
+    ) {
         let payload = serde_json::json!({
             "checked_at": chrono::Utc::now().to_rfc3339(),
             "enforced": report.enforced,
             "passed": report.passed,
+            "reused_prior_pass": reused_prior_pass,
             "trigger_source": report.trigger_source,
             "tool_counts": {
                 "list_documents": report.inventory_calls,
@@ -5006,6 +5027,22 @@ fn legal_retrieval_protocol_trigger(
     .map(|_| "heuristic_description")
 }
 
+fn prior_retrieval_protocol_passed_from_structured_data(value: &serde_json::Value) -> Option<bool> {
+    value.get("retrieval_protocol")?.get("passed")?.as_bool()
+}
+
+fn should_reuse_prior_retrieval_pass(
+    task: &Task,
+    prior_passed: bool,
+    current_passed: bool,
+) -> bool {
+    if current_passed || !prior_passed || task.attempt <= 0 {
+        return false;
+    }
+    let last_error = task.last_error.trim();
+    last_error.starts_with("Material fact missing:") && last_error.contains("\n\nQuestion:")
+}
+
 fn inspect_legal_retrieval_trace(raw_stream: &str) -> LegalRetrievalTrace {
     let mut trace = LegalRetrievalTrace::default();
     let mut distinct_queries = HashSet::new();
@@ -5505,8 +5542,12 @@ mod seeding_toctou_tests {
 #[cfg(test)]
 mod legal_retrieval_protocol_tests {
     use chrono::Utc;
+    use serde_json::json;
 
-    use super::{inspect_legal_retrieval_trace, legal_retrieval_protocol_trigger};
+    use super::{
+        inspect_legal_retrieval_trace, legal_retrieval_protocol_trigger,
+        prior_retrieval_protocol_passed_from_structured_data, should_reuse_prior_retrieval_pass,
+    };
     use crate::{
         db::ProjectFileStats,
         types::{PhaseConfig, Task},
@@ -5636,6 +5677,53 @@ mod legal_retrieval_protocol_tests {
         assert_eq!(
             legal_retrieval_protocol_trigger(&task, &phase, &stats),
             Some("explicit")
+        );
+    }
+
+    #[test]
+    fn reads_prior_retrieval_protocol_pass_state() {
+        let payload = json!({
+            "retrieval_protocol": {
+                "passed": true
+            }
+        });
+
+        assert_eq!(
+            prior_retrieval_protocol_passed_from_structured_data(&payload),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn clarification_resume_can_reuse_prior_passed_retrieval() {
+        let mut task = sample_task(
+            "benchmark_analysis",
+            "legal-ew-003",
+            "Benchmark clarification retry",
+        );
+        task.mode = "legal".into();
+        task.requires_exhaustive_corpus_review = true;
+        task.attempt = 1;
+        task.last_error = "Material fact missing: runtime setting unresolved.\n\nQuestion: Is GenAssist enabled on the live BoroughCare queue?"
+            .into();
+
+        assert!(
+            should_reuse_prior_retrieval_pass(&task, true, false),
+            "clarification-driven retry should be able to reuse prior exhaustive review"
+        );
+    }
+
+    #[test]
+    fn ordinary_retry_cannot_reuse_prior_passed_retrieval() {
+        let mut task = sample_task("benchmark_analysis", "legal-ew-003", "Ordinary retry");
+        task.mode = "legal".into();
+        task.requires_exhaustive_corpus_review = true;
+        task.attempt = 1;
+        task.last_error = "Compile fix failed".into();
+
+        assert!(
+            !should_reuse_prior_retrieval_pass(&task, true, false),
+            "non-clarification retries must still satisfy the retrieval protocol themselves"
         );
     }
 }
