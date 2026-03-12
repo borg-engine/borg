@@ -24,8 +24,8 @@ import { LogViewer } from "@/components/log-viewer";
 import { LoginPage } from "@/components/login-page";
 import { ModeCreatorPanel } from "@/components/mode-creator-panel";
 import { ProjectsPanel } from "@/components/projects-panel";
-import { PublicProjectView } from "@/components/public-project-view";
 import { ProposalsPanel } from "@/components/proposals-panel";
+import { PublicProjectView } from "@/components/public-project-view";
 import { QueuePanel } from "@/components/queue-panel";
 import { SettingsPanel } from "@/components/settings-panel";
 import { StatusPanel } from "@/components/status-panel";
@@ -104,7 +104,7 @@ function useIsMobile() {
 }
 
 const ALL_NAV_ITEMS = [
-  { key: "projects" as const, label: "Projects", Icon: FolderOpen, minimalVisible: true },
+  { key: "projects" as const, label: "Workspace", Icon: FolderOpen, minimalVisible: true },
   { key: "connections" as const, label: "Connections", Icon: Plug, minimalVisible: true },
   { key: "tasks" as const, label: "Tasks", Icon: ListTodo, minimalVisible: false },
   { key: "creator" as const, label: "Pipelines", Icon: Wrench, minimalVisible: true },
@@ -118,7 +118,7 @@ const ALL_NAV_ITEMS = [
 
 const MOBILE_TABS = [
   { key: "tasks" as const, label: "Tasks", Icon: ListTodo },
-  { key: "projects" as const, label: "Projects", Icon: FolderOpen },
+  { key: "projects" as const, label: "Workspace", Icon: FolderOpen },
   { key: "queue" as const, label: "Queue", Icon: GitMerge },
   { key: "chat" as const, label: "Chat", Icon: MessageSquare },
 ] as const;
@@ -268,11 +268,17 @@ function OnboardingModal() {
               ? "Your session has expired. Please reconnect to continue using Borg agents."
               : "Borg uses your Claude or ChatGPT subscription to run agents. Connect one to get started."}
           </p>
-          {isReconnect && creds.filter((c) => c.last_error).map((c) => (
-            <div key={c.provider} className="mt-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-[11px] text-red-400">
-              {c.provider === "claude" ? "Claude" : "OpenAI"}: {c.last_error}
-            </div>
-          ))}
+          {isReconnect &&
+            creds
+              .filter((c) => c.last_error)
+              .map((c) => (
+                <div
+                  key={c.provider}
+                  className="mt-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-[11px] text-red-400"
+                >
+                  {c.provider === "claude" ? "Claude" : "OpenAI"}: {c.last_error}
+                </div>
+              ))}
         </div>
         <div className="space-y-3">
           {providers.map(({ provider, label, hint }) => {

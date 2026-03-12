@@ -957,10 +957,13 @@ export function ProjectsPanel() {
         </div>
       </div>
 
-      {/* Center: Chat (non-SWE only) */}
-      {!isSWE && !showMemory && selectedProject && !selectedDoc && (
+      {/* Center: Chat */}
+      {!isSWE && (showMemory || (selectedProject && !selectedDoc)) && (
         <div className="flex min-w-0 flex-1 flex-col border-r border-[#2a2520]">
-          <ChatBody thread={`web:project-${selectedProject.id}`} className="bg-[#0f0e0c]" />
+          <ChatBody
+            thread={showMemory ? "web:dashboard" : `web:project-${selectedProject?.id}`}
+            className="bg-[#0f0e0c]"
+          />
         </div>
       )}
 
@@ -968,7 +971,7 @@ export function ProjectsPanel() {
       <div
         className={cn(
           "flex flex-col overflow-hidden",
-          isSWE || showMemory || !selectedProject || selectedDoc ? "min-w-0 flex-1" : "w-[525px] shrink-0",
+          !isSWE && (showMemory || (selectedProject && !selectedDoc)) ? "w-[525px] shrink-0" : "min-w-0 flex-1",
         )}
       >
         {showMemory === "org" ? (
@@ -1735,11 +1738,6 @@ function KnowledgeView({ scope }: { scope: "org" | "my" }) {
             />
           ))}
         </div>
-      </div>
-
-      {/* Chat section */}
-      <div className="shrink-0 border-t border-[#1e1b18] h-[350px]">
-        <ChatBody thread={`web:knowledge-${scope}`} className="bg-[#0f0e0c]" />
       </div>
 
       {/* Knowledge preview modal */}

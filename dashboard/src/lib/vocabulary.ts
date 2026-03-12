@@ -32,7 +32,7 @@ export interface Vocabulary {
 
 const SWE_VOCAB: Vocabulary = {
   mode: "swe",
-  projectsLabel: "Projects",
+  projectsLabel: "Workspace",
   tasksLabel: "Tasks",
   projectSingular: "project",
   projectPlural: "projects",
