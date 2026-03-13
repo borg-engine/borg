@@ -2320,8 +2320,22 @@ impl Pipeline {
             return None;
         }
 
-        for (source, text) in Self::benchmark_guard_sources(work_dir, phase_output) {
-            if let Some(excerpt) = detect_benchmark_clarification_escape(&text) {
+        let sources = Self::benchmark_guard_sources(work_dir, phase_output);
+
+        // If any source in the bundle contains a definitive negative
+        // recommendation, the overall deliverable set is refusing to
+        // give a green light. Companion files (intake note, DD report)
+        // naturally reference pre-sign timing and unresolved facts
+        // without being escape hatches themselves.
+        let bundle_has_negative_recommendation = sources
+            .iter()
+            .any(|(_, text)| is_negative_sign_recommendation(&text.to_ascii_lowercase()));
+        if bundle_has_negative_recommendation {
+            return None;
+        }
+
+        for (source, text) in &sources {
+            if let Some(excerpt) = detect_benchmark_clarification_escape(text) {
                 return Some(format!(
                     "Benchmark clarification guard failed.\n\
                      The task output still treats an unresolved pre-sign/pre-close fact as a caveat instead of blocking for clarification.\n\
@@ -7104,6 +7118,43 @@ mod legal_benchmark_clarification_guard_tests {
             )
             .is_none(),
             "deliverable with 'do not sign' recommendation should not trip the guard"
+        );
+    }
+
+    #[test]
+    fn does_not_flag_companion_file_when_bundle_has_negative_recommendation() {
+        let dir = tempdir().expect("tempdir");
+        // intake_note has trigger patterns but no negative recommendation
+        fs::write(
+            dir.path().join("intake_note.md"),
+            "# Intake Note\n\n\
+             Sign recommendation depends on confirming GenAssist status before signing.\n\
+             Subject to pre-sign remediation actions.",
+        )
+        .expect("write intake note");
+        // advice_memo has the negative recommendation
+        fs::write(
+            dir.path().join("advice_memo.md"),
+            "## Recommended sign-off position\n\n\
+             **Do not sign.** Two material breaches are active.",
+        )
+        .expect("write advice memo");
+
+        let task = sample_task();
+        let phase = PhaseConfig {
+            name: "implement".into(),
+            ..Default::default()
+        };
+
+        assert!(
+            Pipeline::enforce_legal_benchmark_clarification_guard(
+                &task,
+                &phase,
+                dir.path().to_str().expect("path"),
+                ""
+            )
+            .is_none(),
+            "companion files should be exempt when the bundle contains a negative recommendation"
         );
     }
 
