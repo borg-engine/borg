@@ -2400,6 +2400,32 @@ impl Pipeline {
                     uncertainty.justification.trim()
                 ));
             }
+
+            let changes_recommendation =
+                uncertainty.changes_sign || uncertainty.changes_close_only;
+            let support_missing = matches!(
+                uncertainty.support_status.trim(),
+                "unavailable" | "conflicting" | "stale"
+            );
+            let not_blocked = uncertainty.recommended_treatment.trim()
+                != "blocked_clarification";
+            if changes_recommendation && support_missing && not_blocked {
+                return Some(format!(
+                    "Benchmark structured-state guard failed.\n\
+                     An uncertainty that changes the sign/close recommendation has no confirmed \
+                     support but was not routed to blocked clarification.\n\
+                     Issue: {}\n\
+                     Missing fact: {}\n\
+                     Support status: {}\n\
+                     Recommended treatment: {}\n\
+                     If an adverse answer would change your blocker / condition / post-close \
+                     classification, use the clarification channel before finalising.",
+                    uncertainty.issue.trim(),
+                    uncertainty.missing_fact.trim(),
+                    uncertainty.support_status.trim(),
+                    uncertainty.recommended_treatment.trim()
+                ));
+            }
         }
 
         for claim in &state.claims {
@@ -6837,10 +6863,10 @@ mod benchmark_phase_state_tests {
         };
 
         let err = Pipeline::enforce_legal_benchmark_state_guard(&task, &phase, &state)
-            .expect("state guard should reject definitive unresolved-fact claim");
+            .expect("state guard should reject when sign-changing uncertainty has no support");
 
         assert!(
-            err.contains("depends on an unresolved fact"),
+            err.contains("changes the sign/close recommendation"),
             "unexpected error: {err}"
         );
     }
