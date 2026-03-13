@@ -2334,16 +2334,24 @@ impl Pipeline {
             return None;
         }
 
-        let has_deliverable_files = sources
+        // Only recommendation-bearing documents should be checked for
+        // clarification escapes. Supporting documents (intake note, DD
+        // report, action plan) inventory facts, timing, and open items
+        // without making sign/close recommendations themselves.
+        let recommendation_sources: &[&str] = &["advice_memo.md", "review_notes.md"];
+        let has_recommendation_file = sources
             .iter()
-            .any(|(source, _)| source != "phase output");
+            .any(|(source, _)| recommendation_sources.contains(&source.as_str()));
 
         for (source, text) in &sources {
-            // Phase output is a meta-summary of the model's work, not a
-            // deliverable. It naturally echoes sign/pre-sign/confirm
-            // vocabulary while describing what it did. Only check it as
-            // a fallback when no deliverable files were produced.
-            if source == "phase output" && has_deliverable_files {
+            // Only check recommendation documents. Phase output is a
+            // fallback when no recommendation files were produced.
+            if source == "phase output" && has_recommendation_file {
+                continue;
+            }
+            if source != "phase output"
+                && !recommendation_sources.contains(&source.as_str())
+            {
                 continue;
             }
             if let Some(excerpt) = detect_benchmark_clarification_escape(text) {
@@ -7208,9 +7216,54 @@ mod legal_benchmark_clarification_guard_tests {
     }
 
     #[test]
-    fn checks_phase_output_when_no_deliverable_files() {
+    fn does_not_flag_intake_note_when_advice_memo_exists() {
         let dir = tempdir().expect("tempdir");
-        // No deliverable files written
+        // intake_note naturally contains sign timing and unresolved facts
+        fs::write(
+            dir.path().join("intake_note.md"),
+            "# Intake Note\n\n## Known facts\nSign on 13 March timetable.\n\
+             ## Missing facts\nGenAssist runtime status not confirmed. \
+             Subject to pre-sign confirmation from seller.",
+        )
+        .expect("write intake note");
+        // advice_memo makes a clean recommendation
+        fs::write(
+            dir.path().join("advice_memo.md"),
+            "## Recommended sign-off position\n\n\
+             Sign tonight. TitanBank ST 7 managed as CP to close.",
+        )
+        .expect("write advice memo");
+
+        let task = sample_task();
+        let phase = PhaseConfig {
+            name: "implement".into(),
+            ..Default::default()
+        };
+
+        let result = Pipeline::enforce_legal_benchmark_clarification_guard(
+            &task,
+            &phase,
+            dir.path().to_str().expect("path"),
+            "",
+        );
+        if let Some(ref msg) = result {
+            assert!(
+                !msg.contains("Source: intake_note.md"),
+                "intake_note.md should not be checked; got: {}",
+                msg
+            );
+        }
+    }
+
+    #[test]
+    fn checks_phase_output_when_no_recommendation_files() {
+        let dir = tempdir().expect("tempdir");
+        // Only a non-recommendation file present
+        fs::write(
+            dir.path().join("intake_note.md"),
+            "# Intake Note\nFact summary only.",
+        )
+        .expect("write intake note");
 
         let task = sample_task();
         let phase = PhaseConfig {
@@ -7229,7 +7282,7 @@ mod legal_benchmark_clarification_guard_tests {
         );
         assert!(
             result.is_some(),
-            "phase output should be checked when no deliverable files exist"
+            "phase output should be checked when no recommendation files exist"
         );
         assert!(
             result.unwrap().contains("Source: phase output"),
