@@ -13,16 +13,18 @@ fn test_signal_done_constructor() {
     let signal = AgentSignal::done();
     assert_eq!(signal.status, "done");
     assert!(signal.reason.is_empty());
+    assert!(signal.reason_code.is_empty());
     assert!(signal.question.is_empty());
 }
 
 #[test]
 fn test_signal_parse_blocked() {
-    let json = r#"{"status":"blocked","reason":"task is ambiguous","question":"which API?"}"#;
+    let json = r#"{"status":"blocked","reason":"task is ambiguous","reason_code":"missing_operational_fact","question":"which API?"}"#;
     let signal: AgentSignal = serde_json::from_str(json).unwrap();
     assert!(signal.is_blocked());
     assert!(!signal.is_abandon());
     assert_eq!(signal.reason, "task is ambiguous");
+    assert_eq!(signal.reason_code, "missing_operational_fact");
     assert_eq!(signal.question, "which API?");
 }
 
@@ -49,6 +51,7 @@ fn test_signal_parse_missing_optional_fields() {
     let json = r#"{"status":"blocked","reason":"stuck"}"#;
     let signal: AgentSignal = serde_json::from_str(json).unwrap();
     assert!(signal.is_blocked());
+    assert!(signal.reason_code.is_empty());
     assert!(signal.question.is_empty());
 }
 
@@ -71,11 +74,13 @@ fn test_signal_roundtrip_serialize_deserialize() {
     let original = AgentSignal {
         status: "blocked".into(),
         reason: "need clarification".into(),
+        reason_code: "missing_complete_document".into(),
         question: "what scope?".into(),
     };
     let json = serde_json::to_string(&original).unwrap();
     let parsed: AgentSignal = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed.status, "blocked");
     assert_eq!(parsed.reason, "need clarification");
+    assert_eq!(parsed.reason_code, "missing_complete_document");
     assert_eq!(parsed.question, "what scope?");
 }

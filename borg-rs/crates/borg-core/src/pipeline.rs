@@ -30,9 +30,9 @@ use crate::{
     sandbox::{Sandbox, SandboxMode},
     stream::TaskStreamManager,
     types::{
-        ContainerTestResult, IntegrationType, PhaseCompletionVerdict, PhaseConfig, PhaseContext,
-        PhaseHistoryEntry, PhaseOutput, PhaseType, PipelineMode, PipelineStateSnapshot, Proposal,
-        RepoConfig, SeedOutputType, Task,
+        BenchmarkPhaseState, ContainerTestResult, IntegrationType, PhaseCompletionVerdict,
+        PhaseConfig, PhaseContext, PhaseHistoryEntry, PhaseOutput, PhaseType, PipelineMode,
+        PipelineStateSnapshot, Proposal, RepoConfig, SeedOutputType, Task,
     },
 };
 
@@ -553,7 +553,8 @@ impl Pipeline {
         let clarification_resume_reuses_prior_review =
             should_offer_retrieval_reuse_guidance(task, prior_passed);
         let clarification_resume_question = if clarification_resume_reuses_prior_review {
-            clarification_resume_question(&task.last_error).unwrap_or_default()
+            clarification_resume_question(prior_report.as_ref(), &task.last_error)
+                .unwrap_or_default()
         } else {
             String::new()
         };
@@ -1637,6 +1638,36 @@ impl Pipeline {
             return Ok(());
         }
 
+        let benchmark_state = if Self::requires_legal_benchmark_state(task, phase)
+            && (signal.is_blocked() || result.success)
+        {
+            let state = match Self::read_benchmark_phase_state(&work_dir) {
+                Some(state) => state,
+                None => {
+                    self.fail_or_retry(
+                        task,
+                        &phase.name,
+                        "missing or invalid .borg/benchmark-state.json; legal benchmark phases must write structured benchmark state before exiting",
+                    )?;
+                    return Ok(());
+                },
+            };
+            if let Err(error) = Self::validate_benchmark_phase_state(
+                &state,
+                task,
+                phase,
+                &phase_gate_token,
+                &signal,
+            ) {
+                self.fail_or_retry(task, &phase.name, &error)?;
+                return Ok(());
+            }
+            self.persist_benchmark_phase_state(task.id, &state);
+            Some(state)
+        } else {
+            None
+        };
+
         // Handle blocked signal: pause task, don't retry.
         if signal.is_blocked() {
             // Persist any completed retrieval pass before returning blocked so
@@ -1738,6 +1769,13 @@ impl Pipeline {
         {
             self.fail_or_retry(task, &phase.name, &protocol_error)?;
             return Ok(());
+        }
+        if let Some(ref state) = benchmark_state {
+            if let Some(state_error) = Self::enforce_legal_benchmark_state_guard(task, phase, state)
+            {
+                self.fail_or_retry(task, &phase.name, &state_error)?;
+                return Ok(());
+            }
         }
         if let Some(clarification_error) = Self::enforce_legal_benchmark_clarification_guard(
             task,
@@ -1863,6 +1901,7 @@ impl Pipeline {
         for path in Self::phase_control_paths(work_dir, "signal.json")
             .into_iter()
             .chain(Self::phase_control_paths(work_dir, "phase-verdict.json"))
+            .chain(Self::phase_control_paths(work_dir, "benchmark-state.json"))
         {
             if let Err(e) = std::fs::remove_file(&path) {
                 if e.kind() != std::io::ErrorKind::NotFound {
@@ -1888,6 +1927,22 @@ impl Pipeline {
                     Ok(verdict) => return Some(verdict),
                     Err(e) => {
                         warn!("invalid phase-verdict.json at {}: {}", path, e);
+                        return None;
+                    },
+                }
+            }
+        }
+        None
+    }
+
+    fn read_benchmark_phase_state(work_dir: &str) -> Option<BenchmarkPhaseState> {
+        for path in Self::phase_control_paths(work_dir, "benchmark-state.json") {
+            if let Ok(raw) = std::fs::read_to_string(&path) {
+                std::fs::remove_file(&path).ok();
+                match serde_json::from_str::<BenchmarkPhaseState>(&raw) {
+                    Ok(state) => return Some(state),
+                    Err(e) => {
+                        warn!("invalid benchmark-state.json at {}: {}", path, e);
                         return None;
                     },
                 }
@@ -1948,6 +2003,160 @@ impl Pipeline {
         } else {
             Err(format!(
                 "invalid or stale .borg/phase-verdict.json: {}",
+                problems.join("; ")
+            ))
+        }
+    }
+
+    fn validate_benchmark_phase_state(
+        state: &BenchmarkPhaseState,
+        task: &Task,
+        phase: &PhaseConfig,
+        gate_token: &str,
+        signal: &crate::types::AgentSignal,
+    ) -> std::result::Result<(), String> {
+        let mut problems = Vec::new();
+
+        if state.task_id != task.id {
+            problems.push(format!(
+                "task_id mismatch (expected {}, got {})",
+                task.id, state.task_id
+            ));
+        }
+        if state.phase.trim() != phase.name {
+            problems.push(format!(
+                "phase mismatch (expected {}, got {})",
+                phase.name,
+                state.phase.trim()
+            ));
+        }
+        if state.attempt != task.attempt {
+            problems.push(format!(
+                "attempt mismatch (expected {}, got {})",
+                task.attempt, state.attempt
+            ));
+        }
+        if state.gate_token != gate_token {
+            problems.push(
+                "gate token mismatch (benchmark-state is stale or from another run)".to_string(),
+            );
+        }
+        if state.rationale.trim().is_empty() {
+            problems.push("rationale must not be empty".to_string());
+        }
+        if !matches!(state.status.as_str(), "ready" | "blocked_for_clarification") {
+            problems.push("status must be `ready` or `blocked_for_clarification`".to_string());
+        }
+        for (index, uncertainty) in state.uncertainties.iter().enumerate() {
+            if uncertainty.issue.trim().is_empty() {
+                problems.push(format!("uncertainties[{index}].issue must not be empty"));
+            }
+            if uncertainty.missing_fact.trim().is_empty() {
+                problems.push(format!(
+                    "uncertainties[{index}].missing_fact must not be empty"
+                ));
+            }
+            if uncertainty.uncertainty_type.trim().is_empty() {
+                problems.push(format!(
+                    "uncertainties[{index}].uncertainty_type must not be empty"
+                ));
+            }
+            if uncertainty.support_status.trim().is_empty() {
+                problems.push(format!(
+                    "uncertainties[{index}].support_status must not be empty"
+                ));
+            }
+            if uncertainty.operative_status.trim().is_empty() {
+                problems.push(format!(
+                    "uncertainties[{index}].operative_status must not be empty"
+                ));
+            }
+            if uncertainty.recommended_treatment.trim().is_empty() {
+                problems.push(format!(
+                    "uncertainties[{index}].recommended_treatment must not be empty"
+                ));
+            }
+            if uncertainty.justification.trim().is_empty() {
+                problems.push(format!(
+                    "uncertainties[{index}].justification must not be empty"
+                ));
+            }
+        }
+        for (index, claim) in state.claims.iter().enumerate() {
+            if claim.claim.trim().is_empty() {
+                problems.push(format!("claims[{index}].claim must not be empty"));
+            }
+            if claim.claim_type.trim().is_empty() {
+                problems.push(format!("claims[{index}].claim_type must not be empty"));
+            }
+            if claim.support_status.trim().is_empty() {
+                problems.push(format!("claims[{index}].support_status must not be empty"));
+            }
+            if claim
+                .supporting_artifacts
+                .iter()
+                .any(|artifact| artifact.trim().is_empty())
+            {
+                problems.push(format!(
+                    "claims[{index}].supporting_artifacts must not contain blank items"
+                ));
+            }
+        }
+
+        if state.is_blocked_for_clarification() {
+            if state.clarification_type.trim().is_empty() {
+                problems.push(
+                    "blocked_for_clarification state must include clarification_type".to_string(),
+                );
+            }
+            if state.material_fact.trim().is_empty() {
+                problems
+                    .push("blocked_for_clarification state must include material_fact".to_string());
+            }
+            if state.question.trim().is_empty() {
+                problems.push("blocked_for_clarification state must include question".to_string());
+            }
+            if !signal.is_blocked() {
+                problems.push(
+                    "benchmark-state says blocked_for_clarification but .borg/signal.json did not block"
+                        .to_string(),
+                );
+            }
+            if signal.reason_code.trim().is_empty() {
+                problems.push(
+                    "blocked benchmark signals must include a machine-readable reason_code"
+                        .to_string(),
+                );
+            } else if signal.reason_code.trim() != state.clarification_type.trim() {
+                problems.push(format!(
+                    "blocked reason_code mismatch (signal {}, benchmark-state {})",
+                    signal.reason_code.trim(),
+                    state.clarification_type.trim()
+                ));
+            }
+            if !signal.question.trim().is_empty() && signal.question.trim() != state.question.trim()
+            {
+                problems.push(
+                    "blocked signal question must match benchmark-state question".to_string(),
+                );
+            }
+        } else {
+            if !state.question.trim().is_empty() {
+                problems.push("ready benchmark-state must leave question empty".to_string());
+            }
+            if signal.is_blocked() {
+                problems.push(
+                    "benchmark-state says ready but .borg/signal.json blocked the phase"
+                        .to_string(),
+                );
+            }
+        }
+
+        if problems.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "invalid or inconsistent .borg/benchmark-state.json: {}",
                 problems.join("; ")
             ))
         }
@@ -2080,6 +2289,21 @@ impl Pipeline {
         }
     }
 
+    fn persist_benchmark_phase_state(&self, task_id: i64, state: &BenchmarkPhaseState) {
+        let payload = serde_json::to_value(state).unwrap_or_else(|_| serde_json::json!({}));
+        let mut base = self
+            .db
+            .get_task_structured_data(task_id)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+            .filter(|v| v.is_object())
+            .unwrap_or_else(|| serde_json::json!({}));
+        base["benchmark_state"] = payload;
+        if let Ok(serialized) = serde_json::to_string(&base) {
+            let _ = self.db.update_task_structured_data(task_id, &serialized);
+        }
+    }
+
     fn enforce_legal_benchmark_clarification_guard(
         task: &Task,
         phase: &PhaseConfig,
@@ -2112,9 +2336,87 @@ impl Pipeline {
         None
     }
 
+    fn enforce_legal_benchmark_state_guard(
+        task: &Task,
+        phase: &PhaseConfig,
+        state: &BenchmarkPhaseState,
+    ) -> Option<String> {
+        if !Self::is_legal_benchmark_task(task) {
+            return None;
+        }
+        if !matches!(
+            phase.name.as_str(),
+            "implement" | "impl" | "retry" | "review"
+        ) {
+            return None;
+        }
+        if state.is_blocked_for_clarification() {
+            return None;
+        }
+
+        for uncertainty in &state.uncertainties {
+            if uncertainty.recommended_treatment.trim() == "blocked_clarification" {
+                return Some(format!(
+                    "Benchmark structured-state guard failed.\n\
+                     The benchmark-state file says an unresolved issue requires blocked clarification, but the run exited as ready.\n\
+                     Issue: {}\n\
+                     Missing fact: {}\n\
+                     Justification: {}",
+                    uncertainty.issue.trim(),
+                    uncertainty.missing_fact.trim(),
+                    uncertainty.justification.trim()
+                ));
+            }
+        }
+
+        for claim in &state.claims {
+            if claim.safe_to_state_definitively && claim.depends_on_unresolved_fact {
+                return Some(format!(
+                    "Benchmark structured-state guard failed.\n\
+                     A material claim was marked as definitive even though it still depends on an unresolved fact.\n\
+                     Claim type: {}\n\
+                     Claim: {}",
+                    claim.claim_type.trim(),
+                    claim.claim.trim()
+                ));
+            }
+            if claim.safe_to_state_definitively
+                && matches!(
+                    claim.claim_type.trim(),
+                    "corpus_exhaustiveness" | "record_completeness"
+                )
+                && !matches!(
+                    claim.support_status.trim(),
+                    "record_confirmed" | "supported" | "coverage_verified"
+                )
+            {
+                return Some(format!(
+                    "Benchmark structured-state guard failed.\n\
+                     A completeness-style claim was stated definitively without confirmed support.\n\
+                     Claim type: {}\n\
+                     Support status: {}\n\
+                     Claim: {}",
+                    claim.claim_type.trim(),
+                    claim.support_status.trim(),
+                    claim.claim.trim()
+                ));
+            }
+        }
+
+        None
+    }
+
     fn is_legal_benchmark_task(task: &Task) -> bool {
         matches!(task.mode.as_str(), "lawborg" | "legal")
             && task.task_type.trim() == "benchmark_analysis"
+    }
+
+    fn requires_legal_benchmark_state(task: &Task, phase: &PhaseConfig) -> bool {
+        Self::is_legal_benchmark_task(task)
+            && matches!(
+                phase.name.as_str(),
+                "implement" | "impl" | "retry" | "review"
+            )
     }
 
     fn benchmark_guard_sources(work_dir: &str, phase_output: &str) -> Vec<(String, String)> {
@@ -5284,7 +5586,30 @@ fn is_clarification_resume_error(error: &str) -> bool {
     clarification_retry || clarification_guard_retry
 }
 
-fn clarification_resume_question(last_error: &str) -> Option<String> {
+fn benchmark_clarification_question_from_structured_data(
+    value: &serde_json::Value,
+) -> Option<String> {
+    let state = value.get("benchmark_state")?;
+    if state.get("status")?.as_str()? != "blocked_for_clarification" {
+        return None;
+    }
+    let question = state.get("question")?.as_str()?.trim();
+    if question.is_empty() {
+        None
+    } else {
+        Some(question.to_string())
+    }
+}
+
+fn clarification_resume_question(
+    prior_report: Option<&serde_json::Value>,
+    last_error: &str,
+) -> Option<String> {
+    if let Some(question) =
+        prior_report.and_then(benchmark_clarification_question_from_structured_data)
+    {
+        return Some(question);
+    }
     let error = latest_retry_error(last_error);
     let question = error.split("\n\nQuestion:").nth(1)?.trim();
     if question.is_empty() {
@@ -5967,8 +6292,9 @@ mod legal_retrieval_protocol_tests {
             should_offer_retrieval_reuse_guidance(&task, true),
             "clarification-driven retries should also get prompt-level reuse guidance"
         );
+        let prior_report = json!({});
         assert_eq!(
-            clarification_resume_question(&task.last_error).as_deref(),
+            clarification_resume_question(Some(&prior_report), &task.last_error).as_deref(),
             Some("Is GenAssist enabled on the live BoroughCare queue?")
         );
     }
@@ -6067,9 +6393,29 @@ The task output still treats an unresolved pre-sign/pre-close fact as a caveat i
             should_offer_retrieval_reuse_guidance(&task, true),
             "clarification-guard retries should get prompt-level reuse guidance too"
         );
+        let prior_report = json!({});
         assert!(
-            clarification_resume_question(&task.last_error).is_none(),
+            clarification_resume_question(Some(&prior_report), &task.last_error).is_none(),
             "guard failures do not carry a question unless the error text includes one"
+        );
+    }
+
+    #[test]
+    fn clarification_resume_question_prefers_persisted_benchmark_state() {
+        let prior_report = json!({
+            "benchmark_state": {
+                "status": "blocked_for_clarification",
+                "question": "Does the full call-off contain a separate CoC consent?"
+            }
+        });
+
+        assert_eq!(
+            clarification_resume_question(
+                Some(&prior_report),
+                "Material fact missing\n\nQuestion: Old question from last_error"
+            )
+            .as_deref(),
+            Some("Does the full call-off contain a separate CoC consent?")
         );
     }
 }
@@ -6209,6 +6555,190 @@ mod phase_completion_verdict_tests {
 
         assert!(
             err.contains("missing_requirements"),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod benchmark_phase_state_tests {
+    use std::fs;
+
+    use chrono::Utc;
+    use tempfile::tempdir;
+
+    use super::Pipeline;
+    use crate::types::{
+        AgentSignal, BenchmarkClaimState, BenchmarkPhaseState, BenchmarkUncertaintyState,
+        PhaseConfig, Task,
+    };
+
+    fn sample_task() -> Task {
+        Task {
+            id: 17,
+            title: "legal-ew-003".into(),
+            description: "benchmark".into(),
+            repo_path: String::new(),
+            branch: "task-17".into(),
+            status: "implement".into(),
+            attempt: 2,
+            max_attempts: 5,
+            last_error: String::new(),
+            created_by: "test".into(),
+            notify_chat: String::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            session_id: String::new(),
+            mode: "legal".into(),
+            backend: String::new(),
+            workspace_id: 0,
+            project_id: 1,
+            task_type: "benchmark_analysis".into(),
+            requires_exhaustive_corpus_review: true,
+            started_at: None,
+            completed_at: None,
+            duration_secs: None,
+            review_status: None,
+            revision_count: 0,
+            chat_thread: String::new(),
+        }
+    }
+
+    fn sample_phase() -> PhaseConfig {
+        PhaseConfig {
+            name: "implement".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn reads_benchmark_phase_state_from_workdir() {
+        let dir = tempdir().expect("tempdir");
+        let borg_dir = dir.path().join(".borg");
+        fs::create_dir_all(&borg_dir).expect("create .borg");
+        fs::write(
+            borg_dir.join("benchmark-state.json"),
+            r#"{"task_id":17,"phase":"implement","attempt":2,"gate_token":"gate-123","status":"ready","rationale":"No unresolved sign-dispositive fact remains.","clarification_type":"","material_fact":"","question":"","uncertainties":[],"claims":[]}"#,
+        )
+        .expect("write state");
+
+        let state = Pipeline::read_benchmark_phase_state(dir.path().to_str().unwrap())
+            .expect("benchmark-state should parse");
+
+        assert_eq!(state.task_id, 17);
+        assert_eq!(state.phase, "implement");
+        assert_eq!(state.attempt, 2);
+        assert_eq!(state.gate_token, "gate-123");
+        assert_eq!(state.status, "ready");
+        assert!(
+            !borg_dir.join("benchmark-state.json").exists(),
+            "benchmark-state file should be consumed so stale state cannot be reused"
+        );
+    }
+
+    #[test]
+    fn blocked_benchmark_state_requires_blocked_signal_and_matching_reason_code() {
+        let task = sample_task();
+        let phase = sample_phase();
+        let state = BenchmarkPhaseState {
+            task_id: task.id,
+            phase: phase.name.clone(),
+            attempt: task.attempt,
+            gate_token: "gate-123".into(),
+            status: "blocked_for_clarification".into(),
+            rationale: "The full call-off is unavailable and could change the sign recommendation.".into(),
+            clarification_type: "missing_complete_document".into(),
+            material_fact: "Whether the full BoroughCare call-off contains a separate CoC consent right.".into(),
+            question: "Does the full BoroughCare call-off contain a separate change-of-control consent right?".into(),
+            uncertainties: vec![BenchmarkUncertaintyState {
+                issue: "BoroughCare call-off completeness".into(),
+                missing_fact: "Separate CoC clause in the missing call-off sections".into(),
+                uncertainty_type: "missing_complete_document".into(),
+                support_status: "partial_record".into(),
+                operative_status: "unclear".into(),
+                changes_sign: true,
+                changes_close_only: false,
+                allocable_to_spa_structure: false,
+                requires_counterparty_input: false,
+                requires_missing_document: true,
+                depends_on_partial_record: true,
+                recommended_treatment: "blocked_clarification".into(),
+                justification: "The visible extract is incomplete and the missing sections could contain a separate consent trigger.".into(),
+            }],
+            claims: vec![],
+        };
+
+        let invalid_signal = AgentSignal {
+            status: "blocked".into(),
+            reason: "Material fact missing".into(),
+            reason_code: String::new(),
+            question: state.question.clone(),
+        };
+        let err = Pipeline::validate_benchmark_phase_state(
+            &state,
+            &task,
+            &phase,
+            "gate-123",
+            &invalid_signal,
+        )
+        .expect_err("missing reason_code should be rejected");
+        assert!(err.contains("reason_code"), "unexpected error: {err}");
+
+        let valid_signal = AgentSignal {
+            status: "blocked".into(),
+            reason: "Material fact missing".into(),
+            reason_code: "missing_complete_document".into(),
+            question: state.question.clone(),
+        };
+        Pipeline::validate_benchmark_phase_state(&state, &task, &phase, "gate-123", &valid_signal)
+            .expect("matching blocked signal should be accepted");
+    }
+
+    #[test]
+    fn structured_state_guard_rejects_definitive_claim_on_unresolved_fact() {
+        let task = sample_task();
+        let phase = sample_phase();
+        let state = BenchmarkPhaseState {
+            task_id: task.id,
+            phase: phase.name.clone(),
+            attempt: task.attempt,
+            gate_token: "gate-123".into(),
+            status: "ready".into(),
+            rationale: "Draft completed.".into(),
+            clarification_type: String::new(),
+            material_fact: String::new(),
+            question: String::new(),
+            uncertainties: vec![BenchmarkUncertaintyState {
+                issue: "Live GenAssist runtime".into(),
+                missing_fact: "Whether BoroughCare queues are live in GenAssist".into(),
+                uncertainty_type: "operational_fact".into(),
+                support_status: "unavailable".into(),
+                operative_status: "unclear".into(),
+                changes_sign: true,
+                changes_close_only: false,
+                allocable_to_spa_structure: false,
+                requires_counterparty_input: false,
+                requires_missing_document: false,
+                depends_on_partial_record: false,
+                recommended_treatment: "provisional_only".into(),
+                justification: "The visible papers only show intended controls, not live runtime."
+                    .into(),
+            }],
+            claims: vec![BenchmarkClaimState {
+                claim: "Signing can proceed on current facts.".into(),
+                claim_type: "sign_recommendation".into(),
+                support_status: "inferred".into(),
+                depends_on_unresolved_fact: true,
+                safe_to_state_definitively: true,
+                supporting_artifacts: vec!["DOC-005".into()],
+            }],
+        };
+
+        let err = Pipeline::enforce_legal_benchmark_state_guard(&task, &phase, &state)
+            .expect("state guard should reject definitive unresolved-fact claim");
+
+        assert!(
+            err.contains("depends on an unresolved fact"),
             "unexpected error: {err}"
         );
     }
@@ -6484,7 +7014,10 @@ mod legal_benchmark_clarification_guard_tests {
     #[test]
     fn classifies_provider_authentication_errors_separately() {
         let sample = r#"Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}"#;
-        assert_eq!(super::classify_retry_error(sample), super::RetryClass::Authentication);
+        assert_eq!(
+            super::classify_retry_error(sample),
+            super::RetryClass::Authentication
+        );
     }
 
     #[test]

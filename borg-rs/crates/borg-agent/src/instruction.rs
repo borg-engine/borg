@@ -22,6 +22,65 @@ fn build_completion_gate_section(task: &Task, phase: &PhaseConfig, ctx: &PhaseCo
     });
     let verdict_schema =
         serde_json::to_string_pretty(&verdict_schema).unwrap_or_else(|_| "{}".to_string());
+    let benchmark_state_section = if is_legal_benchmark_task(task) {
+        let benchmark_state_schema = json!({
+            "task_id": task.id,
+            "phase": phase.name,
+            "attempt": ctx.phase_attempt,
+            "gate_token": ctx.phase_gate_token,
+            "status": "ready",
+            "rationale": "Briefly explain whether any unresolved fact still blocks the recommendation.",
+            "clarification_type": "",
+            "material_fact": "",
+            "question": "",
+            "uncertainties": [
+                {
+                    "issue": "Short issue label",
+                    "missing_fact": "What fact is still missing or unresolved",
+                    "uncertainty_type": "operational_fact | counterparty_position | missing_complete_document | transaction_parameter | enforcement_status | other",
+                    "support_status": "record_confirmed | inferred | intended_only | partial_record | draft_only | stale | conflicting | unavailable",
+                    "operative_status": "operative | intended_only | unclear | not_applicable",
+                    "changes_sign": false,
+                    "changes_close_only": false,
+                    "allocable_to_spa_structure": false,
+                    "requires_counterparty_input": false,
+                    "requires_missing_document": false,
+                    "depends_on_partial_record": false,
+                    "recommended_treatment": "blocked_clarification | provisional_only | cp | warranty_indemnity | disclose_only | none",
+                    "justification": "Short justification"
+                }
+            ],
+            "claims": [
+                {
+                    "claim": "The sign recommendation is supportable.",
+                    "claim_type": "sign_recommendation | close_recommendation | corpus_exhaustiveness | record_completeness | risk_allocation | other",
+                    "support_status": "record_confirmed | inferred | intended_only | partial_record | draft_only | stale | conflicting | unavailable",
+                    "depends_on_unresolved_fact": false,
+                    "safe_to_state_definitively": true,
+                    "supporting_artifacts": ["DOC-001", "DOC-007"]
+                }
+            ]
+        });
+        let benchmark_state_schema = serde_json::to_string_pretty(&benchmark_state_schema)
+            .unwrap_or_else(|_| "{}".to_string());
+        format!(
+            "\n\
+Before ending this benchmark phase, also write `.borg/benchmark-state.json` with this exact metadata for the current run:\n\
+```json\n\
+{benchmark_state_schema}\n\
+```\n\
+\n\
+Benchmark-state rules:\n\
+- `task_id`, `phase`, `attempt`, and `gate_token` must exactly match this run.\n\
+- Use `status = \"blocked_for_clarification\"` only when a material fact really blocks the recommendation from being finalised.\n\
+- If `status = \"blocked_for_clarification\"`, `clarification_type`, `material_fact`, and `question` must all be non-empty.\n\
+- If `status = \"blocked_for_clarification\"`, also write `.borg/signal.json` with `status = \"blocked\"`, the same `question`, and a machine-readable `reason_code` matching the clarification type.\n\
+- If `status = \"ready\"`, leave `question` empty and make sure your `claims` and `uncertainties` do not imply that a blocked clarification is still required.\n\
+- Record support honestly: do not mark a claim as definitive if it still depends on an unresolved fact or only on intended / partial / draft material.\n"
+        )
+    } else {
+        String::new()
+    };
 
     format!(
         "## Completion Gate\n\
@@ -53,7 +112,8 @@ Rules:\n\
 - If anything requested is still incomplete, keep working instead of exiting.\n\
 - If you truly cannot proceed because required context is missing, write `.borg/signal.json` with `{{\"status\":\"blocked\",\"reason\":\"...\",\"question\":\"...\"}}`.\n\
 - If the task is already satisfied or should not continue, write `.borg/signal.json` with `{{\"status\":\"abandon\",\"reason\":\"...\"}}`.\n\
-- If you stop without a valid fresh positive verdict, the pipeline will re-run this phase.\n",
+- If you stop without a valid fresh positive verdict, the pipeline will re-run this phase.\n\
+{benchmark_state_section}",
         title = task.title.trim(),
         description = if task.description.trim().is_empty() {
             "(empty)"
@@ -64,6 +124,7 @@ Rules:\n\
         attempt = ctx.phase_attempt,
         gate_token = ctx.phase_gate_token,
         verdict_schema = verdict_schema,
+        benchmark_state_section = benchmark_state_section,
     )
 }
 
@@ -232,6 +293,11 @@ fn phase_instruction_override<'a>(
         "review" => std::borrow::Cow::Borrowed(LEGAL_BENCHMARK_REVIEW_INSTRUCTION),
         _ => std::borrow::Cow::Borrowed(phase.instruction.as_str()),
     }
+}
+
+fn is_legal_benchmark_task(task: &Task) -> bool {
+    matches!(task.mode.as_str(), "lawborg" | "legal")
+        && task.task_type.trim() == "benchmark_analysis"
 }
 
 /// Build the `## Knowledge Base` section prepended to agent instructions.
@@ -664,6 +730,8 @@ If the task is marked as requiring exhaustive corpus review:
 Clarification rule:
 - if a sign / close / proceed recommendation depends on a material fact that is not answerable from the corpus, do not bury it in assumptions or open questions
 - write `.borg/signal.json` with a blocked clarification instead of finalising the recommendation
+- keep `.borg/benchmark-state.json` aligned with that decision, including typed uncertainty and claim-support state
+- when blocked, use a typed `reason_code` such as `missing_operational_fact`, `missing_counterparty_position`, `missing_complete_document`, `missing_transaction_parameter`, or `missing_enforcement_status`
 
 If this run is resuming after a blocked clarification and the prior exhaustive review already happened:
 - do not restart the corpus review from zero
@@ -678,8 +746,9 @@ Review the benchmark deliverables against the explicit task contract and the und
 Review priorities:
 1. Does the draft satisfy the exact required output files and headings?
 2. Are the bottom-line conclusions supported by the corpus review that was actually performed?
-3. Does the draft improperly convert unresolved threshold facts into caveats, assumptions, post-close fixes, or conditional sign-now recommendations?
-4. Are key document references accurate and internally consistent across deliverables?
+3. Does `.borg/benchmark-state.json` honestly classify unresolved facts, support status, and blocked-versus-ready posture?
+4. Does the draft improperly convert unresolved threshold facts into caveats, assumptions, post-close fixes, or conditional sign-now recommendations?
+5. Are key document references accurate and internally consistent across deliverables?
 
 Use Borg document tools to spot-check the corpus directly.
 If a material fact was not answerable from the corpus, the correct review outcome is to require blocked clarification rather than polishing the recommendation.

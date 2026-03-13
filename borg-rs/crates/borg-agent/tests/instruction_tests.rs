@@ -416,6 +416,14 @@ fn test_legal_benchmark_instruction_uses_benchmark_specific_prompt() {
         "expected benchmark-specific legal instruction: {result}"
     );
     assert!(
+        result.contains(".borg/benchmark-state.json"),
+        "expected benchmark-state contract in benchmark prompt: {result}"
+    );
+    assert!(
+        result.contains("reason_code"),
+        "expected typed blocked reason guidance in benchmark prompt: {result}"
+    );
+    assert!(
         !result.contains("## Step 2: Write research.md"),
         "generic legal research scaffold should be removed for benchmark_analysis: {result}"
     );
@@ -423,7 +431,11 @@ fn test_legal_benchmark_instruction_uses_benchmark_specific_prompt() {
 
 #[test]
 fn test_clarification_resume_section_is_injected_when_reusing_prior_review() {
-    let task = make_task("Title", "Desc", "Material fact missing\n\nQuestion: Is GenAssist live?");
+    let task = make_task(
+        "Title",
+        "Desc",
+        "Material fact missing\n\nQuestion: Is GenAssist live?",
+    );
     let phase = PhaseConfig {
         instruction: "Do work.".to_string(),
         ..PhaseConfig::default()

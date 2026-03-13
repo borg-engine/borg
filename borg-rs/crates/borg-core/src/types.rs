@@ -408,6 +408,9 @@ pub struct AgentSignal {
     /// Free-text reason (required for blocked/abandon).
     #[serde(default)]
     pub reason: String,
+    /// Optional machine-readable blocked/abandon reason code.
+    #[serde(default)]
+    pub reason_code: String,
     /// Optional question for the human (when blocked).
     #[serde(default)]
     pub question: String,
@@ -418,6 +421,7 @@ impl Default for AgentSignal {
         Self {
             status: "done".into(),
             reason: String::new(),
+            reason_code: String::new(),
             question: String::new(),
         }
     }
@@ -438,6 +442,92 @@ impl AgentSignal {
 
     pub fn is_abandon(&self) -> bool {
         self.status == "abandon"
+    }
+}
+
+/// Structured per-issue state for legal benchmark runs.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BenchmarkUncertaintyState {
+    #[serde(default)]
+    pub issue: String,
+    #[serde(default)]
+    pub missing_fact: String,
+    #[serde(default)]
+    pub uncertainty_type: String,
+    #[serde(default)]
+    pub support_status: String,
+    #[serde(default)]
+    pub operative_status: String,
+    #[serde(default)]
+    pub changes_sign: bool,
+    #[serde(default)]
+    pub changes_close_only: bool,
+    #[serde(default)]
+    pub allocable_to_spa_structure: bool,
+    #[serde(default)]
+    pub requires_counterparty_input: bool,
+    #[serde(default)]
+    pub requires_missing_document: bool,
+    #[serde(default)]
+    pub depends_on_partial_record: bool,
+    #[serde(default)]
+    pub recommended_treatment: String,
+    #[serde(default)]
+    pub justification: String,
+}
+
+/// Structured claim-support state for legal benchmark runs.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BenchmarkClaimState {
+    #[serde(default)]
+    pub claim: String,
+    #[serde(default)]
+    pub claim_type: String,
+    #[serde(default)]
+    pub support_status: String,
+    #[serde(default)]
+    pub depends_on_unresolved_fact: bool,
+    #[serde(default)]
+    pub safe_to_state_definitively: bool,
+    #[serde(default)]
+    pub supporting_artifacts: Vec<String>,
+}
+
+/// Agent-written benchmark state stored in `.borg/benchmark-state.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BenchmarkPhaseState {
+    #[serde(default)]
+    pub task_id: i64,
+    #[serde(default)]
+    pub phase: String,
+    #[serde(default)]
+    pub attempt: i64,
+    #[serde(default)]
+    pub gate_token: String,
+    /// "ready" or "blocked_for_clarification".
+    #[serde(default = "BenchmarkPhaseState::default_status")]
+    pub status: String,
+    #[serde(default)]
+    pub rationale: String,
+    #[serde(default)]
+    pub clarification_type: String,
+    #[serde(default)]
+    pub material_fact: String,
+    #[serde(default)]
+    pub question: String,
+    #[serde(default)]
+    pub uncertainties: Vec<BenchmarkUncertaintyState>,
+    #[serde(default)]
+    pub claims: Vec<BenchmarkClaimState>,
+}
+
+impl BenchmarkPhaseState {
+    fn default_status() -> String {
+        "ready".into()
+    }
+
+    pub fn is_blocked_for_clarification(&self) -> bool {
+        self.status == "blocked_for_clarification"
     }
 }
 
