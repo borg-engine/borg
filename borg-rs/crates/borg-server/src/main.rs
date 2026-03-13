@@ -1861,7 +1861,7 @@ async fn main() -> anyhow::Result<()> {
                     let s = auth::generate_token();
                     let _ = db.set_config(key, &s);
                     s
-                }
+                },
             }
         },
         start_time: Instant::now(),

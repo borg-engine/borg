@@ -1919,10 +1919,7 @@ impl Db {
         Ok(rows)
     }
 
-    pub fn list_projects_shared_with_user(
-        &self,
-        user_id: i64,
-    ) -> Result<Vec<SharedProjectRow>> {
+    pub fn list_projects_shared_with_user(&self, user_id: i64) -> Result<Vec<SharedProjectRow>> {
         let conn = self
             .conn
             .lock()
