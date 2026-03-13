@@ -1346,6 +1346,12 @@ export async function reextractProjectFile(
   return res.json();
 }
 
+export async function deleteProjectFile(projectId: number, fileId: number): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`/api/projects/${projectId}/files/${fileId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
+}
+
 export async function deleteAllProjectFiles(projectId: number): Promise<{ ok: boolean; deleted: number }> {
   const res = await apiFetch(`/api/projects/${projectId}/files`, {
     method: "DELETE",

@@ -55,7 +55,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("Dashboard error:", error, info.componentStack);
-    this.setState({ stack: (error.stack ?? "") + "\n\nComponent stack:" + (info.componentStack ?? "") });
+    this.setState({ stack: `${error.stack ?? ""}\n\nComponent stack:${info.componentStack ?? ""}` });
   }
   render() {
     if (this.state.error) {

@@ -2862,6 +2862,31 @@ pub(crate) async fn list_project_files(
     })))
 }
 
+pub(crate) async fn delete_project_file(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path((project_id, file_id)): Path<(i64, i64)>,
+) -> Result<Json<Value>, StatusCode> {
+    let _project = require_project_access(state.as_ref(), &workspace, project_id)?;
+    let file = state
+        .db
+        .get_project_file(project_id, file_id)
+        .map_err(internal)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if let Err(err) = state.file_storage.delete(&file.stored_path).await {
+        tracing::warn!(project_id, file_id, "failed to delete stored file: {err}");
+    }
+    if let Some(search) = &state.search {
+        let _ = search.delete_file_chunks(project_id, file_id).await;
+    }
+    state
+        .db
+        .delete_project_file(project_id, file_id)
+        .map_err(internal)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
 pub(crate) async fn delete_all_project_files(
     State(state): State<Arc<AppState>>,
     axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,

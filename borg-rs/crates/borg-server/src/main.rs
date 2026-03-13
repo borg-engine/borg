@@ -1397,6 +1397,10 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
             get(routes::list_project_files).delete(routes::delete_all_project_files),
         )
         .route(
+            "/api/projects/:id/files/:file_id",
+            delete(routes::delete_project_file),
+        )
+        .route(
             "/api/projects/:id/files/:file_id/content",
             get(routes::get_project_file_content),
         )

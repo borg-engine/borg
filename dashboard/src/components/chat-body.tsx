@@ -55,6 +55,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
   const lastTsRef = useRef<number>(0);
   const sendingRef = useRef(false);
   const sendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastStreamEventRef = useRef<number>(0);
 
   const fetchMessages = useCallback(() => {
     tokenReady.then(() => {
@@ -82,7 +83,9 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
     });
   }, [thread]);
 
-  useEffect(() => { sendingRef.current = sending; }, [sending]);
+  useEffect(() => {
+    sendingRef.current = sending;
+  }, [sending]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -112,6 +115,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
           const parsed = JSON.parse(msg.data);
           if (parsed.type) {
             setSending(true);
+            lastStreamEventRef.current = Date.now();
             setStreamEvents((prev) => [...prev, parsed]);
             // Reset timeout — agent is still active
             if (sendingTimeoutRef.current) clearTimeout(sendingTimeoutRef.current);
@@ -141,6 +145,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
             return [];
           });
           setSending(false);
+          lastStreamEventRef.current = 0;
           if (sendingTimeoutRef.current) {
             clearTimeout(sendingTimeoutRef.current);
             sendingTimeoutRef.current = null;
@@ -171,10 +176,16 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
         .then((r) => r.json())
         .then(async (data: { running: boolean }) => {
           if (!data.running && !pollRecoveringRef.current) {
+            // If we received stream events recently, the SSE is working — trust it
+            // for the completion signal rather than the poll
+            const sinceLast = Date.now() - lastStreamEventRef.current;
+            if (lastStreamEventRef.current > 0 && sinceLast < 15000) return;
             pollRecoveringRef.current = true;
             try {
               await tokenReady;
-              const r = await fetch(`/api/chat/messages?thread=${encodeURIComponent(thread)}`, { headers: authHeaders() });
+              const r = await fetch(`/api/chat/messages?thread=${encodeURIComponent(thread)}`, {
+                headers: authHeaders(),
+              });
               if (!r.ok) throw new Error(`${r.status}`);
               const msgs: ChatMessage[] = await r.json();
               // Batch all state updates so the transition from live
@@ -193,6 +204,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
               }
               setSending(false);
               setStreamEvents([]);
+              lastStreamEventRef.current = 0;
               if (sendingTimeoutRef.current) {
                 clearTimeout(sendingTimeoutRef.current);
                 sendingTimeoutRef.current = null;
@@ -200,6 +212,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
             } catch {
               setSending(false);
               setStreamEvents([]);
+              lastStreamEventRef.current = 0;
             } finally {
               pollRecoveringRef.current = false;
             }
@@ -235,7 +248,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
     if (!isScrolledUp) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }
-  }, [messages.length, streamEvents.length, isScrolledUp]);
+  }, [messages.length, isScrolledUp]);
 
   async function handleSend() {
     const text = input.trim();
@@ -245,6 +258,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
     setSending(true);
     setWorkingLabel(pickWorkingLabel());
     setStreamEvents([]);
+    lastStreamEventRef.current = 0;
 
     if (sendingTimeoutRef.current) clearTimeout(sendingTimeoutRef.current);
     sendingTimeoutRef.current = setTimeout(() => {
@@ -262,7 +276,12 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
     setMessages((prev) => [...prev, userMsg]);
     lastTsRef.current = Number(userMsg.ts);
 
-    const postBody = JSON.stringify({ text, sender: "web-user", thread, ...(selectedModel ? { model: selectedModel } : {}) });
+    const postBody = JSON.stringify({
+      text,
+      sender: "web-user",
+      thread,
+      ...(selectedModel ? { model: selectedModel } : {}),
+    });
     const doPost = async () => {
       await tokenReady;
       const res = await fetch("/api/chat", {
@@ -405,7 +424,8 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
                   </div>
                   <div className="p-1.5 pt-0">
                     {availableModels.map((m) => {
-                      const isActive = m.model === selectedModel || (!selectedModel && m.model === availableModels[0]?.model);
+                      const isActive =
+                        m.model === selectedModel || (!selectedModel && m.model === availableModels[0]?.model);
                       return (
                         <button
                           key={m.model}
@@ -418,7 +438,9 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
                             isActive ? "bg-[#232019] text-[#e8e0d4]" : "text-[#9c9486]",
                           )}
                         >
-                          <Sparkles className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-amber-400/70" : "text-[#6b6459]")} />
+                          <Sparkles
+                            className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-amber-400/70" : "text-[#6b6459]")}
+                          />
                           <span>{m.label}</span>
                         </button>
                       );

@@ -1,10 +1,6 @@
 import { AlertTriangle, ExternalLink, FileText, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import {
-  fetchPublicProject,
-  fetchPublicProjectDocuments,
-  fetchPublicProjectTasks,
-} from "@/lib/api";
+import { fetchPublicProject, fetchPublicProjectDocuments, fetchPublicProjectTasks } from "@/lib/api";
 import type { Project, ProjectDocument, ProjectTask } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { BorgLogo } from "./borg-logo";
@@ -49,9 +45,7 @@ function PublicProjectHeader({ project }: { project: Project }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-[15px] font-semibold text-zinc-100 flex items-center gap-1">
-              <span className="text-[12px] text-[#6b6459] tabular-nums mr-1.5">
-                #{project.id}
-              </span>
+              <span className="text-[12px] text-[#6b6459] tabular-nums mr-1.5">#{project.id}</span>
               <span>{project.name}</span>
             </h2>
             {project.jurisdiction && (
@@ -67,23 +61,15 @@ function PublicProjectHeader({ project }: { project: Project }) {
           </div>
           {project.task_counts && (
             <div className="mt-1.5 flex gap-4 text-[12px] text-zinc-500">
-              {project.task_counts.total > 0 && (
-                <span>{project.task_counts.total} tasks</span>
-              )}
+              {project.task_counts.total > 0 && <span>{project.task_counts.total} tasks</span>}
               {project.task_counts.done > 0 && (
-                <span className="text-emerald-500">
-                  {project.task_counts.done} done
-                </span>
+                <span className="text-emerald-500">{project.task_counts.done} done</span>
               )}
               {project.task_counts.active > 0 && (
-                <span className="text-amber-500">
-                  {project.task_counts.active} active
-                </span>
+                <span className="text-amber-500">{project.task_counts.active} active</span>
               )}
               {project.task_counts.failed > 0 && (
-                <span className="text-red-500">
-                  {project.task_counts.failed} failed
-                </span>
+                <span className="text-red-500">{project.task_counts.failed} failed</span>
               )}
             </div>
           )}
@@ -107,9 +93,7 @@ function PublicDocumentsTab({ docs }: { docs: ProjectDocument[] }) {
     <div className="space-y-3 p-5">
       <div className="mb-2 text-[13px] font-medium text-[#e8e0d4]">
         Agent Work
-        <span className="ml-1.5 text-[12px] text-[#6b6459]">
-          ({docs.length})
-        </span>
+        <span className="ml-1.5 text-[12px] text-[#6b6459]">({docs.length})</span>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {docs.map((doc) => (
@@ -119,9 +103,7 @@ function PublicDocumentsTab({ docs }: { docs: ProjectDocument[] }) {
           >
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 shrink-0 text-blue-400/60" />
-              <span className="text-[13px] font-medium text-[#e8e0d4] truncate">
-                {doc.file_name}
-              </span>
+              <span className="text-[13px] font-medium text-[#e8e0d4] truncate">{doc.file_name}</span>
               <StatusBadge status={doc.task_status} />
             </div>
             <div className="text-[12px] text-[#6b6459] truncate">
@@ -150,8 +132,7 @@ function PublicTasksTab({ tasks }: { tasks: ProjectTask[] }) {
     <div className="space-y-2.5 p-4">
       {totalSecs > 0 && (
         <div className="text-[12px] text-zinc-400 pb-1">
-          Total time:{" "}
-          <span className="text-zinc-300">{formatDuration(totalSecs)}</span>
+          Total time: <span className="text-zinc-300">{formatDuration(totalSecs)}</span>
           {" · "}
           {tasks.filter((t) => t.duration_secs != null).length} tracked
         </div>
@@ -170,27 +151,15 @@ function PublicTasksTab({ tasks }: { tasks: ProjectTask[] }) {
         ].includes(task.status);
 
         return (
-          <div
-            key={task.id}
-            className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4"
-          >
+          <div key={task.id} className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4">
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-[11px] text-zinc-500">
-                    #{task.id}
-                  </span>
+                  <span className="font-mono text-[11px] text-zinc-500">#{task.id}</span>
                   <StatusBadge status={task.status} />
-                  {isActive && (
-                    <span
-                      className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400"
-                      title="Running"
-                    />
-                  )}
+                  {isActive && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" title="Running" />}
                   {task.revision_count != null && task.revision_count > 0 && (
-                    <span className="text-[9px] text-amber-500/80">
-                      rev {task.revision_count}
-                    </span>
+                    <span className="text-[9px] text-amber-500/80">rev {task.revision_count}</span>
                   )}
                   {task.mode && (
                     <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-medium text-violet-400">
@@ -198,13 +167,9 @@ function PublicTasksTab({ tasks }: { tasks: ProjectTask[] }) {
                     </span>
                   )}
                 </div>
-                <div className="mt-1 text-[13px] font-medium text-zinc-200">
-                  {task.title}
-                </div>
+                <div className="mt-1 text-[13px] font-medium text-zinc-200">{task.title}</div>
                 {task.description && (
-                  <div className="mt-0.5 line-clamp-2 text-[12px] text-zinc-400">
-                    {task.description}
-                  </div>
+                  <div className="mt-0.5 line-clamp-2 text-[12px] text-zinc-400">{task.description}</div>
                 )}
               </div>
             </div>
@@ -213,10 +178,8 @@ function PublicTasksTab({ tasks }: { tasks: ProjectTask[] }) {
             </div>
             <div className="mt-2 text-[11px] text-zinc-500">
               created {fmtDateTime(task.created_at)}
-              {task.attempt > 0 &&
-                ` · attempt ${task.attempt}/${task.max_attempts}`}
-              {task.duration_secs != null &&
-                ` · ${formatDuration(task.duration_secs)}`}
+              {task.attempt > 0 && ` · attempt ${task.attempt}/${task.max_attempts}`}
+              {task.duration_secs != null && ` · ${formatDuration(task.duration_secs)}`}
             </div>
           </div>
         );
@@ -225,13 +188,7 @@ function PublicTasksTab({ tasks }: { tasks: ProjectTask[] }) {
   );
 }
 
-function PublicActivityTab({
-  tasks,
-  docs,
-}: {
-  tasks: ProjectTask[];
-  docs: ProjectDocument[];
-}) {
+function PublicActivityTab({ tasks, docs }: { tasks: ProjectTask[]; docs: ProjectDocument[] }) {
   type ActivityItem = {
     id: string;
     ts: string;
@@ -284,33 +241,19 @@ function PublicActivityTab({
       {items.map((item, idx) => (
         <div key={item.id} className="flex gap-3">
           <div className="flex flex-col items-center">
-            <div
-              className={cn(
-                "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
-                item.dotColor,
-              )}
-            />
+            <div className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", item.dotColor)} />
             {idx < items.length - 1 && (
-              <div
-                className="mt-1 w-px flex-1 bg-white/[0.07]"
-                style={{ minHeight: "28px" }}
-              />
+              <div className="mt-1 w-px flex-1 bg-white/[0.07]" style={{ minHeight: "28px" }} />
             )}
           </div>
           <div className="pb-4 min-w-0">
-            <div className="text-[13px] font-medium text-zinc-300 truncate">
-              {item.label}
-            </div>
+            <div className="text-[13px] font-medium text-zinc-300 truncate">{item.label}</div>
             {item.sub && (
               <div className="mt-0.5 text-[12px] text-zinc-400">
                 {item.sub} · {fmtDateTime(item.ts)}
               </div>
             )}
-            {!item.sub && (
-              <div className="mt-0.5 text-[12px] text-zinc-400">
-                {fmtDateTime(item.ts)}
-              </div>
-            )}
+            {!item.sub && <div className="mt-0.5 text-[12px] text-zinc-400">{fmtDateTime(item.ts)}</div>}
           </div>
         </div>
       ))}
@@ -372,10 +315,7 @@ export function PublicProjectView({ token }: { token: string }) {
         <div className="text-center">
           <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-amber-500" />
           <p className="text-[14px] text-zinc-300">{error}</p>
-          <a
-            href="/"
-            className="mt-4 inline-block text-[12px] text-blue-400 hover:text-blue-300"
-          >
+          <a href="/" className="mt-4 inline-block text-[12px] text-blue-400 hover:text-blue-300">
             Go to dashboard
           </a>
         </div>
@@ -426,9 +366,7 @@ export function PublicProjectView({ token }: { token: string }) {
         <div>
           {activeTab === "documents" && <PublicDocumentsTab docs={docs} />}
           {activeTab === "tasks" && <PublicTasksTab tasks={tasks} />}
-          {activeTab === "activity" && (
-            <PublicActivityTab tasks={tasks} docs={docs} />
-          )}
+          {activeTab === "activity" && <PublicActivityTab tasks={tasks} docs={docs} />}
         </div>
       </div>
     </div>

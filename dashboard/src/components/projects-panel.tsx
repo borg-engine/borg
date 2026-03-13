@@ -28,6 +28,7 @@ import {
   deleteAllProjectFiles,
   deleteAllUserKnowledgeFiles,
   deleteKnowledgeFile,
+  deleteProjectFile,
   deleteKnowledgeRepo,
   deleteUserKnowledgeFile,
   fetchKnowledgeContent,
@@ -1004,10 +1005,7 @@ export function ProjectsPanel() {
       {/* Center: Chat (project view only, not knowledge tabs) */}
       {!isSWE && !showMemory && selectedProject && !selectedDoc && (
         <div className="flex min-w-0 flex-1 flex-col border-r border-[#2a2520]">
-          <ChatBody
-            thread={`web:project-${selectedProject?.id}`}
-            className="bg-[#0f0e0c]"
-          />
+          <ChatBody thread={`web:project-${selectedProject?.id}`} className="bg-[#0f0e0c]" />
         </div>
       )}
 
@@ -1257,6 +1255,19 @@ export function ProjectsPanel() {
                                 <RotateCw className="h-3.5 w-3.5" />
                               </button>
                             )}
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!activeProjectId) return;
+                                if (!confirm(`Delete "${f.file_name}"?`)) return;
+                                await deleteProjectFile(activeProjectId, f.id);
+                                refetchFiles();
+                              }}
+                              className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-[#232019] hover:text-red-400"
+                              title="Delete file"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
                         </div>
                         {f.has_text && (

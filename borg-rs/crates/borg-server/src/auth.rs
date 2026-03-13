@@ -284,19 +284,18 @@ fn provision_external_user(state: &AppState, email: &str) -> Result<AuthUser, Re
         .map(|(_, _, _, is_admin)| is_admin)
         .unwrap_or(desired_admin);
 
+    if let Err(e) = state.db.ensure_system_workspace_membership(user_id) {
+        tracing::warn!(user_id, email, "failed to add to system workspace: {e}");
+    }
+    if let Err(e) = state.db.set_preferred_admin_workspace(user_id) {
+        tracing::warn!(user_id, email, "failed to set preferred workspace: {e}");
+    }
     if is_admin {
         if let Err(e) = state.db.ensure_admin_workspace_memberships(user_id) {
             tracing::warn!(
                 user_id,
                 email,
                 "failed to sync admin workspace memberships: {e}"
-            );
-        }
-        if let Err(e) = state.db.set_preferred_admin_workspace(user_id) {
-            tracing::warn!(
-                user_id,
-                email,
-                "failed to set preferred admin workspace: {e}"
             );
         }
     }

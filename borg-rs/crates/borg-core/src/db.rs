@@ -2341,6 +2341,20 @@ impl Db {
         .context("get_project_file")
     }
 
+    pub fn delete_project_file(&self, project_id: i64, file_id: i64) -> Result<bool> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let n = conn
+            .execute(
+                "DELETE FROM project_files WHERE id = ?1 AND project_id = ?2",
+                params![file_id, project_id],
+            )
+            .context("delete_project_file")?;
+        Ok(n > 0)
+    }
+
     pub fn delete_all_project_files(&self, project_id: i64) -> Result<i64> {
         let conn = self
             .conn
@@ -4858,6 +4872,29 @@ impl Db {
             params![workspace_id, user_id, role],
         )
         .context("add_workspace_member")?;
+        Ok(())
+    }
+
+    pub fn ensure_system_workspace_membership(&self, user_id: i64) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let system_ws = conn
+            .query_row(
+                "SELECT id FROM workspaces WHERE kind = 'system' ORDER BY id ASC LIMIT 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        if let Some(workspace_id) = system_ws {
+            conn.execute(
+                "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES (?1, ?2, 'member') \
+                 ON CONFLICT (workspace_id, user_id) DO NOTHING",
+                params![workspace_id, user_id],
+            )
+            .context("ensure_system_workspace_membership")?;
+        }
         Ok(())
     }
 
