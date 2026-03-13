@@ -211,6 +211,8 @@ impl AgentBackend for CodexBackend {
 
         let mut cmd = tokio::process::Command::new(&self.codex_bin);
         let codex_home = format!("{}/.codex", ctx.session_dir);
+        std::fs::create_dir_all(&codex_home)
+            .with_context(|| format!("failed to create Codex home: {codex_home}"))?;
         let has_linked_auth = Path::new(&codex_home).join("auth.json").exists();
         cmd.args(&codex_args)
             .current_dir(&ctx.work_dir)
