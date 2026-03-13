@@ -5067,6 +5067,9 @@ fn is_negative_sign_recommendation(normalized: &str) -> bool {
             "recommendation suspended",
             "blocked — sign",
             "blocked - sign",
+            "sign recommendation: blocked",
+            "sign recommendation blocked",
+            "not proceed to sign",
             "do not close",
             "cannot close",
             "should not close",
@@ -5079,6 +5082,9 @@ fn is_negative_sign_recommendation(normalized: &str) -> bool {
             "close recommendation not finalised",
             "close recommendation not finalized",
             "close recommendation suspended",
+            "close recommendation: blocked",
+            "close recommendation blocked",
+            "not proceed to close",
         ],
     )
 }
