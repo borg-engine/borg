@@ -4712,6 +4712,9 @@ Make only the minimal changes the linter requires. Do not refactor or change log
 
 fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
     let normalized = text.to_ascii_lowercase();
+    if is_enforcement_status_warranty_safe_harbor(&normalized) {
+        return None;
+    }
     let has_sign_or_close_position = contains_any(
         &normalized,
         &[
@@ -4866,6 +4869,57 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
     }
 
     Some(first_sentence_like_excerpt(text, 260))
+}
+
+fn is_enforcement_status_warranty_safe_harbor(normalized: &str) -> bool {
+    let has_enforcement_notice_context = contains_any(
+        normalized,
+        &[
+            "step-in notice",
+            "step in notice",
+            "suspension notice",
+            "breach notice",
+            "enforcement communication",
+            "enforcement-status",
+            "enforcement status",
+        ],
+    );
+    if !has_enforcement_notice_context {
+        return false;
+    }
+
+    let has_management_only_knowledge_limit = contains_any(
+        normalized,
+        &[
+            "management is not aware",
+            "management has confirmed",
+            "management's current representation",
+            "current representation",
+            "no independent enforcement-status confirmation",
+            "no independent enforcement status confirmation",
+            "no independent confirmation",
+        ],
+    );
+    if !has_management_only_knowledge_limit {
+        return false;
+    }
+
+    let allocates_risk_to_unqualified_warranty = contains_any(
+        normalized,
+        &[
+            "spa warranty",
+            "seller warranty",
+            "warranty on this point",
+            "must not be qualified by a knowledge limitation",
+            "must not be qualified by a knowledge qualifier",
+            "without a knowledge limitation",
+            "without a knowledge qualifier",
+            "unqualified warranty",
+            "specific indemnity",
+        ],
+    );
+
+    allocates_risk_to_unqualified_warranty
 }
 
 fn contains_any(text: &str, needles: &[&str]) -> bool {
@@ -6268,6 +6322,16 @@ mod legal_benchmark_clarification_guard_tests {
             excerpt.contains("no absolute sign-blockers")
                 || excerpt.contains("sign-and-fix route is viable"),
             "unexpected excerpt: {excerpt}"
+        );
+    }
+
+    #[test]
+    fn does_not_flag_enforcement_status_risk_allocated_to_unqualified_warranty() {
+        let text = "Recommended sign-off position: proceed only on the stated pre-sign BoroughCare remediation. Management is not aware of any step-in notice, suspension notice, breach notice, or enforcement communication, but the buyer has no independent enforcement-status confirmation. The SPA warranty on this point must not be qualified by a knowledge limitation and the specific indemnity covers any undisclosed pre-sign enforcement communication.";
+
+        assert!(
+            detect_benchmark_clarification_escape(text).is_none(),
+            "enforcement-status caveat allocated to an unqualified warranty should not trip the clarification guard"
         );
     }
 
