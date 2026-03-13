@@ -4715,6 +4715,9 @@ fn detect_benchmark_clarification_escape(text: &str) -> Option<String> {
     if is_enforcement_status_warranty_safe_harbor(&normalized) {
         return None;
     }
+    if is_non_dispositive_tail_diligence_safe_harbor(&normalized) {
+        return None;
+    }
     let has_sign_or_close_position = contains_any(
         &normalized,
         &[
@@ -4920,6 +4923,64 @@ fn is_enforcement_status_warranty_safe_harbor(normalized: &str) -> bool {
     );
 
     allocates_risk_to_unqualified_warranty
+}
+
+fn is_non_dispositive_tail_diligence_safe_harbor(normalized: &str) -> bool {
+    let has_tail_or_price_issue = contains_any(
+        normalized,
+        &[
+            "mariner",
+            "beacon retail finance",
+            "other customers",
+            "price mechanics",
+            "completion accounts",
+            "locked-box",
+            "locked box",
+            "tail customers",
+            "contracts not reviewed",
+        ],
+    );
+    if !has_tail_or_price_issue {
+        return false;
+    }
+
+    let explicitly_non_dispositive = contains_any(
+        normalized,
+        &[
+            "sign recommendation does not depend on",
+            "sign decision does not depend on",
+            "sign holds regardless",
+            "holds regardless of what",
+            "managed as a cp or post-close item",
+            "managed as a cp or post close item",
+            "price adjustment",
+            "informs price mechanics",
+            "not a sign blocker",
+        ],
+    );
+    if !explicitly_non_dispositive {
+        return false;
+    }
+
+    let no_true_threshold_unknown = !contains_any(
+        normalized,
+        &[
+            "titanbank procurement/legal",
+            "titanbank procurement or legal",
+            "approval notice",
+            "genassist",
+            "boroughcare authority",
+            "northcounty",
+            "step-in notice",
+            "suspension notice",
+            "breach notice",
+            "authority approval",
+            "schedule 5.4",
+            "schedule 5.5",
+        ],
+    );
+
+    no_true_threshold_unknown
 }
 
 fn contains_any(text: &str, needles: &[&str]) -> bool {
@@ -6332,6 +6393,16 @@ mod legal_benchmark_clarification_guard_tests {
         assert!(
             detect_benchmark_clarification_escape(text).is_none(),
             "enforcement-status caveat allocated to an unqualified warranty should not trip the clarification guard"
+        );
+    }
+
+    #[test]
+    fn does_not_flag_tail_diligence_items_that_explicitly_do_not_change_sign() {
+        let text = "Mariner Card Services should be disclosed before sign to inform price mechanics, but the sign recommendation does not depend on how it resolves. Beacon Retail Finance and the other customers should be reviewed before sign as a matter of diligence hygiene; the sign recommendation holds regardless of what provisions are found because any consent requirements are managed as a CP or post-close item.";
+
+        assert!(
+            detect_benchmark_clarification_escape(text).is_none(),
+            "non-dispositive tail diligence and price-mechanics items should not trip the clarification guard"
         );
     }
 
