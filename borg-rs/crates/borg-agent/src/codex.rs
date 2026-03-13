@@ -25,6 +25,7 @@ pub struct CodexBackend {
     pub git_author_email: String,
     pub git_committer_name: String,
     pub git_committer_email: String,
+    pub credentials_path: String,
 }
 
 impl CodexBackend {
@@ -39,11 +40,17 @@ impl CodexBackend {
             git_author_email: "borg@localhost".into(),
             git_committer_name: "Borg".into(),
             git_committer_email: "borg@localhost".into(),
+            credentials_path: String::new(),
         }
     }
 
     pub fn with_reasoning_effort(mut self, effort: impl Into<String>) -> Self {
         self.reasoning_effort = effort.into();
+        self
+    }
+
+    pub fn with_credentials_path(mut self, path: impl Into<String>) -> Self {
+        self.credentials_path = path.into();
         self
     }
 
@@ -101,6 +108,40 @@ impl CodexBackend {
             || l.contains("panic!")
             || l.contains("panicked at")
             || (l.contains("thread '") && l.contains(" panicked"))
+    }
+
+    /// Copy host Codex credentials into an isolated session home when no
+    /// session auth exists and no explicit API key was provided.
+    fn ensure_session_auth(credentials_path: &str, codex_home: &str) -> bool {
+        if credentials_path.is_empty() {
+            return false;
+        }
+        let session_auth = Path::new(codex_home).join("auth.json");
+        if session_auth.exists() {
+            return false;
+        }
+        if !borg_core::config::codex_has_credentials(credentials_path) {
+            return false;
+        }
+        let Ok(contents) = std::fs::read(credentials_path) else {
+            return false;
+        };
+        if std::fs::write(&session_auth, contents).is_err() {
+            return false;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(
+                &session_auth,
+                std::fs::Permissions::from_mode(0o600),
+            );
+        }
+        info!(
+            codex_home,
+            "copied host codex credentials into isolated session"
+        );
+        true
     }
 
     fn push_config_arg(args: &mut Vec<String>, key: &str, value: serde_json::Value) {
@@ -213,6 +254,9 @@ impl AgentBackend for CodexBackend {
         let codex_home = format!("{}/.codex", ctx.session_dir);
         std::fs::create_dir_all(&codex_home)
             .with_context(|| format!("failed to create Codex home: {codex_home}"))?;
+        if self.api_key.is_empty() {
+            Self::ensure_session_auth(&self.credentials_path, &codex_home);
+        }
         let has_linked_auth = Path::new(&codex_home).join("auth.json").exists();
         cmd.args(&codex_args)
             .current_dir(&ctx.work_dir)
@@ -267,5 +311,94 @@ impl AgentBackend for CodexBackend {
             ran_in_docker: false,
             container_test_results: Vec::new(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write_valid_credentials(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(
+            path,
+            r#"{"tokens":{"access_token":"tok_test"}}"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn ensure_session_auth_copies_valid_credentials() {
+        let host_dir = TempDir::new().unwrap();
+        let creds_path = host_dir.path().join("auth.json");
+        write_valid_credentials(&creds_path);
+
+        let session_dir = TempDir::new().unwrap();
+        let codex_home = session_dir.path().join(".codex");
+        fs::create_dir_all(&codex_home).unwrap();
+
+        let copied = CodexBackend::ensure_session_auth(
+            creds_path.to_str().unwrap(),
+            codex_home.to_str().unwrap(),
+        );
+        assert!(copied);
+        assert!(codex_home.join("auth.json").exists());
+
+        let contents = fs::read_to_string(codex_home.join("auth.json")).unwrap();
+        assert!(contents.contains("tok_test"));
+    }
+
+    #[test]
+    fn ensure_session_auth_noop_when_session_auth_exists() {
+        let host_dir = TempDir::new().unwrap();
+        let creds_path = host_dir.path().join("auth.json");
+        write_valid_credentials(&creds_path);
+
+        let session_dir = TempDir::new().unwrap();
+        let codex_home = session_dir.path().join(".codex");
+        fs::create_dir_all(&codex_home).unwrap();
+        fs::write(codex_home.join("auth.json"), r#"{"existing":true}"#).unwrap();
+
+        let copied = CodexBackend::ensure_session_auth(
+            creds_path.to_str().unwrap(),
+            codex_home.to_str().unwrap(),
+        );
+        assert!(!copied);
+
+        let contents = fs::read_to_string(codex_home.join("auth.json")).unwrap();
+        assert!(contents.contains("existing"));
+    }
+
+    #[test]
+    fn ensure_session_auth_noop_when_credentials_path_empty() {
+        let session_dir = TempDir::new().unwrap();
+        let codex_home = session_dir.path().join(".codex");
+        fs::create_dir_all(&codex_home).unwrap();
+
+        let copied = CodexBackend::ensure_session_auth("", codex_home.to_str().unwrap());
+        assert!(!copied);
+        assert!(!codex_home.join("auth.json").exists());
+    }
+
+    #[test]
+    fn ensure_session_auth_noop_when_credentials_invalid() {
+        let host_dir = TempDir::new().unwrap();
+        let creds_path = host_dir.path().join("auth.json");
+        fs::write(&creds_path, r#"{"no_tokens":true}"#).unwrap();
+
+        let session_dir = TempDir::new().unwrap();
+        let codex_home = session_dir.path().join(".codex");
+        fs::create_dir_all(&codex_home).unwrap();
+
+        let copied = CodexBackend::ensure_session_auth(
+            creds_path.to_str().unwrap(),
+            codex_home.to_str().unwrap(),
+        );
+        assert!(!copied);
+        assert!(!codex_home.join("auth.json").exists());
     }
 }

@@ -1155,6 +1155,7 @@ fn build_backends(
             "codex".into(),
             Arc::new(
                 CodexBackend::new(config.codex_api_key.clone(), codex_model)
+                    .with_credentials_path(config.codex_credentials_path.clone())
                     .with_reasoning_effort(codex_reasoning_effort)
                     .with_timeout(config.agent_timeout_s as u64)
                     .with_git_identity(
