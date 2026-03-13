@@ -42,6 +42,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
   const { data: status } = useStatus();
   const availableModels = status?.available_models ?? [];
   const [selectedModel, setSelectedModel] = useState<string>("");
+  const [showModelPicker, setShowModelPicker] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -50,6 +51,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
   const [workingLabel, setWorkingLabel] = useState("Working...");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
   const lastTsRef = useRef<number>(0);
   const sendingRef = useRef(false);
   const sendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,6 +83,16 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
   }, [thread]);
 
   useEffect(() => { sendingRef.current = sending; }, [sending]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
+        setShowModelPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const forceScrollRef = useRef(true);
 
@@ -376,21 +388,45 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
       {/* Input */}
       <div className="shrink-0 border-t border-[#2a2520] bg-[#0f0e0c]/90 px-3 py-2.5">
         {availableModels.length > 1 && (
-          <div className="mb-1.5 flex items-center gap-1">
-            {availableModels.map((m) => (
+          <div className="mb-1.5 flex items-center" ref={modelDropdownRef}>
+            <div className="relative">
               <button
-                key={m.model}
-                onClick={() => setSelectedModel(m.model === selectedModel ? "" : m.model)}
-                className={cn(
-                  "rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors",
-                  (m.model === selectedModel || (!selectedModel && m.model === availableModels[0]?.model))
-                    ? "bg-amber-500/15 text-amber-400"
-                    : "text-[#6b6459] hover:text-[#9c9486] hover:bg-[#1c1a17]",
-                )}
+                onClick={() => setShowModelPicker(!showModelPicker)}
+                className="flex items-center gap-1.5 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:border-[#2a2520]/80 hover:text-[#e8e0d4]"
               >
-                {m.label}
+                <Sparkles className="h-3 w-3 text-amber-400/60" />
+                <span>{(availableModels.find((m) => m.model === selectedModel) ?? availableModels[0])?.label}</span>
+                <ChevronDown className="h-3 w-3" />
               </button>
-            ))}
+              {showModelPicker && (
+                <div className="absolute bottom-full left-0 z-50 mb-2 min-w-[180px] overflow-hidden rounded-xl border border-[#2a2520] bg-[#1c1a17] shadow-2xl">
+                  <div className="px-3 pt-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6b6459]">
+                    Model
+                  </div>
+                  <div className="p-1.5 pt-0">
+                    {availableModels.map((m) => {
+                      const isActive = m.model === selectedModel || (!selectedModel && m.model === availableModels[0]?.model);
+                      return (
+                        <button
+                          key={m.model}
+                          onClick={() => {
+                            setSelectedModel(m.model);
+                            setShowModelPicker(false);
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[#232019]",
+                            isActive ? "bg-[#232019] text-[#e8e0d4]" : "text-[#9c9486]",
+                          )}
+                        >
+                          <Sparkles className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-amber-400/70" : "text-[#6b6459]")} />
+                          <span>{m.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
         <div className="relative flex items-end gap-1.5 rounded-xl border border-[#2a2520] bg-[#1c1a17] px-3 py-2 transition-colors focus-within:border-amber-500/20 focus-within:bg-[#232019]">

@@ -1001,21 +1001,21 @@ export function ProjectsPanel() {
         </div>
       </div>
 
-      {/* Center: Chat */}
-      {!isSWE && (showMemory || (selectedProject && !selectedDoc)) && (
+      {/* Center: Chat (project view only, not knowledge tabs) */}
+      {!isSWE && !showMemory && selectedProject && !selectedDoc && (
         <div className="flex min-w-0 flex-1 flex-col border-r border-[#2a2520]">
           <ChatBody
-            thread={showMemory ? "web:dashboard" : `web:project-${selectedProject?.id}`}
+            thread={`web:project-${selectedProject?.id}`}
             className="bg-[#0f0e0c]"
           />
         </div>
       )}
 
-      {/* Right panel */}
+      {/* Center/main panel */}
       <div
         className={cn(
           "flex flex-col overflow-hidden",
-          !isSWE && (showMemory || (selectedProject && !selectedDoc)) ? "w-[525px] shrink-0" : "min-w-0 flex-1",
+          !isSWE && !showMemory && selectedProject && !selectedDoc ? "w-[525px] shrink-0" : "min-w-0 flex-1",
         )}
       >
         {showMemory === "org" ? (
@@ -1361,6 +1361,14 @@ export function ProjectsPanel() {
           </div>
         )}
       </div>
+
+      {/* Right: Chat panel for knowledge tabs */}
+      {!isSWE && showMemory && (
+        <div className="flex h-full w-[30vw] shrink-0 flex-col border-l border-[#2a2520] bg-[#0f0e0c] overflow-hidden">
+          <ChatBody thread="web:dashboard" className="bg-[#0f0e0c]" />
+        </div>
+      )}
+
       {activeProjectId && (
         <FilePreviewWrapper file={previewFile} projectId={activeProjectId} onClose={() => setPreviewFile(null)} />
       )}
