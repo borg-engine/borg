@@ -2334,7 +2334,18 @@ impl Pipeline {
             return None;
         }
 
+        let has_deliverable_files = sources
+            .iter()
+            .any(|(source, _)| source != "phase output");
+
         for (source, text) in &sources {
+            // Phase output is a meta-summary of the model's work, not a
+            // deliverable. It naturally echoes sign/pre-sign/confirm
+            // vocabulary while describing what it did. Only check it as
+            // a fallback when no deliverable files were produced.
+            if source == "phase output" && has_deliverable_files {
+                continue;
+            }
             if let Some(excerpt) = detect_benchmark_clarification_escape(text) {
                 return Some(format!(
                     "Benchmark clarification guard failed.\n\
@@ -7155,6 +7166,74 @@ mod legal_benchmark_clarification_guard_tests {
             )
             .is_none(),
             "companion files should be exempt when the bundle contains a negative recommendation"
+        );
+    }
+
+    #[test]
+    fn skips_phase_output_when_deliverable_files_exist() {
+        let dir = tempdir().expect("tempdir");
+        // advice_memo recommends signing (positive) with pre-sign conditions
+        fs::write(
+            dir.path().join("advice_memo.md"),
+            "## Sign position\n\n\
+             Sign on 13 March is supportable. Subject to pre-sign confirmation \
+             of GenAssist renewal status from seller.",
+        )
+        .expect("write advice memo");
+
+        let task = sample_task();
+        let phase = PhaseConfig {
+            name: "implement".into(),
+            ..Default::default()
+        };
+
+        // Phase output echoes sign vocabulary from describing what was done
+        let phase_output = "Retrieval protocol satisfied. Sign recommendation produced. \
+            Pre-sign conditions identified and confirmation pending from seller.";
+
+        let result = Pipeline::enforce_legal_benchmark_clarification_guard(
+            &task,
+            &phase,
+            dir.path().to_str().expect("path"),
+            phase_output,
+        );
+        // Guard should fire on advice_memo.md (the deliverable), not phase output
+        if let Some(ref msg) = result {
+            assert!(
+                !msg.contains("Source: phase output"),
+                "phase output should be skipped when deliverable files exist; got: {}",
+                msg
+            );
+        }
+    }
+
+    #[test]
+    fn checks_phase_output_when_no_deliverable_files() {
+        let dir = tempdir().expect("tempdir");
+        // No deliverable files written
+
+        let task = sample_task();
+        let phase = PhaseConfig {
+            name: "implement".into(),
+            ..Default::default()
+        };
+
+        let phase_output = "Sign position: Sign on 13 March is supportable with \
+            pre-sign confirmation of GenAssist status pending.";
+
+        let result = Pipeline::enforce_legal_benchmark_clarification_guard(
+            &task,
+            &phase,
+            dir.path().to_str().expect("path"),
+            phase_output,
+        );
+        assert!(
+            result.is_some(),
+            "phase output should be checked when no deliverable files exist"
+        );
+        assert!(
+            result.unwrap().contains("Source: phase output"),
+            "should attribute to phase output"
         );
     }
 
