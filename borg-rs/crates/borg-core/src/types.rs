@@ -612,6 +612,8 @@ pub struct PhaseContext {
     pub chat_context: Vec<(String, String)>,
     /// Resolved GitHub token for this task (per-user override or global fallback).
     pub github_token: String,
+    /// True when github_token came from user's personal settings (not the Borg service token).
+    pub github_token_is_user: bool,
     /// True when this phase is resuming after a blocked clarification / clarification-guard retry.
     pub clarification_resume_reuses_prior_review: bool,
     /// Clarification question carried from the prior blocked / guard-failed attempt, when available.

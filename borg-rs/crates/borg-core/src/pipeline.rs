@@ -404,27 +404,30 @@ impl Pipeline {
     }
 
     /// Resolve the GitHub token for a task: per-user setting → global config → `gh auth token`.
-    fn resolve_gh_token(&self, created_by: &str) -> String {
+    /// Returns (token, is_user_token). When is_user_token is false, the token belongs to
+    /// the Borg service account and PRs should attribute the requesting user.
+    fn resolve_gh_token(&self, created_by: &str) -> (String, bool) {
         if !created_by.is_empty() {
             if let Ok(Some((uid, _, _, _, _))) = self.db.get_user_by_username(created_by) {
                 if let Ok(Some(tok)) = self.db.get_user_setting(uid, "github_token") {
                     if !tok.is_empty() {
-                        return tok;
+                        return (tok, true);
                     }
                 }
             }
         }
         if !self.config.github_token.is_empty() {
-            return self.config.github_token.clone();
+            return (self.config.github_token.clone(), false);
         }
-        std::process::Command::new("gh")
+        let tok = std::process::Command::new("gh")
             .args(["auth", "token"])
             .output()
             .ok()
             .filter(|o| o.status.success())
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .map(|s| s.trim().to_string())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        (tok, false)
     }
 
     /// Build a PhaseContext for a task phase.
@@ -559,6 +562,8 @@ impl Pipeline {
             String::new()
         };
 
+        let gh_resolved = self.resolve_gh_token(&task.created_by);
+
         PhaseContext {
             task: task.clone(),
             repo_config: self.repo_config(task),
@@ -596,7 +601,8 @@ impl Pipeline {
                 .trim()
                 .to_string(),
             chat_context,
-            github_token: self.resolve_gh_token(&task.created_by),
+            github_token: gh_resolved.0.clone(),
+            github_token_is_user: gh_resolved.1,
             clarification_resume_reuses_prior_review,
             clarification_resume_question,
         }
@@ -3003,7 +3009,7 @@ impl Pipeline {
             }
         }
 
-        let gh_token = self.resolve_gh_token(&task.created_by);
+        let (gh_token, _) = self.resolve_gh_token(&task.created_by);
         let origin_url = if !gh_token.is_empty() {
             format!("https://x-access-token:{gh_token}@github.com/{slug}.git")
         } else {
@@ -4118,12 +4124,28 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                 }
             }
 
-            // Get task title for PR
-            let title = self
-                .db
-                .get_task(entry.task_id)?
+            // Get task for PR title and attribution
+            let task_row = self.db.get_task(entry.task_id)?;
+            let title = task_row
+                .as_ref()
                 .map(|t| t.title.chars().take(100).collect::<String>())
                 .unwrap_or_else(|| entry.branch.clone());
+            let created_by = task_row
+                .as_ref()
+                .map(|t| t.created_by.as_str())
+                .unwrap_or_default()
+                .to_string();
+
+            let (_, is_user_token) = self.resolve_gh_token(&created_by);
+            let body = if !is_user_token && !created_by.is_empty() {
+                format!(
+                    "Automated implementation.\n\n---\n\
+                     Submitted by Borg on behalf of **{}**",
+                    created_by
+                )
+            } else {
+                "Automated implementation.".to_string()
+            };
 
             let create_out = self
                 .gh(&[
@@ -4138,7 +4160,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
                     "--title",
                     &title,
                     "--body",
-                    "Automated implementation.",
+                    &body,
                 ])
                 .await;
             let create_out = match create_out {

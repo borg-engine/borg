@@ -933,6 +933,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 borg_api_token: state.api_token.clone(),
                 chat_context: Vec::new(),
                 github_token: state.config.github_token.clone(),
+                github_token_is_user: false,
                 clarification_resume_reuses_prior_review: false,
                 clarification_resume_question: String::new(),
             };

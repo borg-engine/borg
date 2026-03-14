@@ -75,6 +75,7 @@ fn make_ctx() -> PhaseContext {
         borg_api_token: String::new(),
         chat_context: vec![],
         github_token: String::new(),
+        github_token_is_user: false,
         knowledge_repo_paths: vec![],
         clarification_resume_reuses_prior_review: false,
         clarification_resume_question: String::new(),
