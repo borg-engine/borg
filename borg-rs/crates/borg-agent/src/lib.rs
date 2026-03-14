@@ -1,5 +1,6 @@
 pub mod bridge;
 pub mod claude;
+pub mod container;
 pub use claude::extract_phase_result;
 pub mod codex;
 pub(crate) mod drain;
