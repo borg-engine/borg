@@ -16,6 +16,10 @@ logs/
 # Node modules (global)
 node_modules/
 
+# Rust build artifacts
+target/
+Cargo.lock
+
 # WhatsApp auth state
 whatsapp/auth/
 
