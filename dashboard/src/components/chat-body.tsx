@@ -46,7 +46,6 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([]);
   const [completedStreams, setCompletedStreams] = useState<Map<number, StreamEvent[]>>(new Map());
   const [workingLabel, setWorkingLabel] = useState("Working...");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -101,49 +100,31 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
 
   useEffect(() => {
     setMessages([]);
-    setStreamEvents([]);
+    resetStream();
     setCompletedStreams(new Map());
     lastTsRef.current = 0;
     forceScrollRef.current = true;
     fetchMessages();
   }, [fetchMessages]);
 
+  // Global SSE for message notifications (user/assistant messages, not stream data)
   const handleSseMessage = useCallback(
     (msg: any) => {
-      if ((msg.type === "chat_stream" || msg.type === "task_stream") && msg.thread === thread) {
-        try {
-          const parsed = JSON.parse(msg.data);
-          if (parsed.type) {
-            setSending(true);
-            lastStreamEventRef.current = Date.now();
-            setStreamEvents((prev) => [...prev, parsed]);
-            // Reset timeout — agent is still active
-            if (sendingTimeoutRef.current) clearTimeout(sendingTimeoutRef.current);
-            sendingTimeoutRef.current = setTimeout(() => {
-              setSending(false);
-              sendingTimeoutRef.current = null;
-            }, 120000);
-          }
-        } catch {
-          /* skip */
-        }
-        return;
-      }
+      // Stream events are handled by useChatStream — skip them here
+      if (msg.type === "chat_stream" || msg.type === "task_stream") return;
       if (msg.role === "user") return;
       setMessages((prev) => {
         const next = [...prev, msg];
         if (msg.role === "assistant") {
-          // Save stream events for this message so they can be reviewed later
-          setStreamEvents((evts) => {
-            if (evts.length > 0) {
-              setCompletedStreams((m) => {
-                const updated = new Map(m);
-                updated.set(next.length - 1, evts);
-                return updated;
-              });
-            }
-            return [];
-          });
+          // Move current stream events to completed streams for this message
+          if (streamEvents.length > 0) {
+            setCompletedStreams((m) => {
+              const updated = new Map(m);
+              updated.set(next.length - 1, [...streamEvents]);
+              return updated;
+            });
+          }
+          resetStream();
           setSending(false);
           lastStreamEventRef.current = 0;
           if (sendingTimeoutRef.current) {
@@ -155,7 +136,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
       });
       lastTsRef.current = Math.max(lastTsRef.current, Number(msg.ts) || 0);
     },
-    [thread],
+    [thread, streamEvents, resetStream],
   );
 
   useChatEvents(thread, handleSseMessage);
@@ -166,7 +147,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
     };
   }, []);
 
-  // Poll only when sending — recover from missed SSE completion events
+  // Poll fallback — recover from edge case where SSE dies at exact moment of completion
   const pollRecoveringRef = useRef(false);
   useEffect(() => {
     if (!sending) return;
@@ -176,10 +157,6 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
         .then((r) => r.json())
         .then(async (data: { running: boolean }) => {
           if (!data.running && !pollRecoveringRef.current) {
-            // If we received stream events recently, the SSE is working — trust it
-            // for the completion signal rather than the poll
-            const sinceLast = Date.now() - lastStreamEventRef.current;
-            if (lastStreamEventRef.current > 0 && sinceLast < 15000) return;
             pollRecoveringRef.current = true;
             try {
               await tokenReady;
@@ -188,8 +165,6 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
               });
               if (!r.ok) throw new Error(`${r.status}`);
               const msgs: ChatMessage[] = await r.json();
-              // Batch all state updates so the transition from live
-              // timeline to completed messages is atomic (no flash)
               const restored = new Map<number, StreamEvent[]>();
               msgs.forEach((m, i) => {
                 if (m.role === "assistant" && m.raw_stream) {
@@ -203,7 +178,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
                 lastTsRef.current = Math.max(...msgs.map((m) => Number(m.ts) || 0));
               }
               setSending(false);
-              setStreamEvents([]);
+              resetStream();
               lastStreamEventRef.current = 0;
               if (sendingTimeoutRef.current) {
                 clearTimeout(sendingTimeoutRef.current);
@@ -211,7 +186,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
               }
             } catch {
               setSending(false);
-              setStreamEvents([]);
+              resetStream();
               lastStreamEventRef.current = 0;
             } finally {
               pollRecoveringRef.current = false;
@@ -221,7 +196,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
         .catch(() => {});
     }, 3000);
     return () => clearInterval(interval);
-  }, [thread, sending]);
+  }, [thread, sending, resetStream]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
@@ -257,7 +232,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
     setInput("");
     setSending(true);
     setWorkingLabel(pickWorkingLabel());
-    setStreamEvents([]);
+    resetStream();
     lastStreamEventRef.current = 0;
 
     if (sendingTimeoutRef.current) clearTimeout(sendingTimeoutRef.current);
@@ -302,7 +277,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
       } catch (retryErr) {
         console.error("chat POST retry failed:", retryErr);
         setSending(false);
-        setStreamEvents([]);
+        resetStream();
         if (sendingTimeoutRef.current) {
           clearTimeout(sendingTimeoutRef.current);
           sendingTimeoutRef.current = null;
