@@ -570,3 +570,31 @@ CREATE TABLE IF NOT EXISTS project_share_links (
 );
 CREATE INDEX IF NOT EXISTS idx_project_share_links_token ON project_share_links(token);
 CREATE INDEX IF NOT EXISTS idx_project_share_links_project ON project_share_links(project_id);
+
+-- ── Cron scheduling ─────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS cron_jobs (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  schedule TEXT NOT NULL,
+  job_type TEXT NOT NULL DEFAULT 'agent_task',
+  config TEXT NOT NULL DEFAULT '{}',
+  project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL,
+  enabled BIGINT NOT NULL DEFAULT 1,
+  last_run TEXT,
+  next_run TEXT,
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS'))
+);
+CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run) WHERE enabled = 1;
+
+CREATE TABLE IF NOT EXISTS cron_runs (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL REFERENCES cron_jobs(id) ON DELETE CASCADE,
+  started_at TEXT NOT NULL DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS')),
+  finished_at TEXT,
+  status TEXT NOT NULL DEFAULT 'running',
+  result TEXT,
+  error TEXT,
+  task_id BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_cron_runs_job ON cron_runs(job_id, started_at DESC);

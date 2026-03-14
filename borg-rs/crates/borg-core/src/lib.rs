@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod chat;
 pub mod config;
+pub mod cron;
 pub mod db;
 pub mod email;
 pub mod git;
