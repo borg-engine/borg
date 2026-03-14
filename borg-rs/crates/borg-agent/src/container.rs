@@ -73,8 +73,7 @@ impl AgentBackend for ContainerBackend {
     ) -> Result<PhaseOutput> {
         let instruction = crate::instruction::build_instruction(task, phase, &ctx, None);
         let host_ip = container_host_ip(ctx.isolated);
-        let reachable_borg_api_url =
-            container_reachable_url(&ctx.borg_api_url, host_ip);
+        let reachable_borg_api_url = container_reachable_url(&ctx.borg_api_url, host_ip);
 
         let workspace_host = if !task.repo_path.is_empty()
             && std::path::Path::new(&task.repo_path).join(".git").exists()
@@ -84,14 +83,10 @@ impl AgentBackend for ContainerBackend {
             ctx.work_dir.clone()
         };
 
-        let binds = vec![
-            (workspace_host, "/workspace".to_string(), false),
-            (ctx.session_dir.clone(), "/home/bun".to_string(), false),
-        ];
-        let volumes_owned = vec![
-            ("rustup-cache".to_string(), "/home/bun/.rustup".to_string()),
-            ("cargo-cache".to_string(), "/home/bun/.cargo".to_string()),
-        ];
+        let binds = [(workspace_host, "/workspace".to_string(), false),
+            (ctx.session_dir.clone(), "/home/bun".to_string(), false)];
+        let volumes_owned = [("rustup-cache".to_string(), "/home/bun/.rustup".to_string()),
+            ("cargo-cache".to_string(), "/home/bun/.cargo".to_string())];
 
         let mut env_kv = vec![
             ("HOME".to_string(), "/home/bun".to_string()),
@@ -99,7 +94,10 @@ impl AgentBackend for ContainerBackend {
             ("CARGO_HOME".to_string(), "/home/bun/.cargo".to_string()),
         ];
         if !ctx.oauth_token.is_empty() {
-            env_kv.push(("CLAUDE_CODE_OAUTH_TOKEN".to_string(), ctx.oauth_token.clone()));
+            env_kv.push((
+                "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
+                ctx.oauth_token.clone(),
+            ));
         }
         if !ctx.github_token.is_empty() {
             env_kv.push(("GH_TOKEN".to_string(), ctx.github_token.clone()));
@@ -152,7 +150,8 @@ impl AgentBackend for ContainerBackend {
 
         let stream_tx = ctx.stream_tx.clone();
         if let Some(tx) = &stream_tx {
-            let evt = json!({"type": "status", "status": "Spawning agent (Container)..."}).to_string();
+            let evt =
+                json!({"type": "status", "status": "Spawning agent (Container)..."}).to_string();
             let _ = tx.send(evt);
         }
 
@@ -236,7 +235,12 @@ impl AgentBackend for ContainerBackend {
 
             let exit_status = child.wait().await.ok();
             let success = exit_status.map(|s| s.success()).unwrap_or(false);
-            (output_lines.join("\n"), signal_json, container_test_results, success)
+            (
+                output_lines.join("\n"),
+                signal_json,
+                container_test_results,
+                success,
+            )
         };
 
         let (stdout_text, signal_json, container_test_results, success) = if timeout_s > 0 {
@@ -245,7 +249,7 @@ impl AgentBackend for ContainerBackend {
                 Err(_) => {
                     warn!("container timed out after {timeout_s}s");
                     (String::new(), None, Vec::new(), false)
-                }
+                },
             }
         } else {
             io_future.await

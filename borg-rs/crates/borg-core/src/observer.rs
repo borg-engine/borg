@@ -337,8 +337,8 @@ fn strip_fences(text: &str) -> &str {
         None => return t,
     };
     let inner = &t[nl + 1..];
-    if inner.ends_with("```") {
-        inner[..inner.len() - 3].trim_end()
+    if let Some(stripped) = inner.strip_suffix("```") {
+        stripped.trim_end()
     } else {
         inner
     }

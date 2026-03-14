@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use borg_core::traits::{
-    AgentError, BackendCapabilities, ProviderConfig, RetryPolicy,
-};
+use borg_core::traits::{AgentError, BackendCapabilities, ProviderConfig, RetryPolicy};
 
 // ── ProviderConfig tests ─────────────────────────────────────────────────
 
@@ -54,7 +52,10 @@ fn provider_vertex_produces_correct_env_vars() {
     };
     let env = config.to_env_vars();
     assert_eq!(env.get("CLAUDE_CODE_USE_VERTEX").unwrap(), "1");
-    assert_eq!(env.get("ANTHROPIC_VERTEX_PROJECT_ID").unwrap(), "my-project");
+    assert_eq!(
+        env.get("ANTHROPIC_VERTEX_PROJECT_ID").unwrap(),
+        "my-project"
+    );
     assert_eq!(env.get("CLOUD_ML_REGION").unwrap(), "europe-west4");
 }
 
@@ -185,9 +186,9 @@ fn claude_backend_name() {
 #[test]
 fn reliable_backend_preserves_name() {
     use borg_core::agent::AgentBackend;
-    let inner = std::sync::Arc::new(
-        borg_agent::AgentSdkBackend::new(ProviderConfig::Subscription),
-    );
+    let inner = std::sync::Arc::new(borg_agent::AgentSdkBackend::new(
+        ProviderConfig::Subscription,
+    ));
     let reliable = borg_agent::ReliableBackend::wrap(inner);
     assert_eq!(reliable.name(), "agent-sdk");
 }
@@ -195,9 +196,9 @@ fn reliable_backend_preserves_name() {
 #[test]
 fn reliable_backend_preserves_capabilities() {
     use borg_core::agent::AgentBackend;
-    let inner = std::sync::Arc::new(
-        borg_agent::AgentSdkBackend::new(ProviderConfig::Subscription),
-    );
+    let inner = std::sync::Arc::new(borg_agent::AgentSdkBackend::new(
+        ProviderConfig::Subscription,
+    ));
     let reliable = borg_agent::ReliableBackend::wrap(inner);
     let caps = reliable.capabilities();
     assert!(caps.supports_mcp);
@@ -211,7 +212,9 @@ fn backend_map_contains_expected_names() {
         HashMap::new();
     backends.insert(
         "agent-sdk".into(),
-        std::sync::Arc::new(borg_agent::AgentSdkBackend::new(ProviderConfig::Subscription)),
+        std::sync::Arc::new(borg_agent::AgentSdkBackend::new(
+            ProviderConfig::Subscription,
+        )),
     );
     backends.insert(
         "claude".into(),

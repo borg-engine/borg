@@ -306,7 +306,7 @@ async fn poll_loop(
                     }
                     let text = msg.text.trim().to_string();
                     let text = if text.starts_with('@') {
-                        text.splitn(2, ' ').nth(1).unwrap_or("").trim().to_string()
+                        text.split_once(' ').map(|x| x.1).unwrap_or("").trim().to_string()
                     } else {
                         text
                     };

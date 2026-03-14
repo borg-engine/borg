@@ -245,31 +245,39 @@ pub trait DocumentParser: Send + Sync {
 pub enum ProviderConfig {
     #[default]
     Subscription,
-    Direct { api_key: String },
-    Bedrock { region: String, profile: Option<String> },
-    Vertex { project_id: String, region: String },
+    Direct {
+        api_key: String,
+    },
+    Bedrock {
+        region: String,
+        profile: Option<String>,
+    },
+    Vertex {
+        project_id: String,
+        region: String,
+    },
 }
 
 impl ProviderConfig {
     pub fn to_env_vars(&self) -> HashMap<String, String> {
         let mut env = HashMap::new();
         match self {
-            Self::Subscription => {}
+            Self::Subscription => {},
             Self::Direct { api_key } => {
                 env.insert("ANTHROPIC_API_KEY".into(), api_key.clone());
-            }
+            },
             Self::Bedrock { region, profile } => {
                 env.insert("CLAUDE_CODE_USE_BEDROCK".into(), "1".into());
                 env.insert("AWS_REGION".into(), region.clone());
                 if let Some(p) = profile {
                     env.insert("AWS_PROFILE".into(), p.clone());
                 }
-            }
+            },
             Self::Vertex { project_id, region } => {
                 env.insert("CLAUDE_CODE_USE_VERTEX".into(), "1".into());
                 env.insert("ANTHROPIC_VERTEX_PROJECT_ID".into(), project_id.clone());
                 env.insert("CLOUD_ML_REGION".into(), region.clone());
-            }
+            },
         }
         env
     }
@@ -283,8 +291,7 @@ impl ProviderConfig {
             },
             "vertex" => Self::Vertex {
                 project_id: std::env::var("ANTHROPIC_VERTEX_PROJECT_ID").unwrap_or_default(),
-                region: std::env::var("CLOUD_ML_REGION")
-                    .unwrap_or_else(|_| "us-east1".into()),
+                region: std::env::var("CLOUD_ML_REGION").unwrap_or_else(|_| "us-east1".into()),
             },
             "direct" => Self::Direct {
                 api_key: std::env::var("ANTHROPIC_API_KEY").unwrap_or_default(),
@@ -299,15 +306,25 @@ impl ProviderConfig {
 /// Classified agent error for retry decisions.
 #[derive(Debug, Clone)]
 pub enum AgentError {
-    RateLimit { retry_after: Option<std::time::Duration> },
-    ServerError { status: u16 },
+    RateLimit {
+        retry_after: Option<std::time::Duration>,
+    },
+    ServerError {
+        status: u16,
+    },
     Timeout,
     AuthError,
     ContextOverflow,
     InsufficientBalance,
-    InvalidRequest { message: String },
-    ProcessCrash { exit_code: Option<i32> },
-    Unknown { message: String },
+    InvalidRequest {
+        message: String,
+    },
+    ProcessCrash {
+        exit_code: Option<i32>,
+    },
+    Unknown {
+        message: String,
+    },
 }
 
 impl AgentError {
@@ -341,7 +358,7 @@ impl AgentError {
                         message: message.to_string(),
                     }
                 }
-            }
+            },
         }
     }
 }
@@ -355,7 +372,7 @@ impl std::fmt::Display for AgentError {
                     write!(f, " (retry after {d:?})")?;
                 }
                 Ok(())
-            }
+            },
             Self::ServerError { status } => write!(f, "server error ({status})"),
             Self::Timeout => write!(f, "timeout"),
             Self::AuthError => write!(f, "authentication error"),

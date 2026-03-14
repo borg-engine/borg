@@ -459,11 +459,10 @@ pub fn select_relevant_knowledge_files_for_user(
                     "template" | "clause" | "policy" | "reference" => score += 8,
                     _ => score += 2,
                 }
-            } else if mode_hint == "sweborg" || mode_hint == "swe" {
-                if file.category == "reference" {
+            } else if (mode_hint == "sweborg" || mode_hint == "swe")
+                && file.category == "reference" {
                     score += 6;
                 }
-            }
 
             if file.inline && file.size_bytes > 200_000 {
                 score -= 2;

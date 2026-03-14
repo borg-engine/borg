@@ -1,13 +1,10 @@
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use tokio_util::sync::CancellationToken;
 
-use crate::db::Db;
-use crate::pgcompat as pg;
+use crate::{db::Db, pgcompat as pg};
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -106,7 +103,8 @@ pub fn row_to_cron_job(row: &pg::Row<'_>) -> pg::Result<CronJob> {
         name: row.get(1)?,
         schedule: row.get(2)?,
         job_type: CronJobType::from_str_lossy(&job_type_str),
-        config: serde_json::from_str(&config_str).unwrap_or(serde_json::Value::Object(Default::default())),
+        config: serde_json::from_str(&config_str)
+            .unwrap_or(serde_json::Value::Object(Default::default())),
         project_id: row.get(5)?,
         enabled: enabled_int != 0,
         last_run: last_run.map(|s| parse_ts(&s)),
@@ -150,8 +148,11 @@ fn normalize_cron_expr(expr: &str) -> String {
     match fields.len() {
         5 => {
             let dow = shift_dow_field(fields[4]);
-            format!("0 {} {} {} {} {} *", fields[0], fields[1], fields[2], fields[3], dow)
-        }
+            format!(
+                "0 {} {} {} {} {} *",
+                fields[0], fields[1], fields[2], fields[3], dow
+            )
+        },
         6 => format!("0 {}", expr),
         _ => expr.to_string(),
     }
@@ -239,7 +240,10 @@ impl CronScheduler {
 
             let now = Utc::now();
             let next = compute_next_run(&job.schedule, now);
-            if let Err(e) = self.db.update_cron_job_after_run(job.id, &now, next.as_ref()) {
+            if let Err(e) = self
+                .db
+                .update_cron_job_after_run(job.id, &now, next.as_ref())
+            {
                 tracing::error!(job_id = job.id, err = %e, "cron: failed to update job timestamps");
             }
         }
@@ -251,76 +255,42 @@ pub async fn execute_job(db: &Db, job: &CronJob) -> Result<()> {
     let run_id = db.insert_cron_run(job.id)?;
 
     match job.job_type {
-        CronJobType::AgentTask => {
-            match execute_agent_task(db, job) {
-                Ok(task_id) => {
-                    db.update_cron_run(
-                        run_id,
-                        "success",
-                        Some(&format!("created task {task_id}")),
-                        None,
-                        Some(task_id),
-                    )?;
-                }
-                Err(e) => {
-                    db.update_cron_run(
-                        run_id,
-                        "error",
-                        None,
-                        Some(&e.to_string()),
-                        None,
-                    )?;
-                    return Err(e);
-                }
-            }
-        }
-        CronJobType::Shell => {
-            match execute_shell(job).await {
-                Ok(output) => {
-                    db.update_cron_run(run_id, "success", Some(&output), None, None)?;
-                }
-                Err(e) => {
-                    db.update_cron_run(
-                        run_id,
-                        "error",
-                        None,
-                        Some(&e.to_string()),
-                        None,
-                    )?;
-                    return Err(e);
-                }
-            }
-        }
+        CronJobType::AgentTask => match execute_agent_task(db, job) {
+            Ok(task_id) => {
+                db.update_cron_run(
+                    run_id,
+                    "success",
+                    Some(&format!("created task {task_id}")),
+                    None,
+                    Some(task_id),
+                )?;
+            },
+            Err(e) => {
+                db.update_cron_run(run_id, "error", None, Some(&e.to_string()), None)?;
+                return Err(e);
+            },
+        },
+        CronJobType::Shell => match execute_shell(job).await {
+            Ok(output) => {
+                db.update_cron_run(run_id, "success", Some(&output), None, None)?;
+            },
+            Err(e) => {
+                db.update_cron_run(run_id, "error", None, Some(&e.to_string()), None)?;
+                return Err(e);
+            },
+        },
     }
     Ok(())
 }
 
 fn execute_agent_task(db: &Db, job: &CronJob) -> Result<i64> {
     let config = &job.config;
-    let title = config["title"]
-        .as_str()
-        .unwrap_or(&job.name)
-        .to_string();
-    let description = config["description"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let repo_path = config["repo_path"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let mode = config["mode"]
-        .as_str()
-        .unwrap_or("sweborg")
-        .to_string();
-    let backend = config["backend"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let task_type = config["task_type"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let title = config["title"].as_str().unwrap_or(&job.name).to_string();
+    let description = config["description"].as_str().unwrap_or("").to_string();
+    let repo_path = config["repo_path"].as_str().unwrap_or("").to_string();
+    let mode = config["mode"].as_str().unwrap_or("sweborg").to_string();
+    let backend = config["backend"].as_str().unwrap_or("").to_string();
+    let task_type = config["task_type"].as_str().unwrap_or("").to_string();
 
     let task = crate::types::Task {
         id: 0,
@@ -333,10 +303,7 @@ fn execute_agent_task(db: &Db, job: &CronJob) -> Result<i64> {
         max_attempts: config["max_attempts"].as_i64().unwrap_or(3),
         last_error: String::new(),
         created_by: format!("cron:{}", job.id),
-        notify_chat: config["notify_chat"]
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
+        notify_chat: config["notify_chat"].as_str().unwrap_or("").to_string(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
         session_id: String::new(),
@@ -414,7 +381,10 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         let next = compute_next_run("0 2 * * *", from).unwrap();
-        assert_eq!(next.format("%Y-%m-%d %H:%M").to_string(), "2026-03-14 02:00");
+        assert_eq!(
+            next.format("%Y-%m-%d %H:%M").to_string(),
+            "2026-03-14 02:00"
+        );
     }
 
     #[test]
@@ -423,7 +393,10 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         let next = compute_next_run("0 2 * * *", from).unwrap();
-        assert_eq!(next.format("%Y-%m-%d %H:%M").to_string(), "2026-03-15 02:00");
+        assert_eq!(
+            next.format("%Y-%m-%d %H:%M").to_string(),
+            "2026-03-15 02:00"
+        );
     }
 
     #[test]
@@ -432,7 +405,10 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         let next = compute_next_run("*/5 * * * *", from).unwrap();
-        assert_eq!(next.format("%Y-%m-%d %H:%M").to_string(), "2026-03-14 12:05");
+        assert_eq!(
+            next.format("%Y-%m-%d %H:%M").to_string(),
+            "2026-03-14 12:05"
+        );
     }
 
     #[test]
@@ -442,7 +418,10 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         let next = compute_next_run("0 9 * * 1", from).unwrap();
-        assert_eq!(next.format("%Y-%m-%d %H:%M").to_string(), "2026-03-16 09:00");
+        assert_eq!(
+            next.format("%Y-%m-%d %H:%M").to_string(),
+            "2026-03-16 09:00"
+        );
     }
 
     #[test]
@@ -480,8 +459,14 @@ mod tests {
     fn test_cron_job_type_roundtrip() {
         let agent = CronJobType::AgentTask;
         let shell = CronJobType::Shell;
-        assert_eq!(CronJobType::from_str_lossy(agent.as_str()), CronJobType::AgentTask);
-        assert_eq!(CronJobType::from_str_lossy(shell.as_str()), CronJobType::Shell);
+        assert_eq!(
+            CronJobType::from_str_lossy(agent.as_str()),
+            CronJobType::AgentTask
+        );
+        assert_eq!(
+            CronJobType::from_str_lossy(shell.as_str()),
+            CronJobType::Shell
+        );
     }
 
     #[test]
@@ -501,7 +486,11 @@ mod tests {
 
     #[test]
     fn test_cron_run_status_roundtrip() {
-        for status in [CronRunStatus::Running, CronRunStatus::Success, CronRunStatus::Error] {
+        for status in [
+            CronRunStatus::Running,
+            CronRunStatus::Success,
+            CronRunStatus::Error,
+        ] {
             let s = status.as_str();
             assert_eq!(CronRunStatus::from_str_lossy(s), status);
         }
@@ -509,12 +498,18 @@ mod tests {
 
     #[test]
     fn test_cron_job_type_unknown_defaults_to_agent() {
-        assert_eq!(CronJobType::from_str_lossy("unknown"), CronJobType::AgentTask);
+        assert_eq!(
+            CronJobType::from_str_lossy("unknown"),
+            CronJobType::AgentTask
+        );
         assert_eq!(CronJobType::from_str_lossy(""), CronJobType::AgentTask);
     }
 
     #[test]
     fn test_cron_run_status_unknown_defaults_to_running() {
-        assert_eq!(CronRunStatus::from_str_lossy("unknown"), CronRunStatus::Running);
+        assert_eq!(
+            CronRunStatus::from_str_lossy("unknown"),
+            CronRunStatus::Running
+        );
     }
 }

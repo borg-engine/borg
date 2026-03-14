@@ -26,10 +26,12 @@ pub struct Sender {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum PhaseType {
     /// No-op setup phase; transitions immediately to next.
     Setup,
     /// Runs an AI agent (direct or in Docker).
+    #[default]
     Agent,
     /// Runs test/compile commands independently; loops back to previous phase on failure.
     Validate,
@@ -45,11 +47,6 @@ pub enum PhaseType {
     Purge,
 }
 
-impl Default for PhaseType {
-    fn default() -> Self {
-        Self::Agent
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

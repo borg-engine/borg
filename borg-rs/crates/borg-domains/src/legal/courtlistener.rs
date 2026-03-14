@@ -14,6 +14,12 @@ pub struct SearchResult {
     pub next: Option<String>,
 }
 
+impl Default for CourtListenerClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CourtListenerClient {
     pub fn new() -> Self {
         Self {

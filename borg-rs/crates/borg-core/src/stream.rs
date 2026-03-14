@@ -100,10 +100,7 @@ impl<K: Eq + Hash + Clone + Send + 'static> StreamManager<K> {
     ///  - ended=true  → history contains the stream_end sentinel; no live rx.
     ///  - ended=false → tx.subscribe() fires before end_stream() can set ended,
     ///                  so the returned receiver will eventually deliver it.
-    pub async fn subscribe(
-        &self,
-        key: &K,
-    ) -> (Vec<String>, Option<broadcast::Receiver<String>>) {
+    pub async fn subscribe(&self, key: &K) -> (Vec<String>, Option<broadcast::Receiver<String>>) {
         let map = self.streams.lock().await;
         match map.get(key) {
             Some(s) => {
@@ -114,7 +111,7 @@ impl<K: Eq + Hash + Clone + Send + 'static> StreamManager<K> {
                     None
                 };
                 (history, rx)
-            }
+            },
             None => (Vec::new(), None),
         }
     }

@@ -184,7 +184,7 @@ async fn handle_message(
     client: &whatsapp_rust::Client,
     event_tx: &mpsc::UnboundedSender<SidecarEvent>,
     assistant_name: &str,
-    data_dir: &PathBuf,
+    data_dir: &Path,
 ) {
     if info.source.is_from_me {
         return;

@@ -130,7 +130,7 @@ impl SecretKeyManager {
             std::fs::create_dir_all(parent).context("failed to create data directory")?;
         }
 
-        std::fs::write(&path, &key).context("failed to write secret key file")?;
+        std::fs::write(&path, key).context("failed to write secret key file")?;
 
         #[cfg(unix)]
         {

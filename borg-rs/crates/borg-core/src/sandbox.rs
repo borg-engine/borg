@@ -670,11 +670,10 @@ impl Sandbox {
         for name in names {
             let last_used = Self::volume_last_used(&name).await;
             if let Some(ts) = last_used {
-                if now.saturating_sub(ts) > threshold_secs {
-                    if Self::remove_volume(&name).await {
+                if now.saturating_sub(ts) > threshold_secs
+                    && Self::remove_volume(&name).await {
                         info!("evicted stale cache volume: {name} (last used {ts})");
                     }
-                }
             }
         }
     }

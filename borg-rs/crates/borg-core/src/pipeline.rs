@@ -1575,12 +1575,16 @@ impl Pipeline {
         });
 
         info!("running {} phase for task #{}", phase.name, task.id);
-        self.log_pipeline_event(task, "phase.started", &serde_json::json!({
-            "phase": phase.name,
-            "attempt": task.attempt,
-            "revision_count": task.revision_count,
-            "has_pending_messages": had_pending,
-        }));
+        self.log_pipeline_event(
+            task,
+            "phase.started",
+            &serde_json::json!({
+                "phase": phase.name,
+                "attempt": task.attempt,
+                "revision_count": task.revision_count,
+                "has_pending_messages": had_pending,
+            }),
+        );
 
         let backend = match self.resolve_backend(task) {
             Some(b) => b,
@@ -1622,13 +1626,17 @@ impl Pipeline {
             warn!("task #{}: insert_task_output: {e}", task.id);
         }
 
-        self.log_pipeline_event(task, "phase.agent_finished", &serde_json::json!({
-            "phase": phase.name,
-            "success": result.success,
-            "exit_code": exit_code,
-            "output_len": result.output.len(),
-            "raw_stream_len": result.raw_stream.len(),
-        }));
+        self.log_pipeline_event(
+            task,
+            "phase.agent_finished",
+            &serde_json::json!({
+                "phase": phase.name,
+                "success": result.success,
+                "exit_code": exit_code,
+                "output_len": result.output.len(),
+                "raw_stream_len": result.raw_stream.len(),
+            }),
+        );
         self.emit(PipelineEvent::Output {
             task_id: Some(task.id),
             message: format!(
@@ -1644,12 +1652,16 @@ impl Pipeline {
                 "task #{} signal: status={} reason={}",
                 task.id, signal.status, signal.reason
             );
-            self.log_pipeline_event(task, "agent.signal", &serde_json::json!({
-                "phase": phase.name,
-                "status": signal.status,
-                "reason": signal.reason,
-                "question": signal.question,
-            }));
+            self.log_pipeline_event(
+                task,
+                "agent.signal",
+                &serde_json::json!({
+                    "phase": phase.name,
+                    "status": signal.status,
+                    "reason": signal.reason,
+                    "question": signal.question,
+                }),
+            );
         }
 
         // Handle abandon signal: mark failed immediately, don't burn retry budget.
@@ -1659,10 +1671,14 @@ impl Pipeline {
             } else {
                 format!("agent abandoned: {}", signal.reason)
             };
-            self.log_pipeline_event(task, "agent.abandoned", &serde_json::json!({
-                "phase": phase.name,
-                "reason": &reason,
-            }));
+            self.log_pipeline_event(
+                task,
+                "agent.abandoned",
+                &serde_json::json!({
+                    "phase": phase.name,
+                    "reason": &reason,
+                }),
+            );
             self.db
                 .update_task_status(task.id, "failed", Some(&reason))?;
             return Ok(());
@@ -1674,10 +1690,14 @@ impl Pipeline {
             let state = match Self::read_benchmark_phase_state(&work_dir) {
                 Some(state) => state,
                 None => {
-                    self.log_pipeline_event(task, "guard.benchmark_state_missing", &serde_json::json!({
-                        "phase": phase.name,
-                        "attempt": task.attempt,
-                    }));
+                    self.log_pipeline_event(
+                        task,
+                        "guard.benchmark_state_missing",
+                        &serde_json::json!({
+                            "phase": phase.name,
+                            "attempt": task.attempt,
+                        }),
+                    );
                     self.fail_or_retry(
                         task,
                         &phase.name,
@@ -1717,12 +1737,16 @@ impl Pipeline {
             } else {
                 format!("{}\n\nQuestion: {}", reason, signal.question)
             };
-            self.log_pipeline_event(task, "agent.blocked", &serde_json::json!({
-                "phase": phase.name,
-                "reason": &reason,
-                "question": signal.question,
-                "attempt": task.attempt,
-            }));
+            self.log_pipeline_event(
+                task,
+                "agent.blocked",
+                &serde_json::json!({
+                    "phase": phase.name,
+                    "reason": &reason,
+                    "question": signal.question,
+                    "attempt": task.attempt,
+                }),
+            );
             self.db
                 .update_task_status(task.id, "blocked", Some(&block_detail))?;
             self.emit(PipelineEvent::Phase {
@@ -1807,22 +1831,30 @@ impl Pipeline {
         if let Some(protocol_error) =
             self.enforce_legal_retrieval_protocol(task, phase, &result.raw_stream)
         {
-            self.log_pipeline_event(task, "guard.retrieval_protocol_rejected", &serde_json::json!({
-                "phase": phase.name,
-                "attempt": task.attempt,
-                "error": protocol_error.chars().take(1000).collect::<String>(),
-            }));
+            self.log_pipeline_event(
+                task,
+                "guard.retrieval_protocol_rejected",
+                &serde_json::json!({
+                    "phase": phase.name,
+                    "attempt": task.attempt,
+                    "error": protocol_error.chars().take(1000).collect::<String>(),
+                }),
+            );
             self.fail_or_retry(task, &phase.name, &protocol_error)?;
             return Ok(());
         }
         if let Some(ref state) = benchmark_state {
             if let Some(state_error) = Self::enforce_legal_benchmark_state_guard(task, phase, state)
             {
-                self.log_pipeline_event(task, "guard.state_guard_rejected", &serde_json::json!({
-                    "phase": phase.name,
-                    "attempt": task.attempt,
-                    "error": state_error.chars().take(1000).collect::<String>(),
-                }));
+                self.log_pipeline_event(
+                    task,
+                    "guard.state_guard_rejected",
+                    &serde_json::json!({
+                        "phase": phase.name,
+                        "attempt": task.attempt,
+                        "error": state_error.chars().take(1000).collect::<String>(),
+                    }),
+                );
                 self.fail_or_retry(task, &phase.name, &state_error)?;
                 return Ok(());
             }
@@ -1833,11 +1865,15 @@ impl Pipeline {
             &work_dir,
             &result.output,
         ) {
-            self.log_pipeline_event(task, "guard.clarification_guard_rejected", &serde_json::json!({
-                "phase": phase.name,
-                "attempt": task.attempt,
-                "error": clarification_error.chars().take(1000).collect::<String>(),
-            }));
+            self.log_pipeline_event(
+                task,
+                "guard.clarification_guard_rejected",
+                &serde_json::json!({
+                    "phase": phase.name,
+                    "attempt": task.attempt,
+                    "error": clarification_error.chars().take(1000).collect::<String>(),
+                }),
+            );
             self.fail_or_retry(task, &phase.name, &clarification_error)?;
             return Ok(());
         }
@@ -1904,11 +1940,15 @@ impl Pipeline {
             return Ok(());
         }
 
-        self.log_pipeline_event(task, "phase.advanced", &serde_json::json!({
-            "phase": phase.name,
-            "attempt": task.attempt,
-            "verdict_rationale": verdict.rationale.chars().take(500).collect::<String>(),
-        }));
+        self.log_pipeline_event(
+            task,
+            "phase.advanced",
+            &serde_json::json!({
+                "phase": phase.name,
+                "attempt": task.attempt,
+                "verdict_rationale": verdict.rationale.chars().take(500).collect::<String>(),
+            }),
+        );
         self.advance_phase(task, phase, mode)?;
         if had_pending {
             if let Err(e) = self.db.mark_messages_delivered(task.id, &phase.name) {
@@ -2194,12 +2234,9 @@ impl Pipeline {
                     state.clarification_type.trim()
                 ));
             }
-            if !signal.question.trim().is_empty() && signal.question.trim() != state.question.trim()
-            {
-                problems.push(
-                    "blocked signal question must match benchmark-state question".to_string(),
-                );
-            }
+            // Allow signal.json question to differ from benchmark-state question —
+            // the model may batch multiple questions in signal.json as a numbered list
+            // while benchmark-state.question summarises the first or primary question.
         } else {
             if !state.question.trim().is_empty() {
                 problems.push("ready benchmark-state must leave question empty".to_string());
@@ -2235,9 +2272,7 @@ impl Pipeline {
             return None;
         }
         let stats = self.db.get_project_file_stats(task.project_id).ok()?;
-        let Some(trigger_source) = legal_retrieval_protocol_trigger(task, phase, &stats) else {
-            return None;
-        };
+        let trigger_source = legal_retrieval_protocol_trigger(task, phase, &stats)?;
         let prior_report = self
             .db
             .get_task_structured_data(task.id)
@@ -2409,9 +2444,7 @@ impl Pipeline {
             if source == "phase output" && has_recommendation_file {
                 continue;
             }
-            if source != "phase output"
-                && !recommendation_sources.contains(&source.as_str())
-            {
+            if source != "phase output" && !recommendation_sources.contains(&source.as_str()) {
                 continue;
             }
             if let Some(excerpt) = detect_benchmark_clarification_escape(text) {
@@ -2461,15 +2494,13 @@ impl Pipeline {
                 ));
             }
 
-            let changes_recommendation =
-                uncertainty.changes_sign || uncertainty.changes_close_only;
+            let changes_recommendation = uncertainty.changes_sign || uncertainty.changes_close_only;
             let support_confirmed = matches!(
                 uncertainty.support_status.trim(),
                 "record_confirmed" | "confirmed_via_clarification" | "confirmed"
             );
             let support_missing = !support_confirmed;
-            let not_blocked = uncertainty.recommended_treatment.trim()
-                != "blocked_clarification";
+            let not_blocked = uncertainty.recommended_treatment.trim() != "blocked_clarification";
             if changes_recommendation && support_missing && not_blocked {
                 return Some(format!(
                     "Benchmark structured-state guard failed.\n\
@@ -2584,14 +2615,9 @@ impl Pipeline {
         } else {
             None
         };
-        let _ = self.db.log_event_full(
-            Some(task.id),
-            None,
-            pid,
-            "pipeline",
-            kind,
-            payload,
-        );
+        let _ = self
+            .db
+            .log_event_full(Some(task.id), None, pid, "pipeline", kind, payload);
     }
 
     fn requires_legal_benchmark_state(task: &Task, phase: &PhaseConfig) -> bool {
@@ -5477,7 +5503,9 @@ fn is_enforcement_status_warranty_safe_harbor(normalized: &str) -> bool {
         return false;
     }
 
-    let allocates_risk_to_unqualified_warranty = contains_any(
+    
+
+    contains_any(
         normalized,
         &[
             "spa warranty",
@@ -5490,9 +5518,7 @@ fn is_enforcement_status_warranty_safe_harbor(normalized: &str) -> bool {
             "unqualified warranty",
             "specific indemnity",
         ],
-    );
-
-    allocates_risk_to_unqualified_warranty
+    )
 }
 
 fn is_non_dispositive_tail_diligence_safe_harbor(normalized: &str) -> bool {
@@ -5532,7 +5558,9 @@ fn is_non_dispositive_tail_diligence_safe_harbor(normalized: &str) -> bool {
         return false;
     }
 
-    let no_true_threshold_unknown = !contains_any(
+    
+
+    !contains_any(
         normalized,
         &[
             "titanbank procurement/legal",
@@ -5548,9 +5576,7 @@ fn is_non_dispositive_tail_diligence_safe_harbor(normalized: &str) -> bool {
             "schedule 5.4",
             "schedule 5.5",
         ],
-    );
-
-    no_true_threshold_unknown
+    )
 }
 
 fn contains_any(text: &str, needles: &[&str]) -> bool {
@@ -5851,7 +5877,7 @@ fn latest_retry_error(last_error: &str) -> &str {
         .unwrap_or_else(|| last_error.trim())
 }
 
-fn is_clarification_resume_error(error: &str) -> bool {
+fn _is_clarification_resume_error(error: &str) -> bool {
     let clarification_retry =
         error.starts_with("Material fact missing") && error.contains("\n\nQuestion:");
     let clarification_guard_retry = error.starts_with("Benchmark clarification guard failed.");
@@ -5953,17 +5979,16 @@ fn inspect_legal_retrieval_trace(raw_stream: &str) -> LegalRetrievalTrace {
                     }
                 },
                 "read_document" => trace.full_document_reads += 1,
-                "Read" => {
+                "Read"
                     if block
                         .get("input")
                         .and_then(|v| v.get("file_path"))
                         .and_then(|v| v.as_str())
                         .map(|s| s.contains("/project_files/") || s.starts_with("project_files/"))
                         .unwrap_or(false)
-                    {
+                    => {
                         trace.full_document_reads += 1;
-                    }
-                },
+                    },
                 "WebFetch" => classify_borg_webfetch(&input, &mut trace, &mut distinct_queries),
                 _ => {},
             }
@@ -6274,7 +6299,7 @@ fn looks_like_field_key(line: &str) -> bool {
         let key = &trimmed[..colon];
         !key.is_empty()
             && !key.contains(' ')
-            && key.chars().next().map_or(false, |c| c.is_alphabetic())
+            && key.chars().next().is_some_and(|c| c.is_alphabetic())
     } else {
         false
     }

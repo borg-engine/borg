@@ -1,8 +1,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::traits::{BackendCapabilities, ChatContext, ChatRequest, ChatResponse};
-use crate::types::{PhaseConfig, PhaseContext, PhaseOutput, Task};
+use crate::{
+    traits::{BackendCapabilities, ChatContext, ChatRequest, ChatResponse},
+    types::{PhaseConfig, PhaseContext, PhaseOutput, Task},
+};
 
 #[async_trait]
 pub trait AgentBackend: Send + Sync {
@@ -16,11 +18,7 @@ pub trait AgentBackend: Send + Sync {
 
     /// Execute a chat agent turn. Default returns "not supported" for backends
     /// that only handle pipeline phases.
-    async fn run_chat(
-        &self,
-        _request: &ChatRequest,
-        _ctx: &ChatContext,
-    ) -> Result<ChatResponse> {
+    async fn run_chat(&self, _request: &ChatRequest, _ctx: &ChatContext) -> Result<ChatResponse> {
         anyhow::bail!("{} does not support chat", self.name())
     }
 

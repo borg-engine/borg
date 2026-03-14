@@ -52,8 +52,7 @@ impl ReliableBackend {
             || msg.contains("403")
         {
             AgentError::AuthError
-        } else if msg.contains("insufficient") || msg.contains("quota") || msg.contains("balance")
-        {
+        } else if msg.contains("insufficient") || msg.contains("quota") || msg.contains("balance") {
             AgentError::InsufficientBalance
         } else if msg.contains("timeout") || msg.contains("timed out") {
             AgentError::Timeout
@@ -119,17 +118,13 @@ impl AgentBackend for ReliableBackend {
 
                     tokio::time::sleep(backoff).await;
                     last_err = Some(err);
-                }
+                },
             }
         }
         Err(last_err.unwrap_or_else(|| anyhow::anyhow!("max retries exceeded")))
     }
 
-    async fn run_chat(
-        &self,
-        request: &ChatRequest,
-        ctx: &ChatContext,
-    ) -> Result<ChatResponse> {
+    async fn run_chat(&self, request: &ChatRequest, ctx: &ChatContext) -> Result<ChatResponse> {
         let mut last_err = None;
         for attempt in 0..=self.policy.max_retries {
             match self.inner.run_chat(request, ctx).await {
@@ -165,7 +160,7 @@ impl AgentBackend for ReliableBackend {
 
                     tokio::time::sleep(backoff).await;
                     last_err = Some(err);
-                }
+                },
             }
         }
         Err(last_err.unwrap_or_else(|| anyhow::anyhow!("max retries exceeded")))
@@ -236,10 +231,7 @@ mod tests {
             jitter: false,
             ..Default::default()
         };
-        let reliable = ReliableBackend::new(
-            Arc::new(DummyBackend),
-            policy,
-        );
+        let reliable = ReliableBackend::new(Arc::new(DummyBackend), policy);
         let b0 = reliable.compute_backoff(0);
         let b1 = reliable.compute_backoff(1);
         let b2 = reliable.compute_backoff(2);

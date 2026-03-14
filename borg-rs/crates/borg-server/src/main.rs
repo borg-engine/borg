@@ -87,6 +87,7 @@ fn listener_from_fd(fd: std::os::unix::io::RawFd) -> anyhow::Result<tokio::net::
 
 /// Tracks the live WhatsApp connection state from the sidecar.
 #[derive(Debug, Clone, serde::Serialize)]
+#[derive(Default)]
 pub struct WaStatus {
     pub connected: bool,
     pub jid: Option<String>,
@@ -94,34 +95,16 @@ pub struct WaStatus {
     pub disabled: bool,
 }
 
-impl Default for WaStatus {
-    fn default() -> Self {
-        Self {
-            connected: false,
-            jid: None,
-            qr: None,
-            disabled: false,
-        }
-    }
-}
 
 /// Tracks the live Slack connection state from the sidecar.
 #[derive(Debug, Clone, serde::Serialize)]
+#[derive(Default)]
 pub struct SlackStatus {
     pub connected: bool,
     pub bot_id: Option<String>,
     pub bot_name: Option<String>,
 }
 
-impl Default for SlackStatus {
-    fn default() -> Self {
-        Self {
-            connected: false,
-            bot_id: None,
-            bot_name: None,
-        }
-    }
-}
 
 pub struct AppState {
     pub db: Arc<Db>,
@@ -171,8 +154,7 @@ impl AppState {
 // ── Sidecar helpers ───────────────────────────────────────────────────────
 
 fn sidecar_source_prefix(chat_key: &str) -> String {
-    chat_key
-        .splitn(2, ':')
+    chat_key.split(':')
         .next()
         .unwrap_or("discord")
         .to_string()
@@ -181,7 +163,7 @@ fn sidecar_source_prefix(chat_key: &str) -> String {
 /// Parse a chat_key like "discord:u42:channel_id" into (user_id, channel_id).
 /// For non-user keys like "discord:channel_id", returns (None, "channel_id").
 fn parse_user_chat_id(chat_key: &str) -> (Option<i64>, String) {
-    let rest = chat_key.splitn(2, ':').nth(1).unwrap_or("");
+    let rest = chat_key.split_once(':').map(|x| x.1).unwrap_or("");
     if let Some(stripped) = rest.strip_prefix('u') {
         if let Some(colon) = stripped.find(':') {
             if let Ok(uid) = stripped[..colon].parse::<i64>() {
@@ -301,7 +283,7 @@ fn spawn_telegram_poller(
                         }
                         let text = msg.text.trim().to_string();
                         let text = if text.starts_with('@') {
-                            text.splitn(2, ' ').nth(1).unwrap_or("").trim().to_string()
+                            text.split_once(' ').map(|x| x.1).unwrap_or("").trim().to_string()
                         } else {
                             text
                         };
@@ -1222,23 +1204,26 @@ fn build_registry(
 
     // Container backend (provider-agnostic Docker agent)
     if !config.container_image.is_empty() {
-        let container_backend = borg_agent::container::ContainerBackend::new(&config.container_image)
-            .with_timeout(config.agent_timeout_s as u64)
-            .with_resource_limits(config.container_memory_mb, config.container_cpus);
+        let container_backend =
+            borg_agent::container::ContainerBackend::new(&config.container_image)
+                .with_timeout(config.agent_timeout_s as u64)
+                .with_resource_limits(config.container_memory_mb, config.container_cpus);
         backends.insert("container".into(), Arc::new(container_backend));
         info!("container backend registered");
     }
 
     // Wrap all backends with ReliableBackend for retry/backoff
-    let reliable_backends: std::collections::HashMap<String, Arc<dyn borg_core::agent::AgentBackend>> =
-        backends
-            .into_iter()
-            .map(|(name, backend)| {
-                let wrapped: Arc<dyn borg_core::agent::AgentBackend> =
-                    Arc::new(borg_agent::ReliableBackend::wrap(backend));
-                (name, wrapped)
-            })
-            .collect();
+    let reliable_backends: std::collections::HashMap<
+        String,
+        Arc<dyn borg_core::agent::AgentBackend>,
+    > = backends
+        .into_iter()
+        .map(|(name, backend)| {
+            let wrapped: Arc<dyn borg_core::agent::AgentBackend> =
+                Arc::new(borg_agent::ReliableBackend::wrap(backend));
+            (name, wrapped)
+        })
+        .collect();
 
     let registry = borg_core::registry::RegistryBuilder::new()
         .backends(reliable_backends)
@@ -1591,7 +1576,10 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
         .route("/api/events", get(routes::get_events))
         // Chat
         .route("/api/chat/events", get(routes::sse_chat_events))
-        .route("/api/chat/threads/:thread/stream", get(routes::sse_chat_thread_stream))
+        .route(
+            "/api/chat/threads/:thread/stream",
+            get(routes::sse_chat_thread_stream),
+        )
         .route("/api/chat/threads", get(routes::get_chat_threads))
         .route("/api/chat/messages", get(routes::get_chat_messages))
         .route("/api/chat/status", get(routes::get_chat_thread_status))
@@ -1705,7 +1693,10 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
             get(routes::admin_conversation_dump),
         )
         // Cron
-        .route("/api/cron", get(routes::list_cron_jobs).post(routes::create_cron_job))
+        .route(
+            "/api/cron",
+            get(routes::list_cron_jobs).post(routes::create_cron_job),
+        )
         .route(
             "/api/cron/:id",
             put(routes::update_cron_job).delete(routes::delete_cron_job),
@@ -1852,10 +1843,8 @@ async fn main() -> anyhow::Result<()> {
         let db = Arc::clone(&db);
         let cancel = cron_cancel.clone();
         tokio::spawn(async move {
-            let scheduler = borg_core::cron::CronScheduler::new(
-                db,
-                std::time::Duration::from_secs(60),
-            );
+            let scheduler =
+                borg_core::cron::CronScheduler::new(db, std::time::Duration::from_secs(60));
             scheduler.run(cancel).await;
         });
         info!("cron scheduler started");

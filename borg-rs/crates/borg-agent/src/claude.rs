@@ -492,14 +492,10 @@ impl AgentBackend for ClaudeBackend {
                 } else {
                     ctx.work_dir.clone()
                 };
-                let binds = vec![
-                    (workspace_host, "/workspace".to_string(), false),
-                    (ctx.session_dir.clone(), "/home/bun".to_string(), false),
-                ];
-                let volumes_owned = vec![
-                    ("rustup-cache".to_string(), "/home/bun/.rustup".to_string()),
-                    ("cargo-cache".to_string(), "/home/bun/.cargo".to_string()),
-                ];
+                let binds = [(workspace_host, "/workspace".to_string(), false),
+                    (ctx.session_dir.clone(), "/home/bun".to_string(), false)];
+                let volumes_owned = [("rustup-cache".to_string(), "/home/bun/.rustup".to_string()),
+                    ("cargo-cache".to_string(), "/home/bun/.cargo".to_string())];
                 let mut env_kv = vec![
                     ("HOME".to_string(), "/home/bun".to_string()),
                     ("RUSTUP_HOME".to_string(), "/home/bun/.rustup".to_string()),

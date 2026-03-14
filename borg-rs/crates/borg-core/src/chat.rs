@@ -193,12 +193,11 @@ impl ChatCollector {
                         running += 1;
                     }
                 },
-                ChatState::Cooldown { deadline } => {
-                    if now >= *deadline {
+                ChatState::Cooldown { deadline }
+                    if now >= *deadline => {
                         *chat_state = ChatState::Idle;
                         debug!("Chat {} cooldown expired", chat_key);
-                    }
-                },
+                    },
                 _ => {},
             }
         }

@@ -1299,7 +1299,7 @@ pub(crate) async fn get_user_settings(
     let settings = state.db.get_all_user_settings(user.id).map_err(internal)?;
 
     let model_override = state.db.get_config("model_override").map_err(internal)?;
-    let has_override = model_override.as_ref().map_or(false, |v| !v.is_empty());
+    let has_override = model_override.as_ref().is_some_and(|v| !v.is_empty());
     // Users with their own linked credential can freely choose models
     let user_has_own_credential = state
         .db

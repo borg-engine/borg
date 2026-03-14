@@ -69,12 +69,40 @@ struct QueryOptions {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[allow(dead_code)]
 enum BridgeEvent {
-    TextDelta { id: String, content: String },
-    ToolUse { id: String, tool: String, input: serde_json::Value, timestamp: f64 },
-    ToolResult { id: String, tool: String, output: String, duration_ms: u64, success: bool },
-    Result { id: String, text: String, session_id: String, usage: UsageInfo, cost_usd: f64 },
-    Error { id: String, message: String, code: String },
-    Stop { id: String, reason: String, usage: UsageInfo },
+    TextDelta {
+        id: String,
+        content: String,
+    },
+    ToolUse {
+        id: String,
+        tool: String,
+        input: serde_json::Value,
+        timestamp: f64,
+    },
+    ToolResult {
+        id: String,
+        tool: String,
+        output: String,
+        duration_ms: u64,
+        success: bool,
+    },
+    Result {
+        id: String,
+        text: String,
+        session_id: String,
+        usage: UsageInfo,
+        cost_usd: f64,
+    },
+    Error {
+        id: String,
+        message: String,
+        code: String,
+    },
+    Stop {
+        id: String,
+        reason: String,
+        usage: UsageInfo,
+    },
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -260,7 +288,7 @@ async fn run_bridge_query(
                     error: Some(format!("timed out after {timeout_s}s")),
                     ..Default::default()
                 }
-            }
+            },
         }
     } else {
         io_future.await
@@ -340,13 +368,21 @@ impl AgentBackend for AgentSdkBackend {
         let allowed: Vec<String> = if phase.allowed_tools.is_empty() {
             Vec::new()
         } else {
-            phase.allowed_tools.split(',').map(|s| s.trim().to_string()).collect()
+            phase
+                .allowed_tools
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect()
         };
 
         let mut disallowed: Vec<String> = if phase.disallowed_tools.is_empty() {
             Vec::new()
         } else {
-            phase.disallowed_tools.split(',').map(|s| s.trim().to_string()).collect()
+            phase
+                .disallowed_tools
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect()
         };
         if !ctx.disallowed_tools.is_empty() {
             for t in ctx.disallowed_tools.split(',') {
@@ -359,7 +395,11 @@ impl AgentBackend for AgentSdkBackend {
 
         // Build MCP servers config
         let mcp_servers = if !ctx.borg_api_token.is_empty() && !ctx.borg_api_url.is_empty() {
-            let api_keys_vec: Vec<(String, String)> = ctx.api_keys.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let api_keys_vec: Vec<(String, String)> = ctx
+                .api_keys
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
             let servers = crate::mcp::build_mcp_servers_json(
                 &ctx.borg_api_url,
                 &ctx.borg_api_token,
@@ -413,7 +453,8 @@ impl AgentBackend for AgentSdkBackend {
         info!(task_id = task.id, phase = %phase.name, "spawning agent-sdk bridge");
 
         if let Some(tx) = &ctx.stream_tx {
-            let evt = json!({"type": "status", "status": "Spawning agent (Agent SDK)..."}).to_string();
+            let evt =
+                json!({"type": "status", "status": "Spawning agent (Agent SDK)..."}).to_string();
             let _ = tx.send(evt);
         }
 
@@ -440,14 +481,14 @@ impl AgentBackend for AgentSdkBackend {
         })
     }
 
-    async fn run_chat(
-        &self,
-        request: &ChatRequest,
-        ctx: &ChatContext,
-    ) -> Result<ChatResponse> {
+    async fn run_chat(&self, request: &ChatRequest, ctx: &ChatContext) -> Result<ChatResponse> {
         // Build MCP servers
         let mcp_servers = if !ctx.borg_api_token.is_empty() && !ctx.borg_api_url.is_empty() {
-            let api_keys_vec: Vec<(String, String)> = ctx.api_keys.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let api_keys_vec: Vec<(String, String)> = ctx
+                .api_keys
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
             let servers = crate::mcp::build_mcp_servers_json(
                 &ctx.borg_api_url,
                 &ctx.borg_api_token,

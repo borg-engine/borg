@@ -2222,8 +2222,8 @@ fn chat_session_dirs(data_dir: &str, workspace_id: i64, project_id: i64) -> Vec<
 }
 
 const ARTIFACT_EXTENSIONS: &[&str] = &[
-    "docx", "pdf", "md", "txt", "xlsx", "pptx", "csv", "html", "rtf", "json", "png", "jpg",
-    "jpeg", "svg", "gif",
+    "docx", "pdf", "md", "txt", "xlsx", "pptx", "csv", "html", "rtf", "json", "png", "jpg", "jpeg",
+    "svg", "gif",
 ];
 
 fn is_artifact_file(name: &str) -> bool {
@@ -2258,13 +2258,13 @@ pub(crate) async fn get_chat_artifact(
             let content_type = match path.rsplit_once('.').map(|(_, e)| e.to_lowercase()) {
                 Some(ref e) if e == "docx" => {
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                }
+                },
                 Some(ref e) if e == "xlsx" => {
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                }
+                },
                 Some(ref e) if e == "pptx" => {
                     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                }
+                },
                 Some(ref e) if e == "pdf" => "application/pdf",
                 Some(ref e) if e == "md" || e == "txt" || e == "csv" => "text/plain; charset=utf-8",
                 Some(ref e) if e == "html" => "text/html; charset=utf-8",
@@ -2891,7 +2891,6 @@ pub(crate) async fn export_all_project_documents(
             .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
             .collect::<String>()
             .trim()
-            .to_string()
     );
 
     Ok(axum::response::Response::builder()

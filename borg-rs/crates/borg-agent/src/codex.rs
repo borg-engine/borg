@@ -132,10 +132,7 @@ impl CodexBackend {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(
-                &session_auth,
-                std::fs::Permissions::from_mode(0o600),
-            );
+            let _ = std::fs::set_permissions(&session_auth, std::fs::Permissions::from_mode(0o600));
         }
         info!(
             codex_home,
@@ -332,19 +329,17 @@ impl AgentBackend for CodexBackend {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     fn write_valid_credentials(path: &Path) {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).unwrap();
         }
-        fs::write(
-            path,
-            r#"{"tokens":{"access_token":"tok_test"}}"#,
-        )
-        .unwrap();
+        fs::write(path, r#"{"tokens":{"access_token":"tok_test"}}"#).unwrap();
     }
 
     #[test]

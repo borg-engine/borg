@@ -302,9 +302,9 @@ fn get_u16(key: &str, dotenv: &HashMap<String, String>, default: u16) -> u16 {
 }
 
 fn resolve_tilde_impl(path: &str, home: Option<&str>) -> String {
-    if path.starts_with("~/") {
+    if let Some(rest) = path.strip_prefix("~/") {
         if let Some(h) = home {
-            return format!("{}/{}", h, &path[2..]);
+            return format!("{}/{}", h, rest);
         }
     }
     path.to_string()
@@ -997,7 +997,11 @@ impl Config {
         let pipeline_lint_cmd = get_str("PIPELINE_LINT_CMD", &dotenv, "");
         let backend = {
             let b = get_str("BORG_BACKEND", &dotenv, "");
-            if b.is_empty() { get_str("BACKEND", &dotenv, "claude") } else { b }
+            if b.is_empty() {
+                get_str("BACKEND", &dotenv, "claude")
+            } else {
+                b
+            }
         };
         let pipeline_mode = get_str("PIPELINE_MODE", &dotenv, "sweborg");
         let watched_raw = get_str("WATCHED_REPOS", &dotenv, "");

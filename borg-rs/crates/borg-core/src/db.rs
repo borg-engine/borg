@@ -1932,7 +1932,7 @@ impl Db {
              FROM projects p \
              JOIN project_shares ps ON ps.project_id = p.id \
              WHERE ps.user_id = ?1 ORDER BY p.id DESC";
-        let mut stmt = conn.prepare(&sql)?;
+        let mut stmt = conn.prepare(sql)?;
         let rows = stmt
             .query_map(params![user_id], |row| {
                 let project = row_to_project(row)?;
@@ -3790,7 +3790,7 @@ impl Db {
             .conn
             .lock()
             .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
-        let cap = limit.max(1).min(5000);
+        let cap = limit.clamp(1, 5000);
         let (sql, params_vec): (String, Vec<Box<dyn pg::types::ToSql>>) = match project_id {
             Some(pid) => (
                 "SELECT id, project_id, task_id, chunk_text, file_path, embedding FROM embeddings WHERE project_id = ?1".to_string(),
@@ -5742,13 +5742,11 @@ impl Db {
             })
             .context("get_seed_cooldowns")?;
         let mut map = HashMap::new();
-        for row in rows {
-            if let Ok((folder, ts)) = row {
-                let parts: Vec<&str> = folder.splitn(3, ':').collect();
-                if parts.len() == 3 {
-                    if let Ok(t) = ts.parse::<i64>() {
-                        map.insert((parts[1].to_string(), parts[2].to_string()), t);
-                    }
+        for (folder, ts) in rows.flatten() {
+            let parts: Vec<&str> = folder.splitn(3, ':').collect();
+            if parts.len() == 3 {
+                if let Ok(t) = ts.parse::<i64>() {
+                    map.insert((parts[1].to_string(), parts[2].to_string()), t);
                 }
             }
         }
@@ -6626,7 +6624,9 @@ impl Db {
         }
         if let Some(v) = config {
             sets.push(format!("config = ?{idx}"));
-            vals.push(Box::new(serde_json::to_string(v).unwrap_or_else(|_| "{}".into())));
+            vals.push(Box::new(
+                serde_json::to_string(v).unwrap_or_else(|_| "{}".into()),
+            ));
             idx += 1;
         }
         if let Some(v) = project_id {
@@ -6644,7 +6644,11 @@ impl Db {
             return Ok(());
         }
 
-        let sql = format!("UPDATE cron_jobs SET {} WHERE id = ?{}", sets.join(", "), idx);
+        let sql = format!(
+            "UPDATE cron_jobs SET {} WHERE id = ?{}",
+            sets.join(", "),
+            idx
+        );
         vals.push(Box::new(id));
         let params: Vec<&dyn pg::ToSql> = vals.iter().map(|v| v.as_ref()).collect();
         conn.execute(&sql, params.as_slice())
@@ -6774,7 +6778,14 @@ impl Db {
         conn.execute(
             "UPDATE messages SET input_tokens = ?1, output_tokens = ?2, \
              cost_usd = ?3, model = ?4 WHERE chat_jid = ?5 AND id = ?6",
-            params![input_tokens, output_tokens, cost_usd, model, chat_jid, message_id],
+            params![
+                input_tokens,
+                output_tokens,
+                cost_usd,
+                model,
+                chat_jid,
+                message_id
+            ],
         )
         .context("update_message_usage")?;
         Ok(())
@@ -6889,12 +6900,13 @@ impl Db {
             .conn
             .lock()
             .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
-        let id = conn.execute_returning_id(
-            "INSERT INTO tool_calls (run_id, tool_name, task_id, chat_key, input_summary) \
+        let id = conn
+            .execute_returning_id(
+                "INSERT INTO tool_calls (run_id, tool_name, task_id, chat_key, input_summary) \
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![run_id, tool_name, task_id, chat_key, input_summary],
-        )
-        .context("insert_tool_call")?;
+                params![run_id, tool_name, task_id, chat_key, input_summary],
+            )
+            .context("insert_tool_call")?;
         Ok(id)
     }
 

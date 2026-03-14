@@ -1025,8 +1025,7 @@ pub async fn sso_callback(
         .ok()
         .flatten()
         .unwrap_or_default();
-    let has_restrictions =
-        !allowed_emails.trim().is_empty() || !allowed_domains.trim().is_empty();
+    let has_restrictions = !allowed_emails.trim().is_empty() || !allowed_domains.trim().is_empty();
     if has_restrictions {
         let email_ok = allowed_emails
             .split(',')

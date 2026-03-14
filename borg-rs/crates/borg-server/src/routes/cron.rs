@@ -122,7 +122,9 @@ pub(crate) async fn trigger_cron_job(
 
     let now = Utc::now();
     let next = compute_next_run(&job.schedule, now);
-    let _ = state.db.update_cron_job_after_run(job.id, &now, next.as_ref());
+    let _ = state
+        .db
+        .update_cron_job_after_run(job.id, &now, next.as_ref());
 
     Ok(Json(json!({ "run_id": run_id })))
 }

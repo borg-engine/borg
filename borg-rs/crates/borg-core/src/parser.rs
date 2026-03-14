@@ -33,7 +33,11 @@ impl DocumentParserRouter {
         };
 
         for parser in &self.parsers {
-            if parser.supported_types().iter().any(|t| t == &effective_mime) {
+            if parser
+                .supported_types()
+                .iter()
+                .any(|t| t == &effective_mime)
+            {
                 return parser.parse(data, filename, &effective_mime);
             }
         }
@@ -216,7 +220,11 @@ fn extract_html_tag_content(html: &str, tag: &str) -> Option<String> {
     let after_open = lower[start_idx..].find('>')?;
     let content_start = start_idx + after_open + 1;
     let end_idx = lower[content_start..].find(&close)?;
-    Some(html[content_start..content_start + end_idx].trim().to_string())
+    Some(
+        html[content_start..content_start + end_idx]
+            .trim()
+            .to_string(),
+    )
 }
 
 // ── Plain Text Parser ────────────────────────────────────────────────────
@@ -255,7 +263,9 @@ mod tests {
     #[test]
     fn markdown_parser_extracts_sections() {
         let md = b"# Title\nIntro text\n## Section 1\nContent 1\n## Section 2\nContent 2";
-        let doc = MarkdownParser.parse(md, "test.md", "text/markdown").unwrap();
+        let doc = MarkdownParser
+            .parse(md, "test.md", "text/markdown")
+            .unwrap();
         assert_eq!(doc.sections.len(), 3);
         assert_eq!(doc.sections[0].heading, "Title");
         assert_eq!(doc.sections[0].level, 1);
@@ -266,7 +276,8 @@ mod tests {
 
     #[test]
     fn html_parser_strips_tags() {
-        let html = b"<html><head><title>Test</title></head><body><p>Hello <b>world</b></p></body></html>";
+        let html =
+            b"<html><head><title>Test</title></head><body><p>Hello <b>world</b></p></body></html>";
         let doc = HtmlParser.parse(html, "test.html", "text/html").unwrap();
         assert!(doc.text.contains("Hello world"));
         assert_eq!(doc.metadata.get("title").unwrap(), "Test");
@@ -284,7 +295,9 @@ mod tests {
     #[test]
     fn plain_text_parser_preserves_content() {
         let text = b"Just some plain text\nWith multiple lines";
-        let doc = PlainTextParser.parse(text, "test.txt", "text/plain").unwrap();
+        let doc = PlainTextParser
+            .parse(text, "test.txt", "text/plain")
+            .unwrap();
         assert_eq!(doc.text, "Just some plain text\nWith multiple lines");
     }
 
@@ -300,7 +313,9 @@ mod tests {
     fn router_falls_back_to_plain_text() {
         let router = DocumentParserRouter::new();
         let data = b"some data";
-        let doc = router.parse(data, "file.xyz", "application/octet-stream").unwrap();
+        let doc = router
+            .parse(data, "file.xyz", "application/octet-stream")
+            .unwrap();
         assert_eq!(doc.metadata.get("format").unwrap(), "plain");
     }
 

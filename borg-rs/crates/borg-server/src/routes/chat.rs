@@ -508,7 +508,7 @@ pub(crate) async fn run_chat_agent(
         .ok()
         .and_then(|r| r.ok());
 
-    if let Err(_) = stream_result {
+    if stream_result.is_err() {
         let _ = child.kill().await;
         anyhow::bail!("chat agent timed out after {}s", timeout.as_secs());
     }
@@ -661,7 +661,8 @@ pub(crate) async fn sse_chat_thread_stream(
                 "type": "chat_stream",
                 "thread": &thread,
                 "data": line,
-            }).to_string();
+            })
+            .to_string();
             if tx.send(wrapped).is_err() {
                 return;
             }
@@ -675,12 +676,15 @@ pub(crate) async fn sse_chat_thread_stream(
                     for msg in &messages {
                         if let Some(ref raw) = msg.raw_stream {
                             for line in raw.lines() {
-                                if line.is_empty() { continue; }
+                                if line.is_empty() {
+                                    continue;
+                                }
                                 let wrapped = serde_json::json!({
                                     "type": "chat_stream",
                                     "thread": &thread,
                                     "data": line,
-                                }).to_string();
+                                })
+                                .to_string();
                                 if tx.send(wrapped).is_err() {
                                     return;
                                 }
@@ -700,16 +704,17 @@ pub(crate) async fn sse_chat_thread_stream(
                         "type": "chat_stream",
                         "thread": &thread,
                         "data": line,
-                    }).to_string();
+                    })
+                    .to_string();
                     if tx.send(wrapped).is_err() {
                         return;
                     }
-                }
+                },
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     // On lag, close the connection. Client auto-reconnects
                     // via EventSource and gets full history replay.
                     return;
-                }
+                },
                 Err(_) => break,
             }
         }
@@ -726,7 +731,7 @@ pub(crate) async fn sse_chat_thread_stream(
 
 /// Resolve a client-facing thread name (e.g. "web:project-5") to an internal
 /// thread key (e.g. "web:workspace:3:web:project-5").
-fn resolve_internal_thread(db: &Db, ws_id: i64, thread: &str) -> String {
+fn resolve_internal_thread(_db: &Db, ws_id: i64, thread: &str) -> String {
     // The client sends the short thread name. We need the full internal key.
     format!("web:workspace:{}:{}", ws_id, thread)
 }
