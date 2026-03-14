@@ -14,6 +14,7 @@ pub mod parser;
 pub mod pgcompat;
 pub mod pipeline;
 mod pipeline_maintenance;
+pub mod registry;
 pub mod sandbox;
 pub mod secrets;
 pub mod sidecar;
