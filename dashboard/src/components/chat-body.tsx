@@ -54,7 +54,14 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
   const lastTsRef = useRef<number>(0);
   const sendingRef = useRef(false);
   const sendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastStreamEventRef = useRef<number>(0);
+
+  // Per-thread stream — replays full history on connect/reconnect, no gaps
+  const {
+    streamEvents,
+    isStreaming,
+    lastEventTimeRef: lastStreamEventRef,
+    reset: resetStream,
+  } = useChatStream(thread);
 
   const fetchMessages = useCallback(() => {
     tokenReady.then(() => {
@@ -85,6 +92,10 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
   useEffect(() => {
     sendingRef.current = sending;
   }, [sending]);
+
+  useEffect(() => {
+    if (isStreaming) setSending(true);
+  }, [isStreaming]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
