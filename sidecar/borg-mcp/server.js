@@ -519,7 +519,6 @@ async function handleListServices() {
   };
 
   const configured = [];
-  const free = [];
   for (const [key, label] of Object.entries(externalKeys)) {
     if (process.env[key]) configured.push(`  ${label}`);
   }

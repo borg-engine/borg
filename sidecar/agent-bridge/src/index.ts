@@ -184,7 +184,7 @@ async function handleQuery(req: QueryRequest): Promise<void> {
       prompt,
       options: {
         cwd: options.cwd ?? process.cwd(),
-        systemPrompt: options.systemPrompt ?? undefined,
+        systemPrompt: options.systemPrompt,
         allowedTools: options.allowedTools,
         disallowedTools: options.disallowedTools,
         mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,

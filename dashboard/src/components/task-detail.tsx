@@ -494,7 +494,6 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
   );
 }
 
-// StreamEvent and formatToolInput/parseRawStream imported from @/lib/stream-utils
 
 function StreamView({ raw }: { raw: string }) {
   const events = useMemo(() => parseRawStream(raw), [raw]);

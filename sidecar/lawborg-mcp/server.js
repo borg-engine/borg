@@ -238,15 +238,6 @@ function requireKey(name, key, signupUrl) {
   }
 }
 
-function buildParams(args, fields) {
-  const params = {};
-  for (const f of fields) {
-    const [src, dst] = Array.isArray(f) ? f : [f, f];
-    if (args[src] !== undefined && args[src] !== null) params[dst] = args[src];
-  }
-  return params;
-}
-
 function validateId(id) {
   const s = String(id);
   if (!/^[a-zA-Z0-9._-]+$/.test(s)) throw new Error(`Invalid ID: ${id}`);

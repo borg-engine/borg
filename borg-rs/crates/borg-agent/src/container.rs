@@ -9,10 +9,7 @@ use borg_core::{
     types::{ContainerTestResult, PhaseConfig, PhaseContext, PhaseOutput, Task},
 };
 use serde_json::json;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::Command,
-};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tracing::{debug, info, warn};
 
 const BORG_SIGNAL_MARKER: &str = "BORG_SIGNAL:";

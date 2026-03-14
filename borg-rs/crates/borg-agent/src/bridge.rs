@@ -67,50 +67,14 @@ struct QueryOptions {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(dead_code)]
 enum BridgeEvent {
-    TextDelta {
-        #[allow(dead_code)]
-        id: String,
-        content: String,
-    },
-    ToolUse {
-        #[allow(dead_code)]
-        id: String,
-        tool: String,
-        input: serde_json::Value,
-        #[allow(dead_code)]
-        timestamp: f64,
-    },
-    ToolResult {
-        #[allow(dead_code)]
-        id: String,
-        tool: String,
-        output: String,
-        duration_ms: u64,
-        success: bool,
-    },
-    Result {
-        #[allow(dead_code)]
-        id: String,
-        text: String,
-        session_id: String,
-        usage: UsageInfo,
-        cost_usd: f64,
-    },
-    Error {
-        #[allow(dead_code)]
-        id: String,
-        message: String,
-        #[allow(dead_code)]
-        code: String,
-    },
-    Stop {
-        #[allow(dead_code)]
-        id: String,
-        #[allow(dead_code)]
-        reason: String,
-        usage: UsageInfo,
-    },
+    TextDelta { id: String, content: String },
+    ToolUse { id: String, tool: String, input: serde_json::Value, timestamp: f64 },
+    ToolResult { id: String, tool: String, output: String, duration_ms: u64, success: bool },
+    Result { id: String, text: String, session_id: String, usage: UsageInfo, cost_usd: f64 },
+    Error { id: String, message: String, code: String },
+    Stop { id: String, reason: String, usage: UsageInfo },
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -325,7 +289,6 @@ pub struct AgentSdkBackend {
     pub provider: ProviderConfig,
     pub timeout_s: u64,
     pub base_url: String,
-    pub reasoning_effort: String,
 }
 
 impl AgentSdkBackend {
@@ -334,7 +297,6 @@ impl AgentSdkBackend {
             provider,
             timeout_s: 0,
             base_url: String::new(),
-            reasoning_effort: String::new(),
         }
     }
 
@@ -345,11 +307,6 @@ impl AgentSdkBackend {
 
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into();
-        self
-    }
-
-    pub fn with_reasoning_effort(mut self, effort: impl Into<String>) -> Self {
-        self.reasoning_effort = effort.into();
         self
     }
 

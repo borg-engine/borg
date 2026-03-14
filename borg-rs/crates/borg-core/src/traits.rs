@@ -240,19 +240,14 @@ pub trait DocumentParser: Send + Sync {
 // ── Provider Config ──────────────────────────────────────────────────────
 
 /// Which LLM hosting backend to route through.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProviderConfig {
+    #[default]
     Subscription,
     Direct { api_key: String },
     Bedrock { region: String, profile: Option<String> },
     Vertex { project_id: String, region: String },
-}
-
-impl Default for ProviderConfig {
-    fn default() -> Self {
-        Self::Subscription
-    }
 }
 
 impl ProviderConfig {
