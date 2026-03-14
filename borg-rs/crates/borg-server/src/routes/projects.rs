@@ -2104,7 +2104,7 @@ pub(crate) async fn list_project_documents(
     axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, StatusCode> {
-    let (_project, _role) =
+    let (project, _role) =
         super::require_project_access_with_shares(state.as_ref(), &user, &workspace, id)?;
     let tasks = state.db.list_project_tasks(id).map_err(internal)?;
     let mut documents: Vec<Value> = Vec::new();
@@ -2161,16 +2161,132 @@ pub(crate) async fn list_project_documents(
                 documents.push(json!({
                     "task_id": task.id,
                     "branch": task.branch,
-                    "path": name,
+                    "file_name": name,
                     "repo_slug": slug,
                     "task_title": task.title,
                     "task_status": task.status,
+                    "source": "pipeline",
                 }));
             }
         }
     }
 
+    // Chat artifacts: scan session directories for files created by chat agents
+    for dir in chat_session_dirs(&state.config.data_dir, project.workspace_id, id) {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if !meta.is_file() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !is_artifact_file(&name) {
+                continue;
+            }
+            let created_at = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| {
+                    chrono::DateTime::from_timestamp(d.as_secs() as i64, 0)
+                        .unwrap_or_default()
+                        .format("%Y-%m-%d %H:%M:%S")
+                        .to_string()
+                })
+                .unwrap_or_default();
+            documents.push(json!({
+                "task_id": 0,
+                "file_name": name,
+                "task_title": "Chat",
+                "task_status": "completed",
+                "source": "chat",
+                "created_at": created_at,
+            }));
+        }
+    }
+
     Ok(Json(json!(documents)))
+}
+
+fn chat_session_dirs(data_dir: &str, workspace_id: i64, project_id: i64) -> Vec<String> {
+    vec![
+        format!("{data_dir}/sessions/chat-web_workspace_{workspace_id}_web_project-{project_id}"),
+        format!("{data_dir}/sessions/chat-project_{project_id}"),
+    ]
+}
+
+const ARTIFACT_EXTENSIONS: &[&str] = &[
+    "docx", "pdf", "md", "txt", "xlsx", "pptx", "csv", "html", "rtf", "json", "png", "jpg",
+    "jpeg", "svg", "gif",
+];
+
+fn is_artifact_file(name: &str) -> bool {
+    if name.starts_with('.') || name == "CLAUDE.md" || name == "package.json" || name == "bun.lock"
+    {
+        return false;
+    }
+    let ext = match name.rsplit_once('.') {
+        Some((_, e)) => e.to_lowercase(),
+        None => return false,
+    };
+    ARTIFACT_EXTENSIONS.contains(&ext.as_str())
+}
+
+pub(crate) async fn get_chat_artifact(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path(id): Path<i64>,
+    Query(q): Query<DocQuery>,
+) -> Result<axum::response::Response, StatusCode> {
+    let project = require_project_access(state.as_ref(), &workspace, id)?;
+    let path = q.path.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
+
+    // Only allow plain filenames — no directory traversal
+    if path.contains('/') || path.contains('\\') || path.contains("..") || path.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    for dir in chat_session_dirs(&state.config.data_dir, project.workspace_id, id) {
+        let full = format!("{dir}/{path}");
+        if let Ok(bytes) = tokio::fs::read(&full).await {
+            let content_type = match path.rsplit_once('.').map(|(_, e)| e.to_lowercase()) {
+                Some(ref e) if e == "docx" => {
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                }
+                Some(ref e) if e == "xlsx" => {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                }
+                Some(ref e) if e == "pptx" => {
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                }
+                Some(ref e) if e == "pdf" => "application/pdf",
+                Some(ref e) if e == "md" || e == "txt" || e == "csv" => "text/plain; charset=utf-8",
+                Some(ref e) if e == "html" => "text/html; charset=utf-8",
+                Some(ref e) if e == "json" => "application/json",
+                Some(ref e) if e == "png" => "image/png",
+                Some(ref e) if e == "jpg" || e == "jpeg" => "image/jpeg",
+                Some(ref e) if e == "svg" => "image/svg+xml",
+                Some(ref e) if e == "gif" => "image/gif",
+                _ => "application/octet-stream",
+            };
+            return Ok(axum::response::Response::builder()
+                .header("content-type", content_type)
+                .header(
+                    "content-disposition",
+                    format!("attachment; filename=\"{path}\""),
+                )
+                .body(axum::body::Body::from(bytes))
+                .unwrap());
+        }
+    }
+
+    Err(StatusCode::NOT_FOUND)
 }
 
 pub(crate) async fn get_project_document_content(

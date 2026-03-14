@@ -36,7 +36,7 @@ use borg_core::{
     pipeline::{Pipeline, PipelineEvent},
     sandbox::Sandbox,
     sidecar::{Sidecar, SidecarEvent, Source},
-    stream::TaskStreamManager,
+    stream::{ChatStreamManager, TaskStreamManager},
     types::Task,
 };
 use chrono::Utc;
@@ -130,6 +130,7 @@ pub struct AppState {
     pub log_ring: Arc<std::sync::Mutex<VecDeque<String>>>,
     pub pipeline_event_tx: broadcast::Sender<PipelineEvent>,
     pub stream_manager: Arc<TaskStreamManager>,
+    pub chat_stream_manager: Arc<ChatStreamManager>,
     pub chat_event_tx: broadcast::Sender<String>,
     pub web_sessions: Arc<TokioMutex<HashMap<String, String>>>,
     pub backends: std::collections::HashMap<String, Arc<dyn borg_core::agent::AgentBackend>>,
@@ -273,6 +274,7 @@ fn spawn_telegram_poller(
     file_storage: Arc<storage::FileStorage>,
     search: Option<Arc<search::SearchClient>>,
     chat_event_tx: broadcast::Sender<String>,
+    chat_stream_manager: Arc<ChatStreamManager>,
     ai_request_count: Arc<AtomicU64>,
 ) {
     let tg_sessions: Arc<TokioMutex<HashMap<String, String>>> =
@@ -369,6 +371,7 @@ fn spawn_telegram_poller(
                             let search2 = search.clone();
                             let storage2 = Arc::clone(&file_storage);
                             let chat_tx2 = chat_event_tx.clone();
+                            let csm2 = Arc::clone(&chat_stream_manager);
                             let ai_request_count2 = Arc::clone(&ai_request_count);
                             let sender_name = msg.sender_name.clone();
                             let chat_id = msg.chat_id;
@@ -396,6 +399,7 @@ fn spawn_telegram_poller(
                                     search2.clone(),
                                     &storage2,
                                     &chat_tx2,
+                                    &csm2,
                                     &ai_request_count2,
                                     None,
                                     None,
@@ -440,6 +444,7 @@ fn spawn_user_bot_manager(
     search: Option<Arc<search::SearchClient>>,
     file_storage: Arc<storage::FileStorage>,
     chat_event_tx: broadcast::Sender<String>,
+    chat_stream_manager: Arc<ChatStreamManager>,
     ai_request_count: Arc<AtomicU64>,
     sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>>,
 ) {
@@ -449,6 +454,7 @@ fn spawn_user_bot_manager(
         search,
         file_storage,
         chat_event_tx,
+        chat_stream_manager,
         ai_request_count,
         sidecar_slot,
     ));
@@ -512,6 +518,7 @@ async fn spawn_sidecar_manager(
     file_storage: Arc<storage::FileStorage>,
     search: Option<Arc<search::SearchClient>>,
     chat_event_tx: broadcast::Sender<String>,
+    chat_stream_manager: Arc<ChatStreamManager>,
     ai_request_count: Arc<AtomicU64>,
     sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>>,
     wa_status: Arc<std::sync::Mutex<WaStatus>>,
@@ -550,6 +557,7 @@ async fn spawn_sidecar_manager(
                 let storage_flush = Arc::clone(&file_storage);
                 let search_flush = search.clone();
                 let chat_tx_flush = chat_event_tx.clone();
+                let csm_flush = Arc::clone(&chat_stream_manager);
                 let flush_ai_request_count = Arc::clone(&ai_request_count);
                 tokio::spawn(async move {
                     loop {
@@ -562,6 +570,7 @@ async fn spawn_sidecar_manager(
                             let search2 = search_flush.clone();
                             let storage2 = Arc::clone(&storage_flush);
                             let chat_tx2 = chat_tx_flush.clone();
+                            let csm2 = Arc::clone(&csm_flush);
                             let ai_request_count2 = Arc::clone(&flush_ai_request_count);
                             let collector2 = Arc::clone(&collector_flush);
                             let chat_source = sidecar_source_prefix(&batch.chat_key);
@@ -592,6 +601,7 @@ async fn spawn_sidecar_manager(
                                     search2.clone(),
                                     &storage2,
                                     &chat_tx2,
+                                    &csm2,
                                     &ai_request_count2,
                                     None,
                                     None,
@@ -638,6 +648,7 @@ async fn spawn_sidecar_manager(
                 let storage_events = Arc::clone(&file_storage);
                 let search_events = search.clone();
                 let chat_tx_events = chat_event_tx.clone();
+                let csm_events = Arc::clone(&chat_stream_manager);
                 let events_ai_request_count = Arc::clone(&ai_request_count);
                 let wa_status_events = Arc::clone(&wa_status);
                 let slack_status_events = Arc::clone(&slack_status);
@@ -728,6 +739,7 @@ async fn spawn_sidecar_manager(
                             let search2 = search_events.clone();
                             let storage2 = Arc::clone(&storage_events);
                             let chat_tx2 = chat_tx_events.clone();
+                            let csm2 = Arc::clone(&csm_events);
                             let ai_request_count2 = Arc::clone(&events_ai_request_count);
                             let collector2 = Arc::clone(&collector);
                             let chat_source = source_prefix.to_string();
@@ -768,6 +780,7 @@ async fn spawn_sidecar_manager(
                                     search2.clone(),
                                     &storage2,
                                     &chat_tx2,
+                                    &csm2,
                                     &ai_request_count2,
                                     None,
                                     None,
@@ -901,6 +914,7 @@ fn spawn_imap_poller(
     file_storage: Arc<storage::FileStorage>,
     search: Option<Arc<search::SearchClient>>,
     chat_event_tx: broadcast::Sender<String>,
+    chat_stream_manager: Arc<ChatStreamManager>,
     ai_request_count: Arc<AtomicU64>,
 ) {
     let imap_sessions = Arc::new(TokioMutex::new(HashMap::new()));
@@ -912,6 +926,7 @@ fn spawn_imap_poller(
             let search = search.clone();
             let storage = Arc::clone(&file_storage);
             let chat_tx = chat_event_tx.clone();
+            let csm = Arc::clone(&chat_stream_manager);
             let ai_count = Arc::clone(&ai_request_count);
             async move {
                 for email in emails {
@@ -965,6 +980,7 @@ fn spawn_imap_poller(
                         search.clone(),
                         &storage,
                         &chat_tx,
+                        &csm,
                         &ai_count,
                         None,
                         None,
@@ -1228,6 +1244,7 @@ fn spawn_post_state_tasks(state: &Arc<AppState>, config: &Arc<Config>, db: &Arc<
             Arc::clone(&state.file_storage),
             state.search.clone(),
             state.chat_event_tx.clone(),
+            Arc::clone(&state.chat_stream_manager),
             Arc::clone(&state.ai_request_count),
         );
     }
@@ -1461,6 +1478,10 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
             get(routes::list_project_documents),
         )
         .route(
+            "/api/projects/:id/chat-artifacts",
+            get(routes::get_chat_artifact),
+        )
+        .route(
             "/api/projects/:id/documents/:task_id/content",
             get(routes::get_project_document_content),
         )
@@ -1673,6 +1694,7 @@ async fn main() -> anyhow::Result<()> {
     let log_ring: Arc<std::sync::Mutex<VecDeque<String>>> =
         Arc::new(std::sync::Mutex::new(VecDeque::with_capacity(500)));
     let (chat_event_tx, _) = broadcast::channel::<String>(4096);
+    let chat_stream_manager = ChatStreamManager::new();
     init_tracing(log_tx.clone(), Arc::clone(&log_ring));
 
     let env_config = Config::from_env()?;
@@ -1781,6 +1803,7 @@ async fn main() -> anyhow::Result<()> {
             Arc::clone(&file_storage),
             search.clone(),
             chat_event_tx.clone(),
+            Arc::clone(&chat_stream_manager),
             Arc::clone(&ai_request_count),
         );
     }
@@ -1798,6 +1821,7 @@ async fn main() -> anyhow::Result<()> {
         search.clone(),
         Arc::clone(&file_storage),
         chat_event_tx.clone(),
+        Arc::clone(&chat_stream_manager),
         Arc::clone(&ai_request_count),
         Arc::clone(&sidecar_slot),
     );
@@ -1818,6 +1842,7 @@ async fn main() -> anyhow::Result<()> {
         let file_storage = Arc::clone(&file_storage);
         let search = search.clone();
         let chat_event_tx = chat_event_tx.clone();
+        let chat_stream_manager = Arc::clone(&chat_stream_manager);
         let ai_request_count = Arc::clone(&ai_request_count);
         let sidecar_slot = Arc::clone(&sidecar_slot);
         let wa_status = Arc::clone(&wa_status);
@@ -1829,6 +1854,7 @@ async fn main() -> anyhow::Result<()> {
                 file_storage,
                 search,
                 chat_event_tx,
+                chat_stream_manager,
                 ai_request_count,
                 sidecar_slot,
                 wa_status,
@@ -1888,6 +1914,7 @@ async fn main() -> anyhow::Result<()> {
         log_ring,
         pipeline_event_tx,
         stream_manager,
+        chat_stream_manager: Arc::clone(&chat_stream_manager),
         chat_event_tx,
         web_sessions: Arc::new(TokioMutex::new(HashMap::new())),
         backends,

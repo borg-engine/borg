@@ -1432,6 +1432,23 @@ export function useProjectDocuments(projectId: number | null) {
   });
 }
 
+export function chatArtifactUrl(projectId: number, fileName: string): string {
+  return `${apiBase()}/api/projects/${projectId}/chat-artifacts?path=${encodeURIComponent(fileName)}`;
+}
+
+export async function downloadChatArtifact(projectId: number, fileName: string): Promise<void> {
+  await tokenReady;
+  const url = chatArtifactUrl(projectId, fileName);
+  const res = await fetch(url, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 export function useProjectDocumentVersions(projectId: number | null, taskId: number | null, path: string | null) {
   return useQuery<{ sha: string; message: string; date: string; author: string }[]>({
     queryKey: ["project_doc_versions", projectId, taskId, path],

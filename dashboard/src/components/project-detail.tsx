@@ -6,6 +6,7 @@ import {
   apiBase,
   approveTask,
   authHeaders,
+  downloadChatArtifact,
   deleteAllProjectFiles,
   fetchProjectFileContent,
   getRevisionHistory,
@@ -517,17 +518,30 @@ function DocumentsTab({
               {docs.map((doc) => {
                 const docBasename = doc.file_name.split("/").pop() || doc.file_name;
                 const isActive = activeFiles.has(docBasename);
+                const isChatArtifact = doc.source === "chat";
+                const isBinary = /\.(docx|pdf|xlsx|pptx|png|jpg|jpeg|gif|svg)$/i.test(doc.file_name);
+                const handleClick = () => {
+                  if (isChatArtifact && isBinary) {
+                    downloadChatArtifact(projectId, doc.file_name);
+                  } else {
+                    onDocumentSelect?.(doc);
+                  }
+                };
                 return (
                   <button
                     key={`${doc.task_id}-${doc.file_name}`}
-                    onClick={() => onDocumentSelect?.(doc)}
+                    onClick={handleClick}
                     className={cn(
                       "flex flex-col gap-2 rounded-xl border p-4 text-left transition-colors hover:border-amber-900/30 hover:bg-[#1c1a17]",
                       isActive ? "border-amber-500/30 bg-[#1a1814]" : "border-[#2a2520] bg-[#151412]",
                     )}
                   >
                     <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 shrink-0 text-blue-400/60" />
+                      {isChatArtifact && isBinary ? (
+                        <Download className="h-4 w-4 shrink-0 text-emerald-400/60" />
+                      ) : (
+                        <FileText className="h-4 w-4 shrink-0 text-blue-400/60" />
+                      )}
                       <span className="text-[13px] font-medium text-[#e8e0d4] truncate">{doc.file_name}</span>
                       {isActive && (
                         <span className="flex items-center gap-1 shrink-0">
@@ -538,7 +552,7 @@ function DocumentsTab({
                       <StatusBadge status={doc.task_status} />
                     </div>
                     <div className="text-[12px] text-[#6b6459] truncate">
-                      #{doc.task_id} · {doc.task_title}
+                      {isChatArtifact ? doc.task_title : `#${doc.task_id} · ${doc.task_title}`}
                     </div>
                   </button>
                 );

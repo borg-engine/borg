@@ -231,6 +231,7 @@ export interface ProjectDocument {
   content: string;
   created_at: string;
   branch: string;
+  source?: "pipeline" | "chat";
 }
 
 export interface ProjectFile {
