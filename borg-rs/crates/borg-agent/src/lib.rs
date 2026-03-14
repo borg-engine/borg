@@ -1,3 +1,4 @@
+pub mod bridge;
 pub mod claude;
 pub use claude::extract_phase_result;
 pub mod codex;
@@ -9,6 +10,7 @@ pub mod mcp;
 pub mod ollama;
 pub mod reliable;
 
+pub use bridge::AgentSdkBackend;
 pub use gemini::GeminiBackend;
 pub use ollama::OllamaBackend;
 pub use reliable::ReliableBackend;
