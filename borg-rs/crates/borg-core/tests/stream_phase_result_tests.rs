@@ -73,7 +73,7 @@ async fn test_push_phase_result_injects_into_history() {
         .push_phase_result(task_id, "spec", "Here is the specification.")
         .await;
 
-    let (history, _rx) = manager.subscribe(task_id).await;
+    let (history, _rx) = manager.subscribe(&task_id).await;
     assert!(
         !history.is_empty(),
         "history must contain at least one entry"
@@ -90,7 +90,7 @@ async fn test_push_phase_result_history_contains_phase_result_type() {
         .push_phase_result(task_id, "qa", "QA summary.")
         .await;
 
-    let (history, _rx) = manager.subscribe(task_id).await;
+    let (history, _rx) = manager.subscribe(&task_id).await;
     let joined = history.join("\n");
     assert!(
         joined.contains("phase_result"),
@@ -106,7 +106,7 @@ async fn test_push_phase_result_history_contains_phase_name() {
 
     manager.push_phase_result(task_id, "qa_fix", "Fixed.").await;
 
-    let (history, _rx) = manager.subscribe(task_id).await;
+    let (history, _rx) = manager.subscribe(&task_id).await;
     let joined = history.join("\n");
     assert!(
         joined.contains("qa_fix"),
@@ -124,7 +124,7 @@ async fn test_push_phase_result_history_contains_content() {
         .push_phase_result(task_id, "spec", "UniqueSentinel_ABC_987")
         .await;
 
-    let (history, _rx) = manager.subscribe(task_id).await;
+    let (history, _rx) = manager.subscribe(&task_id).await;
     let joined = history.join("\n");
     assert!(
         joined.contains("UniqueSentinel_ABC_987"),
@@ -158,7 +158,7 @@ async fn test_phase_result_appears_before_stream_end() {
         .await;
 
     // Verify phase_result is in history before end_task is called.
-    let (history_before, _rx) = manager.subscribe(task_id).await;
+    let (history_before, _rx) = manager.subscribe(&task_id).await;
     let joined_before = history_before.join("\n");
     assert!(
         joined_before.contains("phase_result"),
@@ -171,7 +171,7 @@ async fn test_phase_result_appears_before_stream_end() {
 
     // After end_task, stream_end is injected.
     manager.end_task(task_id).await;
-    let (history_after, _rx2) = manager.subscribe(task_id).await;
+    let (history_after, _rx2) = manager.subscribe(&task_id).await;
     let joined_after = history_after.join("\n");
     // phase_result must still precede stream_end in the history.
     let pr_pos = joined_after.find("phase_result");
@@ -201,7 +201,7 @@ async fn test_multiple_push_phase_result_both_in_history() {
         .push_phase_result(task_id, "qa", "Second_UniqueXYZ")
         .await;
 
-    let (history, _rx) = manager.subscribe(task_id).await;
+    let (history, _rx) = manager.subscribe(&task_id).await;
     let joined = history.join("\n");
     assert!(joined.contains("First_UniqueABC"), "first result missing");
     assert!(joined.contains("Second_UniqueXYZ"), "second result missing");
@@ -223,8 +223,8 @@ async fn test_push_phase_result_only_affects_specified_task() {
         .push_phase_result(task_a, "spec", "Only for task A.")
         .await;
 
-    let (history_a, _) = manager.subscribe(task_a).await;
-    let (history_b, _) = manager.subscribe(task_b).await;
+    let (history_a, _) = manager.subscribe(&task_a).await;
+    let (history_b, _) = manager.subscribe(&task_b).await;
     let joined_a = history_a.join("\n");
     let joined_b = history_b.join("\n");
 
@@ -246,10 +246,10 @@ async fn test_push_exactly_max_history_lines_keeps_all() {
     manager.start(task_id).await;
 
     for i in 0..10_000usize {
-        manager.push_line(task_id, format!("line-{i}")).await;
+        manager.push_line(&task_id, format!("line-{i}")).await;
     }
 
-    let (history, _rx) = manager.subscribe(task_id).await;
+    let (history, _rx) = manager.subscribe(&task_id).await;
     assert_eq!(history.len(), 10_000, "all 10,000 lines must be retained");
     assert_eq!(history[0], "line-0", "first line must be line-0");
     assert_eq!(history[9_999], "line-9999", "last line must be line-9999");
@@ -262,10 +262,10 @@ async fn test_push_one_over_max_drops_oldest() {
     manager.start(task_id).await;
 
     for i in 0..10_001usize {
-        manager.push_line(task_id, format!("line-{i}")).await;
+        manager.push_line(&task_id, format!("line-{i}")).await;
     }
 
-    let (history, _rx) = manager.subscribe(task_id).await;
+    let (history, _rx) = manager.subscribe(&task_id).await;
     assert_eq!(history.len(), 10_000, "history must be capped at 10,000");
     assert!(
         !history.contains(&"line-0".to_string()),
@@ -282,10 +282,10 @@ async fn test_subscribe_after_overflow_returns_exactly_max_history_lines() {
     manager.start(task_id).await;
 
     for i in 0..15_000usize {
-        manager.push_line(task_id, format!("line-{i}")).await;
+        manager.push_line(&task_id, format!("line-{i}")).await;
     }
 
-    let (history, _rx) = manager.subscribe(task_id).await;
+    let (history, _rx) = manager.subscribe(&task_id).await;
     assert_eq!(
         history.len(),
         10_000,

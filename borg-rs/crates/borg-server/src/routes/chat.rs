@@ -130,6 +130,7 @@ pub(crate) async fn run_chat_agent(
     search: Option<Arc<crate::search::SearchClient>>,
     storage: &Arc<FileStorage>,
     chat_event_tx: &broadcast::Sender<String>,
+    chat_stream_manager: &Arc<borg_core::stream::ChatStreamManager>,
     ai_request_count: &Arc<AtomicU64>,
     user_id: Option<i64>,
     model_override: Option<String>,
@@ -141,6 +142,9 @@ pub(crate) async fn run_chat_agent(
     );
     std::fs::create_dir_all(&session_dir)
         .map_err(|e| anyhow::anyhow!("create session dir {session_dir}: {e}"))?;
+
+    let thread_key = chat_key.to_string();
+    chat_stream_manager.start(thread_key.clone()).await;
 
     let ts_secs = Utc::now().timestamp();
     for (i, msg) in messages.iter().enumerate() {
@@ -480,9 +484,12 @@ pub(crate) async fn run_chat_agent(
         lines
     });
 
+    let csm = Arc::clone(chat_stream_manager);
+    let csm_key = thread_key.clone();
     let stream_result = tokio::time::timeout(timeout, async {
         while let Some(line) = reader.next_line().await? {
             raw_lines.push(line.clone());
+            csm.push_line(&csm_key, line.clone()).await;
             let stream_event = json!({
                 "type": "chat_stream",
                 "thread": chat_key,
@@ -561,6 +568,8 @@ pub(crate) async fn run_chat_agent(
         let receivers = chat_event_tx.send(event).unwrap_or(0);
         tracing::info!(chat_key, receivers, "broadcast chat_reply to SSE clients");
     }
+
+    chat_stream_manager.end_stream(&thread_key).await;
 
     Ok(text)
 }
@@ -792,6 +801,7 @@ pub(crate) async fn post_project_chat(
             state2.search.clone(),
             &state2.file_storage,
             &state2.chat_event_tx,
+            &state2.chat_stream_manager,
             &state2.ai_request_count,
             Some(uid),
             model2,
@@ -894,6 +904,7 @@ pub(crate) async fn post_chat(
             state2.search.clone(),
             &state2.file_storage,
             &state2.chat_event_tx,
+            &state2.chat_stream_manager,
             &state2.ai_request_count,
             Some(uid),
             model2,

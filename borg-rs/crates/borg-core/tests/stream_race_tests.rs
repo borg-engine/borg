@@ -23,10 +23,10 @@ async fn test_late_subscriber_sees_stream_end_in_history() {
     let mgr = TaskStreamManager::new();
     let id: i64 = 1001;
     mgr.start(id).await;
-    mgr.push_line(id, "line1".to_string()).await;
+    mgr.push_line(&id, "line1".to_string()).await;
     mgr.end_task(id).await;
 
-    let (history, rx) = mgr.subscribe(id).await;
+    let (history, rx) = mgr.subscribe(&id).await;
 
     assert!(rx.is_none(), "ended stream must return no live receiver");
     assert!(
@@ -44,9 +44,9 @@ async fn test_early_subscriber_receives_stream_end_via_broadcast() {
     let mgr = TaskStreamManager::new();
     let id: i64 = 1002;
     mgr.start(id).await;
-    mgr.push_line(id, "lineA".to_string()).await;
+    mgr.push_line(&id, "lineA".to_string()).await;
 
-    let (history, rx) = mgr.subscribe(id).await;
+    let (history, rx) = mgr.subscribe(&id).await;
     assert!(rx.is_some(), "live stream must return a receiver");
     assert!(
         !history.iter().any(|l| l.contains("stream_end")),
@@ -85,7 +85,7 @@ async fn test_concurrent_subscribe_and_end_no_hang() {
     });
 
     // Subscribe concurrently with end_task.
-    let (history, rx) = mgr.subscribe(id).await;
+    let (history, rx) = mgr.subscribe(&id).await;
     end_handle.await.unwrap();
 
     if let Some(mut rx) = rx {
@@ -120,11 +120,11 @@ async fn test_stream_end_survives_history_overflow() {
     // Push enough lines to fill and overflow the history ring buffer.
     // MAX_HISTORY_LINES is 10_000; we push 10_001 to guarantee at least one eviction.
     for i in 0..10_001u32 {
-        mgr.push_line(id, format!("line-{i}")).await;
+        mgr.push_line(&id, format!("line-{i}")).await;
     }
     mgr.end_task(id).await;
 
-    let (history, rx) = mgr.subscribe(id).await;
+    let (history, rx) = mgr.subscribe(&id).await;
     assert!(rx.is_none(), "ended stream must return no live receiver");
     assert!(
         history.iter().any(|l| l.contains("stream_end")),
@@ -151,7 +151,7 @@ async fn test_ended_flag_implies_stream_end_in_history() {
 
     // Multiple subscribe calls all yield the same terminal history.
     for _ in 0..3 {
-        let (history, rx) = mgr.subscribe(id).await;
+        let (history, rx) = mgr.subscribe(&id).await;
         assert!(rx.is_none());
         assert!(
             history.iter().any(|l| l.contains("stream_end")),
@@ -170,11 +170,11 @@ async fn test_live_receiver_delivers_messages_in_order() {
     let id: i64 = 1006;
     mgr.start(id).await;
 
-    let (_history, rx) = mgr.subscribe(id).await;
+    let (_history, rx) = mgr.subscribe(&id).await;
     let mut rx = rx.expect("must have live receiver");
 
-    mgr.push_line(id, "msg1".to_string()).await;
-    mgr.push_line(id, "msg2".to_string()).await;
+    mgr.push_line(&id, "msg1".to_string()).await;
+    mgr.push_line(&id, "msg2".to_string()).await;
     mgr.end_task(id).await;
 
     let recv = |rx: &mut tokio::sync::broadcast::Receiver<String>| {

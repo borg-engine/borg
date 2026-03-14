@@ -1562,7 +1562,7 @@ impl Pipeline {
                     .to_string();
                     let _ = tx.send(evt);
                 }
-                sm.push_line(stream_task_id, line).await;
+                sm.push_line(&stream_task_id, line).await;
             }
             sm.end_task(stream_task_id).await;
         });

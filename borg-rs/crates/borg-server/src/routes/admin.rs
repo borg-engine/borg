@@ -1704,7 +1704,7 @@ pub(crate) async fn sse_task_stream(
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     tokio::spawn(async move {
-        let (history, live_rx) = state.stream_manager.subscribe(id).await;
+        let (history, live_rx) = state.stream_manager.subscribe(&id).await;
 
         let history = if history.is_empty() && live_rx.is_none() {
             let mut lines = Vec::new();
@@ -1898,7 +1898,7 @@ pub(crate) async fn delete_cache_volume(
 }
 
 async fn container_id_from_stream(state: &AppState, task_id: i64) -> Option<String> {
-    let (history, _) = state.stream_manager.subscribe(task_id).await;
+    let (history, _) = state.stream_manager.subscribe(&task_id).await;
     for line in history.iter().rev() {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
             if v.get("type").and_then(|t| t.as_str()) == Some("container_event")
@@ -2146,6 +2146,7 @@ pub(crate) async fn email_inbound(
     let search = state.search.clone();
     let storage = Arc::clone(&state.file_storage);
     let chat_tx = state.chat_event_tx.clone();
+    let csm = Arc::clone(&state.chat_stream_manager);
     let ai_count = Arc::clone(&state.ai_request_count);
     let from_email = email.from.clone();
     let reply_subject = format!("Re: {}", email.subject);
@@ -2163,6 +2164,7 @@ pub(crate) async fn email_inbound(
             search,
             &storage,
             &chat_tx,
+            &csm,
             &ai_count,
             None,
             None,

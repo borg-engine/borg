@@ -40,6 +40,7 @@ pub struct UserBotManager {
     search: Option<Arc<SearchClient>>,
     storage: Arc<FileStorage>,
     chat_event_tx: broadcast::Sender<String>,
+    chat_stream_manager: Arc<borg_core::stream::ChatStreamManager>,
     ai_request_count: Arc<AtomicU64>,
     sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>>,
 }
@@ -58,6 +59,7 @@ impl UserBotManager {
         search: Option<Arc<SearchClient>>,
         storage: Arc<FileStorage>,
         chat_event_tx: broadcast::Sender<String>,
+        chat_stream_manager: Arc<borg_core::stream::ChatStreamManager>,
         ai_request_count: Arc<AtomicU64>,
         sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>>,
     ) -> Self {
@@ -70,6 +72,7 @@ impl UserBotManager {
             search,
             storage,
             chat_event_tx,
+            chat_stream_manager,
             ai_request_count,
             sidecar_slot,
         }
@@ -246,6 +249,7 @@ impl UserBotManager {
         let search = self.search.clone();
         let storage = Arc::clone(&self.storage);
         let chat_event_tx = self.chat_event_tx.clone();
+        let chat_stream_manager = Arc::clone(&self.chat_stream_manager);
         let ai_request_count = Arc::clone(&self.ai_request_count);
         let sessions: Arc<TokioMutex<HashMap<String, String>>> =
             Arc::new(TokioMutex::new(HashMap::new()));
@@ -259,6 +263,7 @@ impl UserBotManager {
                 search,
                 storage,
                 chat_event_tx,
+                chat_stream_manager,
                 ai_request_count,
                 sessions,
             )
@@ -287,6 +292,7 @@ async fn poll_loop(
     search: Option<Arc<SearchClient>>,
     storage: Arc<FileStorage>,
     chat_event_tx: broadcast::Sender<String>,
+    chat_stream_manager: Arc<borg_core::stream::ChatStreamManager>,
     ai_request_count: Arc<AtomicU64>,
     sessions: Arc<TokioMutex<HashMap<String, String>>>,
 ) {
@@ -318,6 +324,7 @@ async fn poll_loop(
                         let search2 = search.clone();
                         let storage2 = Arc::clone(&storage);
                         let chat_tx2 = chat_event_tx.clone();
+                        let csm2 = Arc::clone(&chat_stream_manager);
                         let ai_count2 = Arc::clone(&ai_request_count);
                         let sender_name = msg.sender_name.clone();
                         let chat_id = msg.chat_id;
@@ -384,6 +391,7 @@ async fn poll_loop(
                                 search2,
                                 &storage2,
                                 &chat_tx2,
+                                &csm2,
                                 &ai_count2,
                                 None,
                                 None,
