@@ -991,7 +991,10 @@ impl Config {
         let pipeline_repo = get_str("PIPELINE_REPO", &dotenv, "");
         let pipeline_test_cmd = get_str("PIPELINE_TEST_CMD", &dotenv, "");
         let pipeline_lint_cmd = get_str("PIPELINE_LINT_CMD", &dotenv, "");
-        let backend = get_str("BACKEND", &dotenv, "claude");
+        let backend = {
+            let b = get_str("BORG_BACKEND", &dotenv, "");
+            if b.is_empty() { get_str("BACKEND", &dotenv, "claude") } else { b }
+        };
         let pipeline_mode = get_str("PIPELINE_MODE", &dotenv, "sweborg");
         let watched_raw = get_str("WATCHED_REPOS", &dotenv, "");
 

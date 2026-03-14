@@ -1204,7 +1204,37 @@ fn build_backends(
         info!("local backend registered (Ollama)");
     }
 
-    Ok(backends)
+    // Agent SDK backend (primary Claude path when agent-bridge is available)
+    {
+        let provider = borg_core::traits::ProviderConfig::from_env();
+        let sdk_backend = borg_agent::AgentSdkBackend::new(provider)
+            .with_timeout(config.agent_timeout_s as u64)
+            .with_base_url(format!("http://127.0.0.1:{}", config.proxy_port));
+        backends.insert("agent-sdk".into(), Arc::new(sdk_backend));
+        info!("agent-sdk backend registered");
+    }
+
+    // Container backend (provider-agnostic Docker agent)
+    if !config.container_image.is_empty() {
+        let container_backend = borg_agent::container::ContainerBackend::new(&config.container_image)
+            .with_timeout(config.agent_timeout_s as u64)
+            .with_resource_limits(config.container_memory_mb, config.container_cpus);
+        backends.insert("container".into(), Arc::new(container_backend));
+        info!("container backend registered");
+    }
+
+    // Wrap all backends with ReliableBackend for retry/backoff
+    let reliable_backends: std::collections::HashMap<String, Arc<dyn borg_core::agent::AgentBackend>> =
+        backends
+            .into_iter()
+            .map(|(name, backend)| {
+                let wrapped: Arc<dyn borg_core::agent::AgentBackend> =
+                    Arc::new(borg_agent::ReliableBackend::wrap(backend));
+                (name, wrapped)
+            })
+            .collect();
+
+    Ok(reliable_backends)
 }
 
 fn spawn_post_state_tasks(state: &Arc<AppState>, config: &Arc<Config>, db: &Arc<Db>) {
