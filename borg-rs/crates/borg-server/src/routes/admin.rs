@@ -1023,6 +1023,12 @@ pub(crate) async fn get_settings(
         } else {
             json!(s)
         };
+        // Mask secret fields — never return plaintext secrets in API responses
+        let json_val = if key.contains("secret") || key.contains("_pass") {
+            if s.is_empty() { json!("") } else { json!("***set***") }
+        } else {
+            json_val
+        };
         obj.insert(key.to_string(), json_val);
     }
     Ok(Json(Value::Object(obj)))

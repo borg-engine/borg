@@ -1966,7 +1966,7 @@ async fn main() -> anyhow::Result<()> {
         db: Arc::clone(&db),
         config: Arc::clone(&config),
         ai_request_count,
-        api_token,
+        api_token: api_token.clone(),
         jwt_secret: {
             let key = "jwt_secret";
             match db.get_config(key) {
@@ -2014,7 +2014,8 @@ async fn main() -> anyhow::Result<()> {
     let dashboard_dir = config.dashboard_dist_dir.clone();
     let app = build_app_router(Arc::clone(&state), &dashboard_dir);
 
-    let proxy_state = Arc::new(proxy::ProxyState::new(Arc::clone(&db)).await);
+    let proxy_api_token = state.api_token.clone();
+    let proxy_state = Arc::new(proxy::ProxyState::new(Arc::clone(&db), proxy_api_token).await);
     let proxy_app = Router::new().merge(proxy::proxy_routes().with_state(proxy_state));
 
     let bind = config.web_bind.clone();

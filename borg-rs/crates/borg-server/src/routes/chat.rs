@@ -149,7 +149,7 @@ pub(crate) async fn run_chat_agent(
     let ts_secs = Utc::now().timestamp();
     for (i, msg) in messages.iter().enumerate() {
         let msg_id = format!("{}-{}-{}", chat_key, ts_secs, i);
-        let _ = db.insert_chat_message(
+        if let Err(e) = db.insert_chat_message(
             &msg_id,
             chat_key,
             Some(sender_name),
@@ -157,7 +157,9 @@ pub(crate) async fn run_chat_agent(
             msg,
             false,
             false,
-        );
+        ) {
+            tracing::warn!(chat_key, "failed to persist chat message: {e}");
+        }
         let event = json!({
             "role": "user",
             "sender": sender_name,
@@ -535,7 +537,9 @@ pub(crate) async fn run_chat_agent(
             .await
             .insert(chat_key.to_string(), sid.clone());
         let folder = format!("chat-{}", sanitize_chat_key(chat_key));
-        let _ = db.set_session(&folder, &sid);
+        if let Err(e) = db.set_session(&folder, &sid) {
+            tracing::warn!(chat_key, "failed to persist session mapping: {e}");
+        }
     }
 
     if !text.is_empty() {
@@ -546,7 +550,7 @@ pub(crate) async fn run_chat_agent(
         } else {
             Some(raw.as_str())
         };
-        let _ = db.insert_chat_message_with_stream(
+        if let Err(e) = db.insert_chat_message_with_stream(
             &reply_id,
             chat_key,
             Some("borg"),
@@ -555,7 +559,9 @@ pub(crate) async fn run_chat_agent(
             true,
             true,
             stream_data,
-        );
+        ) {
+            tracing::warn!(chat_key, "failed to persist bot reply: {e}");
+        }
         let event = json!({
             "role": "assistant",
             "sender": "borg",

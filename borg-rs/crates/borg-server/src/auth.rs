@@ -950,7 +950,8 @@ pub async fn sso_callback(
     };
     if !token_resp.status().is_success() {
         let body = token_resp.text().await.unwrap_or_default();
-        tracing::error!("sso token exchange failed for {provider}: {body}");
+        let truncated = if body.len() > 500 { &body[..500] } else { &body };
+        tracing::error!("sso token exchange failed for {provider}: {truncated}");
         return sso_error_redirect("token_exchange_failed");
     }
     let token_json: serde_json::Value = match token_resp.json().await {

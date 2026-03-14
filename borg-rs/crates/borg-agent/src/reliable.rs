@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -69,6 +69,52 @@ impl ReliableBackend {
             }
         }
     }
+
+    async fn retry_loop<T, F, Fut>(&self, label: &str, mut op: F) -> Result<T>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T>>,
+    {
+        let mut last_err = None;
+        for attempt in 0..=self.policy.max_retries {
+            match op().await {
+                Ok(output) => return Ok(output),
+                Err(err) => {
+                    let classified = Self::classify_error(&err);
+                    if !classified.is_retryable() || attempt == self.policy.max_retries {
+                        warn!(
+                            backend = self.inner.name(),
+                            attempt,
+                            error = %classified,
+                            "{label}: non-retryable error or max retries reached"
+                        );
+                        return Err(err);
+                    }
+
+                    let backoff = if let AgentError::RateLimit {
+                        retry_after: Some(d),
+                    } = &classified
+                    {
+                        *d
+                    } else {
+                        self.compute_backoff(attempt)
+                    };
+
+                    info!(
+                        backend = self.inner.name(),
+                        attempt,
+                        error = %classified,
+                        backoff_ms = backoff.as_millis() as u64,
+                        "{label}: retrying after error"
+                    );
+
+                    tokio::time::sleep(backoff).await;
+                    last_err = Some(err);
+                },
+            }
+        }
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("max retries exceeded")))
+    }
 }
 
 #[async_trait]
@@ -79,91 +125,26 @@ impl AgentBackend for ReliableBackend {
         phase: &PhaseConfig,
         ctx: PhaseContext,
     ) -> Result<PhaseOutput> {
-        let mut last_err = None;
-        for attempt in 0..=self.policy.max_retries {
-            match self.inner.run_phase(task, phase, ctx.clone()).await {
-                Ok(output) => return Ok(output),
-                Err(err) => {
-                    let classified = Self::classify_error(&err);
-                    if !classified.is_retryable() || attempt == self.policy.max_retries {
-                        warn!(
-                            backend = self.inner.name(),
-                            task_id = task.id,
-                            phase = %phase.name,
-                            attempt,
-                            error = %classified,
-                            "non-retryable error or max retries reached"
-                        );
-                        return Err(err);
-                    }
-
-                    let backoff = if let AgentError::RateLimit {
-                        retry_after: Some(d),
-                    } = &classified
-                    {
-                        *d
-                    } else {
-                        self.compute_backoff(attempt)
-                    };
-
-                    info!(
-                        backend = self.inner.name(),
-                        task_id = task.id,
-                        phase = %phase.name,
-                        attempt,
-                        error = %classified,
-                        backoff_ms = backoff.as_millis() as u64,
-                        "retrying after error"
-                    );
-
-                    tokio::time::sleep(backoff).await;
-                    last_err = Some(err);
-                },
-            }
-        }
-        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("max retries exceeded")))
+        let task = task.clone();
+        let phase = phase.clone();
+        self.retry_loop("phase", || {
+            let ctx = ctx.clone();
+            let task = task.clone();
+            let phase = phase.clone();
+            async move { self.inner.run_phase(&task, &phase, ctx).await }
+        })
+        .await
     }
 
     async fn run_chat(&self, request: &ChatRequest, ctx: &ChatContext) -> Result<ChatResponse> {
-        let mut last_err = None;
-        for attempt in 0..=self.policy.max_retries {
-            match self.inner.run_chat(request, ctx).await {
-                Ok(response) => return Ok(response),
-                Err(err) => {
-                    let classified = Self::classify_error(&err);
-                    if !classified.is_retryable() || attempt == self.policy.max_retries {
-                        warn!(
-                            backend = self.inner.name(),
-                            attempt,
-                            error = %classified,
-                            "chat: non-retryable error or max retries reached"
-                        );
-                        return Err(err);
-                    }
-
-                    let backoff = if let AgentError::RateLimit {
-                        retry_after: Some(d),
-                    } = &classified
-                    {
-                        *d
-                    } else {
-                        self.compute_backoff(attempt)
-                    };
-
-                    info!(
-                        backend = self.inner.name(),
-                        attempt,
-                        error = %classified,
-                        backoff_ms = backoff.as_millis() as u64,
-                        "chat: retrying after error"
-                    );
-
-                    tokio::time::sleep(backoff).await;
-                    last_err = Some(err);
-                },
-            }
-        }
-        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("max retries exceeded")))
+        let request = request.clone();
+        let ctx = ctx.clone();
+        self.retry_loop("chat", || {
+            let request = request.clone();
+            let ctx = ctx.clone();
+            async move { self.inner.run_chat(&request, &ctx).await }
+        })
+        .await
     }
 
     fn capabilities(&self) -> BackendCapabilities {

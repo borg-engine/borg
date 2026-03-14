@@ -137,14 +137,36 @@ pub struct ProxyState {
     pub bedrock: BedrockClient,
     pub db: Arc<borg_core::db::Db>,
     pub audit: ProxyAuditLogger,
+    pub api_token: String,
 }
 
 impl ProxyState {
-    pub async fn new(db: Arc<borg_core::db::Db>) -> Self {
+    pub async fn new(db: Arc<borg_core::db::Db>, api_token: String) -> Self {
         let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
         let bedrock = BedrockClient::new(&config);
         let audit = ProxyAuditLogger::from_env().await;
-        Self { bedrock, db, audit }
+        Self {
+            bedrock,
+            db,
+            audit,
+            api_token,
+        }
+    }
+}
+
+fn check_proxy_auth(state: &ProxyState, headers: &HeaderMap) -> Result<(), StatusCode> {
+    if state.api_token.is_empty() {
+        return Ok(());
+    }
+    let token = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+    if token == state.api_token {
+        Ok(())
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
     }
 }
 
@@ -167,6 +189,7 @@ async fn handle_web_search(
     headers: HeaderMap,
     axum::Json(payload): axum::Json<SearchRequest>,
 ) -> Result<axum::Json<serde_json::Value>, StatusCode> {
+    check_proxy_auth(&state, &headers)?;
     let actor_id = payload
         .actor_id
         .filter(|a| !a.trim().is_empty())
@@ -228,6 +251,7 @@ async fn handle_anthropic_messages(
     req: Request,
 ) -> Result<Response, StatusCode> {
     let headers = req.headers().clone();
+    check_proxy_auth(&state, &headers)?;
     let body_bytes = axum::body::to_bytes(req.into_body(), 64 * 1024 * 1024)
         .await
         .map_err(|_| StatusCode::BAD_REQUEST)?;
