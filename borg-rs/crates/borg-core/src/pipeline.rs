@@ -2484,8 +2484,10 @@ impl Pipeline {
         // Per-uncertainty check: any uncertainty with hard-unavailable support must
         // either be routed to blocked_clarification or carry a materiality justification
         // explaining why the fact cannot change the recommendation.
+        // Collect ALL failing uncertainties so the model can fix them in one pass.
         // Skip in revision stages where clarification budget may be exhausted.
         if task.revision_count == 0 {
+            let mut failing_issues: Vec<String> = Vec::new();
             for uncertainty in &state.uncertainties {
                 let hard_missing = matches!(
                     uncertainty.support_status.trim(),
@@ -2509,21 +2511,26 @@ impl Pipeline {
                 if has_materiality_justification {
                     continue;
                 }
-                return Some(format!(
-                    "Benchmark structured-state guard failed.\n\
-                     An uncertainty has hard-unavailable support but was not routed to \
-                     blocked clarification and lacks a materiality justification.\n\
-                     Issue: {}\n\
-                     Missing fact: {}\n\
-                     Support status: {}\n\
-                     Recommended treatment: {}\n\
-                     Either use the clarification channel to resolve this fact, or explain \
-                     in the justification field why an adverse answer would not change your \
-                     sign/close recommendation.",
+                failing_issues.push(format!(
+                    "  - Issue: {} | Missing fact: {} | Support: {} | Treatment: {}",
                     uncertainty.issue.trim(),
                     uncertainty.missing_fact.trim(),
                     uncertainty.support_status.trim(),
                     uncertainty.recommended_treatment.trim()
+                ));
+            }
+            if !failing_issues.is_empty() {
+                return Some(format!(
+                    "Benchmark structured-state guard failed.\n\
+                     {} uncertainties have hard-unavailable support but were not routed to \
+                     blocked clarification and lack materiality justifications.\n\
+                     Failing uncertainties:\n{}\n\
+                     For EACH of these: either use the clarification channel to resolve \
+                     the fact (one question at a time via signal.json), or explain in the \
+                     justification field why an adverse answer would not change your \
+                     sign/close recommendation. You must address ALL of them, not just one.",
+                    failing_issues.len(),
+                    failing_issues.join("\n")
                 ));
             }
         }

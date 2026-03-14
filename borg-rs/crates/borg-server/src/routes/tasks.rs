@@ -268,7 +268,7 @@ pub(crate) async fn create_task(
         branch: String::new(),
         status: "backlog".into(),
         attempt: 0,
-        max_attempts: 5,
+        max_attempts: 10,
         last_error: String::new(),
         created_by: user.username.clone(),
         notify_chat: body.notify_chat.unwrap_or_default(),
