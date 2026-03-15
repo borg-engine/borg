@@ -160,10 +160,8 @@ impl Sandbox {
         args
     }
 
-    /// Return a `Command` that runs `command` inside a bwrap sandbox.
-    ///
-    /// Env vars set on the returned `Command` are inherited by the sandboxed
-    /// process (bwrap passes them through by default).
+    /// Return a `Command` that runs `command` inside a bwrap sandbox,
+    /// wrapped with `prlimit` to enforce memory and process limits.
     pub fn bwrap_command(
         writable_dirs: &[&str],
         hide_dirs: &[&str],
@@ -171,15 +169,20 @@ impl Sandbox {
         working_dir: &str,
         command: &[String],
     ) -> Command {
-        let args = Self::bwrap_args(
+        let bwrap_args = Self::bwrap_args(
             writable_dirs,
             hide_dirs,
             ro_restore_dirs,
             working_dir,
             command,
         );
-        let mut cmd = Command::new("bwrap");
-        cmd.args(args);
+
+        // Wrap bwrap with prlimit to enforce resource limits:
+        // --as=8589934592  = 8GB virtual memory
+        // --nproc=256      = max 256 processes (prevents fork bombs)
+        let mut cmd = Command::new("prlimit");
+        cmd.args(["--as=8589934592", "--nproc=256", "bwrap"]);
+        cmd.args(bwrap_args);
         cmd
     }
 

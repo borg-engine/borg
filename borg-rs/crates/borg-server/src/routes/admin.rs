@@ -1799,8 +1799,13 @@ pub(crate) async fn sse_logs(
 
 pub(crate) async fn sse_task_stream(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Path(id): Path<i64>,
-) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
+) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>>, StatusCode> {
+    if !user.is_admin {
+        super::require_task_access(state.as_ref(), &workspace, id)?;
+    }
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     tokio::spawn(async move {
         let (history, live_rx) = state.stream_manager.subscribe(&id).await;
@@ -1849,11 +1854,11 @@ pub(crate) async fn sse_task_stream(
     });
     let stream = UnboundedReceiverStream::new(rx)
         .map(|data| Ok::<_, std::convert::Infallible>(Event::default().data(data)));
-    Sse::new(stream).keep_alive(
+    Ok(Sse::new(stream).keep_alive(
         KeepAlive::new()
             .interval(std::time::Duration::from_secs(15))
             .text("ping"),
-    )
+    ))
 }
 
 pub(crate) async fn post_release(State(state): State<Arc<AppState>>) -> Json<Value> {

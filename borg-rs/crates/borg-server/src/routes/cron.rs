@@ -34,15 +34,23 @@ pub(crate) struct UpdateCronJobBody {
 
 pub(crate) async fn list_cron_jobs(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
 ) -> Result<Json<Value>, StatusCode> {
+    if !user.is_admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let jobs = state.db.list_cron_jobs().map_err(internal)?;
     Ok(Json(json!(jobs)))
 }
 
 pub(crate) async fn create_cron_job(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
     Json(body): Json<CreateCronJobBody>,
 ) -> Result<(StatusCode, Json<Value>), StatusCode> {
+    if !user.is_admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
     if compute_next_run(&body.schedule, Utc::now()).is_none() {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -61,9 +69,13 @@ pub(crate) async fn create_cron_job(
 
 pub(crate) async fn update_cron_job(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
     Path(id): Path<i64>,
     Json(body): Json<UpdateCronJobBody>,
 ) -> Result<StatusCode, StatusCode> {
+    if !user.is_admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
     if let Some(ref schedule) = body.schedule {
         if compute_next_run(schedule, Utc::now()).is_none() {
             return Err(StatusCode::BAD_REQUEST);
@@ -91,8 +103,12 @@ pub(crate) async fn update_cron_job(
 
 pub(crate) async fn delete_cron_job(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, StatusCode> {
+    if !user.is_admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let deleted = state.db.delete_cron_job(id).map_err(internal)?;
     if deleted {
         Ok(StatusCode::OK)
@@ -103,8 +119,12 @@ pub(crate) async fn delete_cron_job(
 
 pub(crate) async fn trigger_cron_job(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, StatusCode> {
+    if !user.is_admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let job = state
         .db
         .get_cron_job(id)
@@ -134,8 +154,12 @@ pub(crate) async fn trigger_cron_job(
 
 pub(crate) async fn list_cron_runs(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, StatusCode> {
+    if !user.is_admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
     state
         .db
         .get_cron_job(id)

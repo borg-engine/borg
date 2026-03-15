@@ -1120,7 +1120,7 @@ impl Config {
             container: ContainerConfig {
                 image: get_str("CONTAINER_IMAGE", &dotenv, "borg-agent"),
                 setup: get_str("CONTAINER_SETUP", &dotenv, ""),
-                memory_mb: get_u64("CONTAINER_MEMORY_MB", &dotenv, 2048),
+                memory_mb: get_u64("CONTAINER_MEMORY_MB", &dotenv, 8192),
                 cpus: get("CONTAINER_CPUS", &dotenv)
                     .and_then(|s| s.parse::<f64>().ok())
                     .unwrap_or(2.0),

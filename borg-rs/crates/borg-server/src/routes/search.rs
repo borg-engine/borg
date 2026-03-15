@@ -176,8 +176,13 @@ pub(crate) async fn borgsearch_reindex(
 
 pub(crate) async fn borgsearch_facets(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Query(query): Query<FacetsQuery>,
 ) -> Result<Json<Value>, StatusCode> {
+    if !user.is_admin {
+        super::require_project_access(state.as_ref(), &workspace, query.project_id)?;
+    }
     let search = state
         .search
         .as_ref()
@@ -199,8 +204,14 @@ pub(crate) async fn borgsearch_facets(
 pub(crate) async fn agent_search(
     State(state): State<Arc<AppState>>,
     axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Query(query): Query<AgentSearchQuery>,
 ) -> Result<String, StatusCode> {
+    if !user.is_admin {
+        if let Some(pid) = query.project_id {
+            super::require_project_access(state.as_ref(), &workspace, pid)?;
+        }
+    }
     if query.q.trim().is_empty() {
         return Ok("No query provided.".to_string());
     }
@@ -390,9 +401,14 @@ pub(crate) async fn agent_search(
 
 pub(crate) async fn agent_get_file(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Path(file_id): Path<i64>,
     Query(query): Query<AgentFileQuery>,
 ) -> Result<String, StatusCode> {
+    if !user.is_admin {
+        super::require_project_access(state.as_ref(), &workspace, query.project_id)?;
+    }
     let file = state
         .db
         .get_project_file(query.project_id, file_id)
@@ -423,8 +439,13 @@ pub(crate) async fn agent_get_file(
 
 pub(crate) async fn agent_list_files(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Query(query): Query<AgentFilesQuery>,
 ) -> Result<String, StatusCode> {
+    if !user.is_admin {
+        super::require_project_access(state.as_ref(), &workspace, query.project_id)?;
+    }
     let (files, total) = state
         .db
         .list_project_file_page(
@@ -466,8 +487,13 @@ pub(crate) async fn agent_list_files(
 
 pub(crate) async fn agent_coverage(
     State(state): State<Arc<AppState>>,
+    axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Query(query): Query<CoverageQuery>,
 ) -> Result<String, StatusCode> {
+    if !user.is_admin {
+        super::require_project_access(state.as_ref(), &workspace, query.project_id)?;
+    }
     let (all_files, total) = state
         .db
         .list_project_file_page(query.project_id, None, 10000, 0, None, Some(true), None)
