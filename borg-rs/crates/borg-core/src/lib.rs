@@ -4,6 +4,7 @@ pub mod config;
 pub mod cron;
 pub mod db;
 pub mod email;
+pub mod forge;
 pub mod git;
 pub mod ipc;
 pub mod knowledge;
