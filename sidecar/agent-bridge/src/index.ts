@@ -196,6 +196,7 @@ async function handleQuery(req: QueryRequest): Promise<void> {
           : "default",
         allowDangerouslySkipPermissions: options.permissionMode === "bypassPermissions",
         resume: options.resume,
+        effort: options.effort,
         includePartialMessages: true,
         hooks,
       },

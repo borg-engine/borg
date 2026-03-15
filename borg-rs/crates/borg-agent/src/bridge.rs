@@ -61,6 +61,8 @@ struct QueryOptions {
     permission_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     resume: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effort: Option<String>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     env: HashMap<String, String>,
 }
@@ -328,6 +330,7 @@ pub struct AgentSdkBackend {
     pub provider: ProviderConfig,
     pub timeout_s: u64,
     pub base_url: String,
+    pub reasoning_effort: String,
 }
 
 impl AgentSdkBackend {
@@ -336,6 +339,7 @@ impl AgentSdkBackend {
             provider,
             timeout_s: 0,
             base_url: String::new(),
+            reasoning_effort: String::new(),
         }
     }
 
@@ -346,6 +350,11 @@ impl AgentSdkBackend {
 
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into();
+        self
+    }
+
+    pub fn with_reasoning_effort(mut self, effort: impl Into<String>) -> Self {
+        self.reasoning_effort = effort.into();
         self
     }
 
@@ -493,6 +502,11 @@ impl AgentBackend for AgentSdkBackend {
                 max_budget_usd: None,
                 permission_mode: Some("bypassPermissions".into()),
                 resume,
+                effort: if self.reasoning_effort.is_empty() {
+                    None
+                } else {
+                    Some(self.reasoning_effort.clone())
+                },
                 env,
             },
         };
@@ -597,6 +611,11 @@ impl AgentBackend for AgentSdkBackend {
                 max_budget_usd: request.max_budget_usd,
                 permission_mode: None,
                 resume: ctx.session_id.clone(),
+                effort: if self.reasoning_effort.is_empty() {
+                    None
+                } else {
+                    Some(self.reasoning_effort.clone())
+                },
                 env,
             },
         };

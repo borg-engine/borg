@@ -20,6 +20,7 @@ export interface QueryRequest {
     maxBudgetUsd?: number;
     permissionMode?: "default" | "bypassPermissions";
     resume?: string;
+    effort?: "low" | "medium" | "high" | "max";
     env?: Record<string, string>;
   };
 }

@@ -1181,7 +1181,13 @@ fn build_registry(
         let provider = borg_core::traits::ProviderConfig::from_env();
         let sdk_backend = borg_agent::AgentSdkBackend::new(provider)
             .with_timeout(config.agent_timeout_s as u64)
-            .with_base_url(format!("http://127.0.0.1:{}", config.web.proxy_port));
+            .with_base_url(format!("http://127.0.0.1:{}", config.web.proxy_port))
+            .with_reasoning_effort(
+                std::env::var("CLAUDE_REASONING_EFFORT")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_default(),
+            );
         backends.insert("agent-sdk".into(), Arc::new(sdk_backend));
         info!("agent-sdk backend registered");
     }
