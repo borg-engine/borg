@@ -1,5 +1,6 @@
-// React hooks will be extracted here from apps/web as they're decoupled.
-// For now, re-export types for convenience.
+export { queryKeys } from "./query-keys";
+export { endpoints } from "./endpoints";
+
 export type {
   Task,
   TaskDetail,

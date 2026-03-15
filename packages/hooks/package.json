@@ -7,6 +7,14 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./query-keys": {
+      "types": "./src/query-keys.ts",
+      "default": "./src/query-keys.ts"
+    },
+    "./endpoints": {
+      "types": "./src/endpoints.ts",
+      "default": "./src/endpoints.ts"
     }
   },
   "main": "./src/index.ts",
