@@ -7,18 +7,25 @@ Borg is an autonomous AI agent orchestrator written in Rust. It connects to Tele
 ## Project Structure
 
 ```
-borg-rs/                # Rust implementation (active codebase)
+apps/
+  web/                    # React + Vite + Tailwind web dashboard
+  desktop/                # Tauri 2 desktop app (wraps web frontend)
+packages/
+  api/                    # @borg/api — shared types + framework-agnostic API client
+  hooks/                  # @borg/hooks — shared React hooks (WIP)
+borg-rs/                  # Rust implementation (active codebase)
   crates/
-    borg-core/          # Pipeline, DB, config, agent traits, modes
-    borg-agent/         # Claude + Ollama agent backends
-    borg-server/        # Axum HTTP server, routes, logging
-    borg-domains/       # Domain-specific pipeline modes (swe, legal, web, crew, sales, data, chef)
+    borg-core/            # Pipeline, DB, config, agent traits, modes
+    borg-agent/           # Claude + Ollama agent backends
+    borg-server/          # Axum HTTP server, routes, logging
+    borg-domains/         # Domain-specific pipeline modes (swe, legal, web, crew, sales, data, chef)
 container/
-  Dockerfile            # Pipeline agent image (bun + claude CLI)
-  entrypoint.sh         # Agent entrypoint: parses JSON input, runs claude
-dashboard/              # React + Vite + Tailwind web dashboard
-sidecar/                # Unified Discord+WhatsApp bridge (bun, discord.js + Baileys)
+  Dockerfile              # Pipeline agent image (bun + claude CLI)
+  entrypoint.sh           # Agent entrypoint: parses JSON input, runs claude
+sidecar/                  # Unified Discord+WhatsApp bridge (bun, discord.js + Baileys)
 ```
+
+Monorepo managed by bun workspaces (root `package.json` defines `packages/*` and `apps/*`).
 
 ## Build & Test
 
@@ -26,7 +33,8 @@ sidecar/                # Unified Discord+WhatsApp bridge (bun, discord.js + Bai
 just t                 # Run all unit tests
 just b                 # Build release binary
 just deploy            # Build and restart service
-just dash              # Build dashboard
+just dash              # Build web dashboard
+just desktop           # Build Tauri desktop app
 just setup             # Full setup (image + sidecar + dashboard + build)
 ```
 
@@ -34,7 +42,7 @@ Prefer `just` commands over ad hoc shell invocations when a matching recipe exis
 
 ## Dashboard Context
 
-The dashboard can run in multiple domain modes. Check the active mode before making UI assumptions.
+The dashboard lives in `apps/web/` and can run in multiple domain modes. Check the active mode before making UI assumptions.
 
 Key mode boundaries in the dashboard:
 - `projects-panel.tsx`: Legal renders ChatBody + DocumentViewWrapper (lines ~897-956); SWE renders file manager + cloud storage (lines ~957-1440)
