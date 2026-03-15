@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod backup_export;
 pub mod chat;
 pub mod config;
 pub mod cron;

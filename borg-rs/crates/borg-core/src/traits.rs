@@ -438,6 +438,25 @@ impl std::fmt::Display for AgentError {
     }
 }
 
+// ── Backup Export ─────────────────────────────────────────────────────
+
+/// Result of a backup export operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupExportResult {
+    pub provider: String,
+    pub location: String,
+    pub size_bytes: u64,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+/// Provider for exporting backup archives to external storage.
+#[async_trait]
+pub trait BackupExportProvider: Send + Sync {
+    async fn export(&self, data: bytes::Bytes, filename: &str) -> Result<BackupExportResult>;
+    fn name(&self) -> &str;
+    fn is_available(&self) -> bool;
+}
+
 /// Retry policy configuration.
 #[derive(Debug, Clone)]
 pub struct RetryPolicy {

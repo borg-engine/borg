@@ -377,7 +377,7 @@ impl AgentBackend for AgentSdkBackend {
         } else {
             None
         };
-        let mut instruction =
+        let instruction =
             crate::instruction::build_instruction(task, phase, &ctx, file_listing.as_deref());
 
         // MCP tools are available natively (not deferred) — no ToolSearch needed.

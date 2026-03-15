@@ -144,6 +144,8 @@ pub struct AppState {
     pub document_parser: Arc<DocumentParserRouter>,
     pub ocr: Arc<borg_core::ocr::OcrRouter>,
     pub scraper: Arc<borg_core::scraper::ScrapeRouter>,
+    pub backup_export_providers:
+        Arc<std::sync::Mutex<Vec<Arc<dyn borg_core::traits::BackupExportProvider>>>>,
 }
 
 impl AppState {
@@ -1210,7 +1212,12 @@ fn build_registry(
     Ok(Arc::new(registry))
 }
 
-fn spawn_post_state_tasks(state: &Arc<AppState>, config: &Arc<Config>, db: &Arc<Db>) {
+fn spawn_post_state_tasks(
+    state: &Arc<AppState>,
+    config: &Arc<Config>,
+    db: &Arc<Db>,
+    cron_cancel: tokio_util::sync::CancellationToken,
+) {
     routes::spawn_linked_credential_maintenance(Arc::clone(state));
 
     // Update agent CLI tools in background (runs if >24h since last update)
@@ -1235,6 +1242,26 @@ fn spawn_post_state_tasks(state: &Arc<AppState>, config: &Arc<Config>, db: &Arc<
         Arc::clone(config),
         Arc::clone(&state.file_storage),
     );
+
+    // Cron scheduler with backup export handler
+    {
+        let db = Arc::clone(db);
+        let state_for_cron = Arc::clone(state);
+        let cancel = cron_cancel;
+        tokio::spawn(async move {
+            let handler: borg_core::cron::BackupExportHandler = Arc::new(move |job| {
+                let st = Arc::clone(&state_for_cron);
+                Box::pin(async move {
+                    routes::execute_backup_export_cron(&st, &job).await
+                })
+            });
+            let scheduler =
+                borg_core::cron::CronScheduler::new(db, std::time::Duration::from_secs(60))
+                    .with_backup_export_handler(handler);
+            scheduler.run(cancel).await;
+        });
+        info!("cron scheduler started");
+    }
 
     if !config.email.imap_host.is_empty() {
         let imap_cfg = borg_core::email::ImapConfig {
@@ -1481,6 +1508,14 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
             get(routes::summarize_project_themes),
         )
         .route("/api/projects/:id/audit", get(routes::list_project_audit))
+        .route(
+            "/api/projects/:id/backup",
+            post(routes::create_project_backup),
+        )
+        .route(
+            "/api/projects/:id/backup/status",
+            get(routes::get_project_backup_status),
+        )
         .route(
             "/api/projects/:id/documents",
             get(routes::list_project_documents),
@@ -1836,18 +1871,8 @@ async fn main() -> anyhow::Result<()> {
     // If tick panics repeatedly, exit and let systemd restart with a clean process.
     spawn_pipeline_ticker(Arc::clone(&pipeline), config.pipeline.tick_s);
 
-    // Cron scheduler
+    // Cron scheduler — started in spawn_post_state_tasks so it has access to AppState
     let cron_cancel = tokio_util::sync::CancellationToken::new();
-    {
-        let db = Arc::clone(&db);
-        let cancel = cron_cancel.clone();
-        tokio::spawn(async move {
-            let scheduler =
-                borg_core::cron::CronScheduler::new(db, std::time::Duration::from_secs(60));
-            scheduler.run(cancel).await;
-        });
-        info!("cron scheduler started");
-    }
 
     if !config.telegram_token.is_empty() {
         spawn_telegram_poller(
@@ -1967,6 +1992,24 @@ async fn main() -> anyhow::Result<()> {
         }),
     );
 
+    let mut backup_export_providers: Vec<Arc<dyn borg_core::traits::BackupExportProvider>> = vec![
+        Arc::new(borg_core::backup_export::LocalExportProvider::new(
+            &config.data_dir,
+        )),
+    ];
+    match borg_core::backup_export::S3ExportProvider::from_backup_config(&config.backup).await {
+        Ok(Some(s3)) => {
+            info!("s3 backup export provider available");
+            backup_export_providers.push(Arc::new(s3));
+        },
+        Ok(None) => {
+            info!("s3 backup export provider not configured");
+        },
+        Err(e) => {
+            warn!("s3 backup export provider init failed: {e}");
+        },
+    }
+
     let state = Arc::new(AppState {
         db: Arc::clone(&db),
         config: Arc::clone(&config),
@@ -2019,9 +2062,10 @@ async fn main() -> anyhow::Result<()> {
                 borg_core::scraper::ScrapeRouter::new()
             }),
         ),
+        backup_export_providers: Arc::new(std::sync::Mutex::new(backup_export_providers)),
     });
 
-    spawn_post_state_tasks(&state, &config, &db);
+    spawn_post_state_tasks(&state, &config, &db, cron_cancel.clone());
 
     let dashboard_dir = config.web.dashboard_dist_dir.clone();
     let app = build_app_router(Arc::clone(&state), &dashboard_dir);

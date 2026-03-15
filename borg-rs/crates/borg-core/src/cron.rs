@@ -27,6 +27,7 @@ pub struct CronJob {
 pub enum CronJobType {
     AgentTask,
     Shell,
+    BackupExport,
 }
 
 impl CronJobType {
@@ -34,12 +35,14 @@ impl CronJobType {
         match self {
             Self::AgentTask => "agent_task",
             Self::Shell => "shell",
+            Self::BackupExport => "backup_export",
         }
     }
 
     pub fn from_str_lossy(s: &str) -> Self {
         match s {
             "shell" => Self::Shell,
+            "backup_export" => Self::BackupExport,
             _ => Self::AgentTask,
         }
     }
@@ -196,14 +199,28 @@ fn shift_dow_field(field: &str) -> String {
 
 // ── Scheduler ────────────────────────────────────────────────────────────
 
+/// Async callback for executing BackupExport cron jobs at the server layer.
+pub type BackupExportHandler =
+    Arc<dyn Fn(CronJob) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String>> + Send>> + Send + Sync>;
+
 pub struct CronScheduler {
     db: Arc<Db>,
     poll_interval: Duration,
+    backup_export_handler: Option<BackupExportHandler>,
 }
 
 impl CronScheduler {
     pub fn new(db: Arc<Db>, poll_interval: Duration) -> Self {
-        Self { db, poll_interval }
+        Self {
+            db,
+            poll_interval,
+            backup_export_handler: None,
+        }
+    }
+
+    pub fn with_backup_export_handler(mut self, handler: BackupExportHandler) -> Self {
+        self.backup_export_handler = Some(handler);
+        self
     }
 
     pub async fn run(&self, cancel: CancellationToken) {
@@ -230,13 +247,42 @@ impl CronScheduler {
         let jobs = self.db.list_due_cron_jobs()?;
         for job in jobs {
             tracing::info!(job_id = job.id, name = %job.name, "cron: executing due job");
-            let db = Arc::clone(&self.db);
-            let job_clone = job.clone();
-            tokio::spawn(async move {
-                if let Err(e) = execute_job(&db, &job_clone).await {
-                    tracing::error!(job_id = job_clone.id, err = %e, "cron: job execution failed");
+
+            if job.job_type == CronJobType::BackupExport {
+                if let Some(handler) = &self.backup_export_handler {
+                    let db = Arc::clone(&self.db);
+                    let handler = Arc::clone(handler);
+                    let job_clone = job.clone();
+                    tokio::spawn(async move {
+                        let run_id = match db.insert_cron_run(job_clone.id) {
+                            Ok(id) => id,
+                            Err(e) => {
+                                tracing::error!(job_id = job_clone.id, err = %e, "cron: failed to insert run");
+                                return;
+                            },
+                        };
+                        match handler(job_clone.clone()).await {
+                            Ok(output) => {
+                                let _ = db.update_cron_run(run_id, "success", Some(&output), None, None);
+                            },
+                            Err(e) => {
+                                tracing::error!(job_id = job_clone.id, err = %e, "cron: backup_export failed");
+                                let _ = db.update_cron_run(run_id, "error", None, Some(&e.to_string()), None);
+                            },
+                        }
+                    });
+                } else {
+                    tracing::warn!(job_id = job.id, "cron: no backup_export handler registered, skipping");
                 }
-            });
+            } else {
+                let db = Arc::clone(&self.db);
+                let job_clone = job.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = execute_job(&db, &job_clone).await {
+                        tracing::error!(job_id = job_clone.id, err = %e, "cron: job execution failed");
+                    }
+                });
+            }
 
             let now = Utc::now();
             let next = compute_next_run(&job.schedule, now);
@@ -278,6 +324,19 @@ pub async fn execute_job(db: &Db, job: &CronJob) -> Result<()> {
                 db.update_cron_run(run_id, "error", None, Some(&e.to_string()), None)?;
                 return Err(e);
             },
+        },
+        CronJobType::BackupExport => {
+            // BackupExport jobs are executed by the server layer which has access
+            // to storage and export providers. Log a placeholder here; the server
+            // cron executor intercepts this type before reaching this function.
+            db.update_cron_run(
+                run_id,
+                "error",
+                None,
+                Some("backup_export jobs must be executed by the server layer"),
+                None,
+            )?;
+            anyhow::bail!("backup_export jobs must be executed by the server layer");
         },
     }
     Ok(())

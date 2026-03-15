@@ -4,6 +4,9 @@ use borg_core::{db::ProjectRow, types::Task};
 pub(crate) mod admin;
 pub(crate) use admin::*;
 
+pub(crate) mod backup_export;
+pub(crate) use backup_export::*;
+
 pub(crate) mod chat;
 pub(crate) use chat::*;
 
