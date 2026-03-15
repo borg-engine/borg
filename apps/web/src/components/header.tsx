@@ -69,7 +69,16 @@ export function Header({
 
   if (mobile) {
     return (
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[#2a2520] bg-[#0f0e0c] px-4">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[#2a2520] bg-[#0f0e0c] px-2">
+        {onMenuToggle && (
+          <button
+            onClick={onMenuToggle}
+            className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors"
+            aria-label="Toggle sidebar"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
         <div className="flex items-center gap-2.5">
           <div className={`borg-logo h-6 w-6 ${domain.accentBg}`}>
             <BorgLogo size="mobile" />

@@ -360,13 +360,14 @@ html:not(.dark) .animate-shimmer-text {
   position: relative;
   isolation: isolate;
   font-family: "Chakra Petch", sans-serif;
+  aspect-ratio: 1;
 }
 
 .borg-logo .borg-logo-text,
 .borg-logo .borg-logo-ghost {
   gap: 0;
   margin: 0;
-  padding: 16.67%;
+  padding: 2px;
 }
 
 .borg-logo span {

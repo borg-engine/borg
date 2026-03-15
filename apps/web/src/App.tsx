@@ -539,7 +539,62 @@ function AppInner() {
   if (isMobile) {
     return (
       <div className="flex flex-col bg-[#0f0e0c] text-foreground antialiased text-[16px]" style={{ height: "100dvh" }}>
-        <Header connected={connected} mobile />
+        {/* Mobile sidebar overlay */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/50"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+        {/* Mobile sidebar drawer */}
+        <nav
+          className={cn(
+            "fixed inset-y-0 left-0 z-40 flex w-[240px] flex-col border-r pb-4 overflow-hidden transition-transform duration-200 ease-out",
+            sidebarOpen ? "translate-x-0" : "-translate-x-full",
+            sidebarAlert
+              ? "border-red-500/30 bg-red-950/95"
+              : "border-[#2a2520] bg-[#151412]",
+          )}
+        >
+          <div className="flex h-14 items-center justify-between px-4 shrink-0">
+            <div className={cn("borg-logo h-8 w-8", domain.accentBg)}>
+              <BorgLogo expanded />
+            </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors"
+              aria-label="Close sidebar"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex flex-1 flex-col items-start gap-0.5 w-full px-3 overflow-y-auto">
+            {navItems.map(({ key, label: defaultLabel, Icon }) => {
+              const label = navLabelOverrides[key] ?? defaultLabel;
+              return (
+                <button
+                  key={key}
+                  onClick={() => { setView(key); setSidebarOpen(false); setMobileTab(key === "tasks" ? "tasks" : key === "projects" ? "projects" : key === "queue" ? "queue" : "tasks"); }}
+                  aria-label={label}
+                  className={cn(
+                    "relative flex h-11 min-h-[44px] w-full items-center gap-3 rounded-xl px-3",
+                    view === key
+                      ? sidebarAlert
+                        ? "bg-red-400/20 text-red-50"
+                        : "bg-amber-500/[0.08] text-[#e8e0d4]"
+                      : sidebarAlert
+                        ? "text-red-200/80 hover:bg-red-400/15 hover:text-red-50"
+                        : "text-[#6b6459] hover:bg-amber-500/[0.05] hover:text-[#9c9486]",
+                  )}
+                >
+                  <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={view === key ? 2 : 1.5} />
+                  <span className="text-[14px] font-medium">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+        <Header connected={connected} mobile onMenuToggle={() => setSidebarOpen((v) => !v)} />
 
         <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
           {mobileTab === "tasks" && (
@@ -635,17 +690,19 @@ function AppInner() {
               : "border-[#2a2520] bg-gradient-to-b from-[#1c1a17] to-[#151412]",
           )}
         >
-          <div className={cn("borg-logo mb-2 w-full shrink-0 h-14", domain.accentBg)}>
-            <BorgLogo expanded />
-            <div
-              className="borg-logo-ghost grid grid-cols-2 grid-rows-2 group-hover/nav:grid-cols-4 group-hover/nav:grid-rows-1"
-              aria-hidden
-            >
-              {PRODUCT_WORD.split("").map((c, i) => (
-                <span key={i} className="flex items-center justify-center text-[22px]">
-                  {c}
-                </span>
-              ))}
+          <div className="flex mb-2 w-full shrink-0 items-center justify-center py-1.5">
+            <div className={cn("borg-logo h-11 w-11", domain.accentBg)}>
+              <BorgLogo expanded />
+              <div
+                className="borg-logo-ghost grid grid-cols-2 grid-rows-2 group-hover/nav:grid-cols-4 group-hover/nav:grid-rows-1"
+                aria-hidden
+              >
+                {PRODUCT_WORD.split("").map((c, i) => (
+                  <span key={i} className="flex items-center justify-center text-[22px]">
+                    {c}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
 
