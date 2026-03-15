@@ -1,4 +1,20 @@
-import { ChevronDown, Folder, X } from "lucide-react";
+import {
+  ChevronDown,
+  CloudOff,
+  File,
+  FileCode,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  FileVideo,
+  Folder,
+  FolderOpen,
+  Info,
+  Loader2,
+  RefreshCcw,
+  Search,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CloudBrowseItem, CloudConnection, Settings } from "@/lib/api";
 import {
@@ -7,8 +23,7 @@ import {
   importProjectCloudFiles,
   useProjectCloudConnections,
 } from "@/lib/api";
-import { cn } from "@/lib/utils";
-import { formatFileSize } from "./file-list-shared";
+import { cn, formatFileSize } from "@/lib/utils";
 
 const CLOUD_PROVIDERS = [
   { id: "dropbox", label: "Dropbox", clientIdKey: "dropbox_client_id", clientSecretKey: "dropbox_client_secret" },
@@ -59,10 +74,36 @@ function OneDriveIcon() {
   );
 }
 
+function ICloudIcon() {
+  return <CloudOff className="h-4 w-4 text-[#6b6459]" />;
+}
+
 function CloudProviderIcon({ provider }: { provider: string }) {
   if (provider === "dropbox") return <DropboxIcon />;
   if (provider === "google_drive") return <GoogleDriveIcon />;
   return <OneDriveIcon />;
+}
+
+const EXT_SPREADSHEET = new Set(["xls", "xlsx", "csv", "tsv", "ods", "numbers"]);
+const EXT_IMAGE = new Set(["jpg", "jpeg", "png", "gif", "svg", "webp", "bmp", "ico", "tiff", "heic"]);
+const EXT_VIDEO = new Set(["mp4", "mov", "avi", "mkv", "webm", "wmv", "flv", "m4v"]);
+const EXT_CODE = new Set(["js", "ts", "jsx", "tsx", "py", "rs", "go", "java", "c", "cpp", "h", "rb", "sh", "json", "yaml", "yml", "toml", "xml", "html", "css", "scss"]);
+const EXT_DOC = new Set(["pdf", "doc", "docx", "rtf", "odt", "pages", "txt", "md"]);
+
+function FileTypeIcon({ name }: { name: string }) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (EXT_SPREADSHEET.has(ext)) return <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400/70" />;
+  if (EXT_IMAGE.has(ext)) return <FileImage className="h-3.5 w-3.5 text-purple-400/70" />;
+  if (EXT_VIDEO.has(ext)) return <FileVideo className="h-3.5 w-3.5 text-pink-400/70" />;
+  if (EXT_CODE.has(ext)) return <FileCode className="h-3.5 w-3.5 text-cyan-400/70" />;
+  if (EXT_DOC.has(ext)) return <FileText className="h-3.5 w-3.5 text-amber-400/70" />;
+  return <File className="h-3.5 w-3.5 text-zinc-500" />;
+}
+
+interface ImportProgress {
+  total: number;
+  completed: number;
+  failed: string[];
 }
 
 interface CloudStoragePanelProps {
@@ -89,6 +130,9 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
   const [cloudSelected, setCloudSelected] = useState<Record<string, CloudBrowseItem>>({});
   const [cloudImporting, setCloudImporting] = useState(false);
   const [cloudBreadcrumbs, setCloudBreadcrumbs] = useState<Array<{ id?: string; name: string }>>([{ name: "Root" }]);
+  const [filterText, setFilterText] = useState("");
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const [tokenExpired, setTokenExpired] = useState(false);
 
   const publicUrl = settings?.public_url?.trim() || "";
   const publicUrlValid = useMemo(() => {
@@ -103,6 +147,29 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
 
   const maxCloudImportSelection = Math.max(1, settings?.cloud_import_max_batch_files ?? MAX_CLOUD_IMPORT_SELECTION);
   const currentCloudFolderId = cloudBreadcrumbs[cloudBreadcrumbs.length - 1]?.id;
+
+  const filteredItems = useMemo(() => {
+    if (!filterText.trim()) return cloudItems;
+    const lower = filterText.toLowerCase();
+    return cloudItems.filter((item) => item.name.toLowerCase().includes(lower));
+  }, [cloudItems, filterText]);
+
+  const selectableFiles = useMemo(
+    () => filteredItems.filter((item) => item.type === "file"),
+    [filteredItems],
+  );
+
+  const selectedFiles = useMemo(
+    () => Object.values(cloudSelected).filter((i) => i.type === "file"),
+    [cloudSelected],
+  );
+
+  const selectedTotalSize = useMemo(
+    () => selectedFiles.reduce((sum, f) => sum + (f.size || 0), 0),
+    [selectedFiles],
+  );
+
+  const allFilesSelected = selectableFiles.length > 0 && selectableFiles.every((f) => cloudSelected[f.id]);
 
   // OAuth callback URL hash parsing
   useEffect(() => {
@@ -152,6 +219,7 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
       setCloudItems([]);
       setCloudSelected({});
       setCloudBreadcrumbs([{ name: "Root" }]);
+      setFilterText("");
     }
   }, [projectId]);
 
@@ -162,6 +230,11 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
     return id.trim().length > 0 && secret.trim().length > 0;
   }
 
+  function isTokenExpiredError(msg: string): boolean {
+    const lower = msg.toLowerCase();
+    return lower.includes("401") || lower.includes("expired") || lower.includes("unauthorized") || lower.includes("invalid_grant");
+  }
+
   async function loadCloudFolder(
     connection: CloudConnection,
     folderId?: string,
@@ -170,6 +243,7 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
     if (!projectId) return;
     setCloudLoading(true);
     setCloudLoadError(null);
+    setTokenExpired(false);
     try {
       const data = await browseProjectCloudFiles(projectId, connection.id, {
         folder_id: folderId,
@@ -181,7 +255,12 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
       setCloudHasMore(Boolean(data.has_more || data.next_page_token));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to browse cloud files";
-      setCloudLoadError(msg);
+      if (isTokenExpiredError(msg)) {
+        setTokenExpired(true);
+        setCloudLoadError("Session expired. Please reconnect your account.");
+      } else {
+        setCloudLoadError(msg);
+      }
     } finally {
       setCloudLoading(false);
     }
@@ -196,6 +275,10 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
     window.location.href = `/api/cloud/${provider}/auth?project_id=${projectId}`;
   }
 
+  function reconnectProvider(connection: CloudConnection) {
+    connectCloudProvider(connection.provider as (typeof CLOUD_PROVIDERS)[number]["id"]);
+  }
+
   async function openCloudBrowser(connection: CloudConnection) {
     setCloudModalConn(connection);
     setCloudModalOpen(true);
@@ -203,6 +286,9 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
     setCloudBreadcrumbs([{ name: "Root" }]);
     setCloudCursor(null);
     setCloudHasMore(false);
+    setFilterText("");
+    setImportProgress(null);
+    setTokenExpired(false);
     await loadCloudFolder(connection);
   }
 
@@ -224,11 +310,25 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
     }
   }
 
+  function toggleSelectAll() {
+    if (allFilesSelected) {
+      setCloudSelected((prev) => {
+        const next = { ...prev };
+        for (const f of selectableFiles) delete next[f.id];
+        return next;
+      });
+    } else {
+      setCloudSelected((prev) => {
+        const next = { ...prev };
+        for (const f of selectableFiles) next[f.id] = f;
+        return next;
+      });
+    }
+  }
+
   async function importSelectedCloudFiles() {
     if (!projectId || !cloudModalConn || cloudImporting) return;
-    const filesToImport = Object.values(cloudSelected)
-      .filter((item) => item.type === "file")
-      .map((item) => ({ id: item.id, name: item.name, size: item.size }));
+    const filesToImport = selectedFiles.map((item) => ({ id: item.id, name: item.name, size: item.size }));
     if (filesToImport.length === 0) return;
     if (filesToImport.length > maxCloudImportSelection) {
       setCloudLoadError(`Please select at most ${maxCloudImportSelection} files per import.`);
@@ -236,21 +336,73 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
     }
 
     setCloudImporting(true);
-    try {
-      await importProjectCloudFiles(projectId, cloudModalConn.id, filesToImport);
+    setImportProgress({ total: filesToImport.length, completed: 0, failed: [] });
+
+    const batchSize = 10;
+    let completed = 0;
+    const failed: string[] = [];
+
+    for (let i = 0; i < filesToImport.length; i += batchSize) {
+      const batch = filesToImport.slice(i, i + batchSize);
+      try {
+        await importProjectCloudFiles(projectId, cloudModalConn.id, batch);
+        completed += batch.length;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "import failed";
+        for (const f of batch) failed.push(f.name);
+        completed += batch.length;
+        if (isTokenExpiredError(msg)) {
+          setTokenExpired(true);
+          for (const f of filesToImport.slice(i + batchSize)) failed.push(f.name);
+          completed = filesToImport.length;
+          setImportProgress({ total: filesToImport.length, completed, failed });
+          setCloudImporting(false);
+          setCloudLoadError("Session expired during import. Please reconnect and retry.");
+          return;
+        }
+      }
+      setImportProgress({ total: filesToImport.length, completed, failed: [...failed] });
+    }
+
+    setCloudImporting(false);
+
+    if (failed.length === 0) {
       setCloudMessage({ type: "success", text: `Imported ${filesToImport.length} file(s).` });
       setCloudModalOpen(false);
       setCloudSelected({});
+      setImportProgress(null);
       onImported();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "import failed";
-      setCloudLoadError(`Import failed (${msg}).`);
-    } finally {
-      setCloudImporting(false);
+    } else {
+      const succeeded = filesToImport.length - failed.length;
+      setCloudLoadError(
+        `${succeeded} of ${filesToImport.length} files imported. ${failed.length} failed: ${failed.slice(0, 5).join(", ")}${failed.length > 5 ? ` and ${failed.length - 5} more` : ""}.`,
+      );
+      if (succeeded > 0) onImported();
     }
   }
 
+  function retryFailedImport() {
+    if (!importProgress?.failed.length) return;
+    const failedSet = new Set(importProgress.failed);
+    const retryItems: Record<string, CloudBrowseItem> = {};
+    for (const item of Object.values(cloudSelected)) {
+      if (item.type === "file" && failedSet.has(item.name)) {
+        retryItems[item.id] = item;
+      }
+    }
+    setCloudSelected(retryItems);
+    setImportProgress(null);
+    setCloudLoadError(null);
+  }
+
   const [expanded, setExpanded] = useState(false);
+
+  const importButtonLabel = useMemo(() => {
+    const count = selectedFiles.length;
+    if (count === 0) return "Import Selected";
+    const sizeStr = formatFileSize(selectedTotalSize);
+    return `Import ${count} file${count !== 1 ? "s" : ""} (${sizeStr})`;
+  }, [selectedFiles.length, selectedTotalSize]);
 
   return (
     <>
@@ -315,6 +467,17 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
                   </button>
                 );
               })}
+              {/* iCloud - disabled with explanation */}
+              <div
+                className="group relative inline-flex items-center gap-1.5 rounded-lg border border-[#2a2520] px-3 py-1.5 text-[12px] text-[#6b6459] cursor-not-allowed opacity-50"
+              >
+                <ICloudIcon />
+                <span>iCloud</span>
+                <Info className="h-3 w-3 text-[#6b6459]" />
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-56 -translate-x-1/2 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] leading-relaxed text-[#9c9486] opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+                  iCloud Drive does not support standard OAuth. To import iCloud files, download them to your device first, then upload directly.
+                </div>
+              </div>
             </div>
             <div className="space-y-1.5 max-h-36 overflow-y-auto">
               {cloudConnections.map((conn) => (
@@ -362,8 +525,9 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
             className="mx-4 flex max-h-[82vh] w-full max-w-4xl flex-col rounded-xl border border-white/10 bg-zinc-900 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Header */}
             <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="text-[15px] font-semibold text-zinc-100">
                   {cloudProviderLabel(cloudModalConn.provider)} - {cloudModalConn.account_email || "Account"}
                 </div>
@@ -377,33 +541,103 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
                         setCloudSelected({});
                         setCloudCursor(null);
                         setCloudHasMore(false);
+                        setFilterText("");
                         await loadCloudFolder(cloudModalConn, next[next.length - 1]?.id);
                       }}
                       className="shrink-0 hover:text-zinc-300"
                     >
-                      {idx > 0 ? "/" : ""}
+                      {idx > 0 ? " / " : ""}
                       {crumb.name}
                     </button>
                   ))}
                 </div>
               </div>
-              <button onClick={() => setCloudModalOpen(false)} className="text-zinc-500 hover:text-zinc-300">
-                x
+              <button onClick={() => setCloudModalOpen(false)} className="ml-3 rounded-lg p-1.5 text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-300 transition-colors">
+                <X className="h-4 w-4" />
               </button>
             </div>
+
+            {/* Search bar */}
+            <div className="border-b border-white/[0.06] px-5 py-2.5">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                <input
+                  type="text"
+                  value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+                  placeholder="Filter files in this folder..."
+                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] py-1.5 pl-8 pr-3 text-[12px] text-zinc-300 placeholder:text-zinc-600 focus:border-white/[0.15] focus:outline-none transition-colors"
+                />
+                {filterText && (
+                  <button
+                    onClick={() => setFilterText("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* File list */}
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {cloudLoadError && (
                 <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
-                  {cloudLoadError}
+                  <div className="flex items-start justify-between gap-2">
+                    <span>{cloudLoadError}</span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {tokenExpired && cloudModalConn && (
+                        <button
+                          onClick={() => reconnectProvider(cloudModalConn)}
+                          className="inline-flex items-center gap-1 rounded-md border border-red-500/30 px-2 py-0.5 text-[11px] text-red-300 hover:bg-red-500/10 transition-colors"
+                        >
+                          <RefreshCcw className="h-3 w-3" />
+                          Reconnect
+                        </button>
+                      )}
+                      {importProgress && importProgress.failed.length > 0 && (
+                        <button
+                          onClick={retryFailedImport}
+                          className="inline-flex items-center gap-1 rounded-md border border-red-500/30 px-2 py-0.5 text-[11px] text-red-300 hover:bg-red-500/10 transition-colors"
+                        >
+                          <RefreshCcw className="h-3 w-3" />
+                          Retry failed
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setCloudLoadError(null); setImportProgress(null); }}
+                        className="text-zinc-500 hover:text-zinc-300"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
               <div className="overflow-hidden rounded-xl border border-white/[0.08]">
-                {cloudItems.map((item) => {
+                {/* Header row with Select All */}
+                {selectableFiles.length > 0 && !cloudLoading && (
+                  <div className="flex items-center gap-2 border-b border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[11px] font-medium text-zinc-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      checked={allFilesSelected}
+                      onChange={toggleSelectAll}
+                      className="cursor-pointer"
+                      title={allFilesSelected ? "Deselect all" : "Select all"}
+                    />
+                    <span className="flex-1">Name</span>
+                    <span className="w-20 text-right">Size</span>
+                  </div>
+                )}
+                {filteredItems.map((item) => {
                   const selected = Boolean(cloudSelected[item.id]);
                   return (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between border-b border-white/[0.07] px-3 py-2.5 text-[13px] last:border-b-0"
+                      className={cn(
+                        "flex items-center justify-between border-b border-white/[0.07] px-3 py-2.5 text-[13px] last:border-b-0 transition-colors",
+                        selected && "bg-blue-500/[0.06]",
+                      )}
                     >
                       <label className="flex min-w-0 flex-1 items-center gap-2 text-zinc-300">
                         {item.type === "file" ? (
@@ -418,9 +652,15 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
                                 return next;
                               });
                             }}
+                            className="cursor-pointer"
                           />
                         ) : (
                           <span className="inline-block w-4" />
+                        )}
+                        {item.type === "folder" ? (
+                          <FolderOpen className="h-3.5 w-3.5 text-blue-400/70 shrink-0" />
+                        ) : (
+                          <span className="shrink-0"><FileTypeIcon name={item.name} /></span>
                         )}
                         <button
                           disabled={item.type !== "folder"}
@@ -430,28 +670,44 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
                             setCloudSelected({});
                             setCloudCursor(null);
                             setCloudHasMore(false);
+                            setFilterText("");
                             await loadCloudFolder(cloudModalConn, item.id);
                           }}
                           className={cn(
                             "truncate text-left",
-                            item.type === "folder" ? "text-blue-400 hover:text-blue-300" : "text-zinc-300",
+                            item.type === "folder" ? "text-blue-400 hover:text-blue-300" : "text-zinc-300 cursor-default",
                           )}
                         >
-                          {item.type === "folder" ? "[DIR] " : "[FILE] "}
                           {item.name}
                         </button>
                       </label>
-                      <div className="ml-2 shrink-0 text-[12px] text-zinc-500">
-                        {item.type === "file" ? formatFileSize(item.size || 0) : "folder"}
+                      <div className="ml-2 w-20 shrink-0 text-right text-[12px] text-zinc-500 tabular-nums">
+                        {item.type === "file" ? formatFileSize(item.size || 0) : ""}
                       </div>
                     </div>
                   );
                 })}
-                {!cloudLoading && cloudItems.length === 0 && (
-                  <div className="px-4 py-6 text-[13px] text-zinc-500 text-center">This folder is empty.</div>
+                {/* Loading spinner */}
+                {cloudLoading && (
+                  <div className="flex items-center justify-center gap-2 px-4 py-8 text-[13px] text-zinc-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Loading files...</span>
+                  </div>
+                )}
+                {/* Empty states */}
+                {!cloudLoading && cloudItems.length === 0 && !cloudLoadError && (
+                  <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
+                    <FolderOpen className="h-8 w-8 text-zinc-700" />
+                    <span className="text-[13px] text-zinc-500">This folder is empty</span>
+                  </div>
+                )}
+                {!cloudLoading && cloudItems.length > 0 && filteredItems.length === 0 && (
+                  <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
+                    <Search className="h-6 w-6 text-zinc-700" />
+                    <span className="text-[13px] text-zinc-500">No files matching "{filterText}"</span>
+                  </div>
                 )}
               </div>
-              {cloudLoading && <div className="mt-3 text-[12px] text-zinc-500">Loading...</div>}
               {!cloudLoading && cloudHasMore && cloudCursor && (
                 <button
                   onClick={() =>
@@ -463,16 +719,36 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
                 </button>
               )}
             </div>
+
+            {/* Footer with import progress and action button */}
             <div className="flex items-center justify-between border-t border-white/10 px-5 py-4">
               <div className="text-[12px] text-zinc-400">
-                Selected: {Object.values(cloudSelected).filter((i) => i.type === "file").length} file(s)
+                {importProgress && cloudImporting ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Importing {importProgress.completed} of {importProgress.total}...
+                  </span>
+                ) : (
+                  <span>
+                    {selectedFiles.length > 0
+                      ? `${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""} selected (${formatFileSize(selectedTotalSize)})`
+                      : "No files selected"}
+                  </span>
+                )}
               </div>
               <button
                 onClick={importSelectedCloudFiles}
-                disabled={cloudImporting || Object.values(cloudSelected).every((i) => i.type !== "file")}
+                disabled={cloudImporting || selectedFiles.length === 0}
                 className="rounded-lg bg-blue-500/20 px-4 py-2 text-[13px] font-medium text-blue-300 hover:bg-blue-500/30 transition-colors disabled:cursor-not-allowed disabled:text-zinc-600"
               >
-                {cloudImporting ? "Importing..." : "Import Selected"}
+                {cloudImporting ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Importing...
+                  </span>
+                ) : (
+                  importButtonLabel
+                )}
               </button>
             </div>
           </div>
