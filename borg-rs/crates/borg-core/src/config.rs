@@ -179,6 +179,11 @@ pub struct Config {
     /// Enable at-rest encryption for secrets (API keys, credentials) via ChaCha20-Poly1305.
     /// Set BORG_SECRET_ENCRYPTION=true to enable. Default: false for backwards compat.
     pub secret_encryption: bool,
+
+    /// Model for auto-triage (default: "claude-haiku-4-5-20251001").
+    pub triage_model: String,
+    /// Fallback model for Docker/agent phases when ctx.model is empty (default: "claude-sonnet-4-6").
+    pub default_docker_model: String,
 }
 
 impl Config {
@@ -1154,6 +1159,8 @@ impl Config {
             smtp_pass: get_str("SMTP_PASS", &dotenv, ""),
             enforce_retrieval_protocol: get_bool("ENFORCE_RETRIEVAL_PROTOCOL", &dotenv, true),
             secret_encryption: get_bool("BORG_SECRET_ENCRYPTION", &dotenv, false),
+            triage_model: get_str("BORG_TRIAGE_MODEL", &dotenv, "claude-haiku-4-5-20251001"),
+            default_docker_model: get_str("BORG_DEFAULT_DOCKER_MODEL", &dotenv, "claude-sonnet-4-6"),
         })
     }
 }

@@ -166,7 +166,7 @@ impl AgentBackend for ContainerBackend {
         if let Some(mut stdin) = child.stdin.take() {
             let input = json!({
                 "prompt": instruction,
-                "model": if ctx.model.is_empty() { "claude-sonnet-4-6" } else { &ctx.model },
+                "model": &ctx.model,
                 "sessionId": task.session_id,
                 "systemPrompt": phase.system_prompt,
                 "allowedTools": phase.allowed_tools,

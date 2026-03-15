@@ -1770,16 +1770,29 @@ pub(crate) async fn create_project(
     axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
     axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Json(body): Json<CreateProjectBody>,
-) -> Result<(StatusCode, Json<Value>), StatusCode> {
+) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
     let name = body.name.trim();
     if name.is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "name must not be empty" })),
+        ));
+    }
+    if name.chars().count() > 200 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "name must be at most 200 characters" })),
+        ));
     }
     let mode = body.mode.unwrap_or_else(|| "general".to_string());
     let client_name = body.client_name.as_deref().unwrap_or("");
     let jurisdiction = body.jurisdiction.as_deref().unwrap_or("");
     let matter_type = body.matter_type.as_deref().unwrap_or("");
     let privilege_level = body.privilege_level.as_deref().unwrap_or("");
+    fn map_internal(e: impl std::fmt::Debug + std::fmt::Display) -> (StatusCode, Json<Value>) {
+        tracing::error!("internal error: {e:?}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal server error" })))
+    }
     let id = state
         .db
         .insert_project(
@@ -1792,17 +1805,17 @@ pub(crate) async fn create_project(
             matter_type,
             privilege_level,
         )
-        .map_err(internal)?;
+        .map_err(map_internal)?;
 
     let repo_dir = format!("{}/legal-repos/{}", state.config.data_dir, id);
     tokio::fs::create_dir_all(&repo_dir)
         .await
-        .map_err(internal)?;
+        .map_err(map_internal)?;
     let init = tokio::process::Command::new("git")
         .args(["init", &repo_dir])
         .output()
         .await
-        .map_err(internal)?;
+        .map_err(map_internal)?;
     if init.status.success() {
         let _ = tokio::process::Command::new("git")
             .args(["-C", &repo_dir, "commit", "--allow-empty", "-m", "init"])
@@ -1824,7 +1837,7 @@ pub(crate) async fn create_project(
                 Some(&repo_dir),
                 None,
             )
-            .map_err(internal)?;
+            .map_err(map_internal)?;
     }
 
     let _ = state.db.log_event_full(

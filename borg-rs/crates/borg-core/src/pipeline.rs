@@ -574,7 +574,11 @@ impl Pipeline {
             session_dir,
             work_dir,
             oauth_token: self.config.oauth_token.clone(),
-            model: self.config.model.clone(),
+            model: if self.config.model.is_empty() {
+                self.config.default_docker_model.clone()
+            } else {
+                self.config.model.clone()
+            },
             pending_messages,
             phase_attempt: task.attempt,
             phase_gate_token: format!(
@@ -5022,7 +5026,7 @@ Make only the minimal changes the linter requires. Do not refactor or change log
         }
 
         let output = self
-            .run_claude_print("claude-haiku-4-5-20251001", &prompt)
+            .run_claude_print(&self.config.triage_model, &prompt)
             .await;
         let output = match output {
             Ok(o) => o,

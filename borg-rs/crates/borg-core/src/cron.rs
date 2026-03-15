@@ -292,35 +292,19 @@ fn execute_agent_task(db: &Db, job: &CronJob) -> Result<i64> {
     let backend = config["backend"].as_str().unwrap_or("").to_string();
     let task_type = config["task_type"].as_str().unwrap_or("").to_string();
 
-    let task = crate::types::Task {
-        id: 0,
-        title,
-        description,
-        repo_path,
-        branch: String::new(),
-        status: "backlog".into(),
-        attempt: 0,
-        max_attempts: config["max_attempts"].as_i64().unwrap_or(3),
-        last_error: String::new(),
-        created_by: format!("cron:{}", job.id),
-        notify_chat: config["notify_chat"].as_str().unwrap_or("").to_string(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-        session_id: String::new(),
-        mode,
-        backend,
-        workspace_id: config["workspace_id"].as_i64().unwrap_or(0),
-        project_id: job.project_id.unwrap_or(0),
-        task_type,
-        requires_exhaustive_corpus_review: config["requires_exhaustive_corpus_review"]
+    let task = {
+        let mut t = crate::types::Task::new(title, description, repo_path, mode)
+            .with_backend(backend)
+            .with_created_by(format!("cron:{}", job.id))
+            .with_notify_chat(config["notify_chat"].as_str().unwrap_or(""))
+            .with_workspace(config["workspace_id"].as_i64().unwrap_or(0))
+            .with_project(job.project_id.unwrap_or(0));
+        t.max_attempts = config["max_attempts"].as_i64().unwrap_or(3);
+        t.task_type = task_type;
+        t.requires_exhaustive_corpus_review = config["requires_exhaustive_corpus_review"]
             .as_bool()
-            .unwrap_or(false),
-        started_at: None,
-        completed_at: None,
-        duration_secs: None,
-        review_status: None,
-        revision_count: 0,
-        chat_thread: String::new(),
+            .unwrap_or(false);
+        t
     };
     db.insert_task(&task).context("cron: insert agent task")
 }

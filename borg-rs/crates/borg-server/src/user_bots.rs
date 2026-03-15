@@ -435,7 +435,6 @@ async fn handle_task_message(
     db: &Arc<Db>,
     tg: &Arc<Telegram>,
 ) {
-    use chrono::Utc;
     let title_part = text[5..].trim().to_string();
     let (title, desc) = if let Some(nl) = title_part.find('\n') {
         (
@@ -456,34 +455,9 @@ async fn handle_task_message(
         .find(|r| r.path == repo_path)
         .map(|r| r.mode.clone())
         .unwrap_or_else(|| "sweborg".to_string());
-    let task = borg_core::types::Task {
-        id: 0,
-        title,
-        description: desc,
-        repo_path,
-        branch: String::new(),
-        status: "backlog".to_string(),
-        attempt: 0,
-        max_attempts: 5,
-        last_error: String::new(),
-        created_by: format!("telegram:{}", msg.sender_id),
-        notify_chat: msg.chat_id.to_string(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-        session_id: String::new(),
-        mode,
-        backend: String::new(),
-        workspace_id: 0,
-        project_id: 0,
-        task_type: String::new(),
-        requires_exhaustive_corpus_review: false,
-        started_at: None,
-        completed_at: None,
-        duration_secs: None,
-        review_status: None,
-        revision_count: 0,
-        chat_thread: String::new(),
-    };
+    let task = borg_core::types::Task::new(title, desc, repo_path, mode)
+        .with_created_by(format!("telegram:{}", msg.sender_id))
+        .with_notify_chat(msg.chat_id.to_string());
     let task_title = task.title.clone();
     match db.insert_task(&task) {
         Ok(id) => {

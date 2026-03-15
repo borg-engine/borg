@@ -43,7 +43,6 @@ use borg_core::{
     traits::SecretStore,
     types::Task,
 };
-use chrono::Utc;
 use messaging_progress::{new_chat_run_id, spawn_chat_progress_forwarder, MessagingProgressSink};
 use tokio::sync::{broadcast, Mutex as TokioMutex, Semaphore};
 use tower_http::{
@@ -312,34 +311,9 @@ fn spawn_telegram_poller(
                                 .find(|r| r.path == repo_path)
                                 .map(|r| r.mode.clone())
                                 .unwrap_or_else(|| "sweborg".to_string());
-                            let task = Task {
-                                id: 0,
-                                title,
-                                description: desc,
-                                repo_path,
-                                branch: String::new(),
-                                status: "backlog".to_string(),
-                                attempt: 0,
-                                max_attempts: 5,
-                                last_error: String::new(),
-                                created_by: format!("telegram:{}", msg.sender_id),
-                                notify_chat: msg.chat_id.to_string(),
-                                created_at: Utc::now(),
-                                updated_at: Utc::now(),
-                                session_id: String::new(),
-                                mode,
-                                backend: String::new(),
-                                workspace_id: 0,
-                                project_id: 0,
-                                task_type: String::new(),
-                                requires_exhaustive_corpus_review: false,
-                                started_at: None,
-                                completed_at: None,
-                                duration_secs: None,
-                                review_status: None,
-                                revision_count: 0,
-                                chat_thread: String::new(),
-                            };
+                            let task = Task::new(title, desc, repo_path, mode)
+                                .with_created_by(format!("telegram:{}", msg.sender_id))
+                                .with_notify_chat(msg.chat_id.to_string());
                             let task_title = task.title.clone();
                             let tg2 = Arc::clone(&tg);
                             match db.insert_task(&task) {
@@ -1329,6 +1303,7 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
         )
         // Health (unauthenticated)
         .route("/api/health", get(routes::health))
+        .route("/api/health/detailed", get(routes::health_detailed))
         // Auth endpoints (unauthenticated)
         .route("/api/auth/token", get(auth::get_token))
         .route("/api/auth/status", get(auth::auth_status))

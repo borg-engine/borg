@@ -9,7 +9,6 @@ use borg_core::{
     pipeline::PipelineEvent,
     types::{PhaseType, PipelineMode, Task},
 };
-use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -17,6 +16,21 @@ use super::{
     internal, require_project_access, require_task_access, TaskMessageJson, TaskOutputJson,
 };
 use crate::AppState;
+
+fn bad_request(msg: &str) -> (StatusCode, Json<Value>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "error": msg })),
+    )
+}
+
+fn internal_json(e: impl std::fmt::Debug + std::fmt::Display) -> (StatusCode, Json<Value>) {
+    tracing::error!("internal error: {e:?}");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal server error" })),
+    )
+}
 
 fn resolve_mode(state: &AppState, mode_name: &str) -> Option<PipelineMode> {
     borg_core::modes::get_mode(mode_name).or_else(|| {
@@ -268,14 +282,30 @@ pub(crate) async fn create_task(
     axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
     axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Json(body): Json<CreateTaskBody>,
-) -> Result<(StatusCode, Json<Value>), StatusCode> {
+) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
+    let title = body.title.trim().to_string();
+    if title.is_empty() {
+        return Err(bad_request("title must not be empty"));
+    }
+    if title.chars().count() > 500 {
+        return Err(bad_request("title must be at most 500 characters"));
+    }
+    if let Some(ref desc) = body.description {
+        if desc.chars().count() > 50_000 {
+            return Err(bad_request("description must be at most 50000 characters"));
+        }
+    }
+    if let Some(ref mode_name) = body.mode {
+        if resolve_mode(state.as_ref(), mode_name).is_none() {
+            return Err(bad_request(&format!("unknown mode: {mode_name}")));
+        }
+    }
     let project_id = body.project_id.unwrap_or(0);
     let project = if project_id > 0 {
-        Some(require_project_access(
-            state.as_ref(),
-            &workspace,
-            project_id,
-        )?)
+        Some(
+            require_project_access(state.as_ref(), &workspace, project_id)
+                .map_err(|sc| (sc, Json(json!({ "error": "project not found" }))))?
+        )
     } else {
         None
     };
@@ -308,35 +338,19 @@ pub(crate) async fn create_task(
             })
             .unwrap_or_else(|| "sweborg".into())
     });
-    let task = Task {
-        id: 0,
-        title: body.title,
-        description: body.description.unwrap_or_default(),
-        repo_path: repo,
-        branch: String::new(),
-        status: "backlog".into(),
-        attempt: 0,
-        max_attempts: 10,
-        last_error: String::new(),
-        created_by: user.username.clone(),
-        notify_chat: body.notify_chat.unwrap_or_default(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-        session_id: String::new(),
-        mode,
-        backend: String::new(),
-        workspace_id: workspace.id,
-        project_id,
-        task_type: body.task_type.unwrap_or_default(),
-        requires_exhaustive_corpus_review: body.requires_exhaustive_corpus_review.unwrap_or(false),
-        started_at: None,
-        completed_at: None,
-        duration_secs: None,
-        review_status: None,
-        revision_count: 0,
-        chat_thread: body.chat_thread.unwrap_or_default(),
+    let task = {
+        let mut t = Task::new(title, body.description.unwrap_or_default(), repo, mode)
+            .with_created_by(user.username.clone())
+            .with_notify_chat(body.notify_chat.unwrap_or_default())
+            .with_workspace(workspace.id)
+            .with_project(project_id);
+        t.max_attempts = 10;
+        t.task_type = body.task_type.unwrap_or_default();
+        t.requires_exhaustive_corpus_review = body.requires_exhaustive_corpus_review.unwrap_or(false);
+        t.chat_thread = body.chat_thread.unwrap_or_default();
+        t
     };
-    let id = state.db.insert_task(&task).map_err(internal)?;
+    let id = state.db.insert_task(&task).map_err(internal_json)?;
     let pid = (project_id > 0).then_some(project_id);
     let _ = state.db.log_event_full(
         Some(id),

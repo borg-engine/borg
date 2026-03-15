@@ -336,6 +336,96 @@ pub(crate) async fn health(State(state): State<Arc<AppState>>) -> Json<Value> {
     }))
 }
 
+pub(crate) async fn health_detailed(State(state): State<Arc<AppState>>) -> Json<Value> {
+    let uptime_secs = state.start_time.elapsed().as_secs();
+
+    // DB health: time a simple query
+    let db_start = std::time::Instant::now();
+    let db_ok = state.db.get_config("model").is_ok();
+    let db_latency_ms = db_start.elapsed().as_millis() as u64;
+
+    // Search health
+    let search_result = if let Some(search) = &state.search {
+        search.healthcheck().await
+    } else {
+        Ok(())
+    };
+    let search_backend = state
+        .search
+        .as_ref()
+        .map(|s| s.backend_name())
+        .unwrap_or("none");
+    let search_ok = state.search.is_some() && search_result.is_ok();
+
+    // Storage health
+    let storage_result = state.file_storage.healthcheck().await;
+    let storage_ok = storage_result.is_ok();
+    let storage_backend = state.file_storage.backend_name();
+
+    // OCR availability
+    let ocr_available = state.ocr.is_available();
+    let ocr_provider = state.ocr.provider_name().unwrap_or("none").to_string();
+
+    // Scraper availability
+    let scraper_provider = state.scraper.provider_name().to_string();
+    let scraper_available = scraper_provider != "none";
+
+    // Pipeline stats
+    let (active_tasks, _merged, _failed, _total) = state.db.task_stats().unwrap_or_default();
+    let queued_tasks = state.db.count_tasks_with_status("backlog").unwrap_or(0);
+    let stuck_tasks = state.db.count_tasks_with_status("blocked").unwrap_or(0);
+
+    // Agent backends
+    let backends: Vec<String> = state
+        .registry
+        .backend_names()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    let all_ok = db_ok && storage_ok;
+    let status = if all_ok && search_ok {
+        "healthy"
+    } else if all_ok {
+        "degraded"
+    } else {
+        "unhealthy"
+    };
+
+    Json(json!({
+        "status": status,
+        "db": {
+            "status": if db_ok { "ok" } else { "error" },
+            "latency_ms": db_latency_ms,
+        },
+        "search": {
+            "status": if search_ok { "ok" } else { "unavailable" },
+            "provider": search_backend,
+        },
+        "storage": {
+            "status": if storage_ok { "ok" } else { "unavailable" },
+            "backend": storage_backend,
+        },
+        "ocr": {
+            "available": ocr_available,
+            "provider": ocr_provider,
+        },
+        "scraper": {
+            "available": scraper_available,
+            "provider": scraper_provider,
+        },
+        "pipeline": {
+            "active_tasks": active_tasks,
+            "queued_tasks": queued_tasks,
+            "stuck_tasks": stuck_tasks,
+        },
+        "agents": {
+            "backends": backends,
+        },
+        "uptime_secs": uptime_secs,
+    }))
+}
+
 pub(crate) async fn get_mcp_status(
     State(state): State<Arc<AppState>>,
     axum::Extension(user): axum::Extension<crate::auth::AuthUser>,
@@ -740,40 +830,20 @@ pub(crate) async fn approve_proposal(
         .update_proposal_status(id, "approved")
         .map_err(internal)?;
 
-    let task = Task {
-        id: 0,
-        title: proposal.title.clone(),
-        description: proposal.description.clone(),
-        repo_path: proposal.repo_path.clone(),
-        branch: String::new(),
-        status: "backlog".into(),
-        attempt: 0,
-        max_attempts: 5,
-        last_error: String::new(),
-        created_by: "proposal".into(),
-        notify_chat: String::new(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-        session_id: String::new(),
-        mode: state
-            .config
-            .watched_repos
-            .iter()
-            .find(|r| r.path == proposal.repo_path)
-            .map(|r| r.mode.clone())
-            .unwrap_or_else(|| "sweborg".into()),
-        backend: String::new(),
-        workspace_id: 0,
-        project_id: 0,
-        task_type: String::new(),
-        requires_exhaustive_corpus_review: false,
-        started_at: None,
-        completed_at: None,
-        duration_secs: None,
-        review_status: None,
-        revision_count: 0,
-        chat_thread: String::new(),
-    };
+    let mode = state
+        .config
+        .watched_repos
+        .iter()
+        .find(|r| r.path == proposal.repo_path)
+        .map(|r| r.mode.clone())
+        .unwrap_or_else(|| "sweborg".into());
+    let task = Task::new(
+        proposal.title.clone(),
+        proposal.description.clone(),
+        proposal.repo_path.clone(),
+        mode,
+    )
+    .with_created_by("proposal");
     let task_id = state.db.insert_task(&task).map_err(internal)?;
     Ok(Json(json!({ "task_id": task_id })))
 }
@@ -835,11 +905,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
         tracing::error!("triage_proposals: no backends configured");
         return Json(json!({ "scored": 0 }));
     };
-    let model = db
-        .get_config("model")
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "claude-sonnet-4-6".into());
+    let model = state.config.triage_model.clone();
     let oauth = state.config.oauth_token.clone();
 
     let triage_flag = Arc::clone(&state.triage_running);
@@ -850,33 +916,18 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 proposal.title, proposal.description, proposal.rationale
             );
 
-            let task = Task {
-                id: proposal.id,
-                title: format!("triage:{}", proposal.id),
-                description: String::new(),
-                repo_path: proposal.repo_path.clone(),
-                branch: String::new(),
-                status: "triage".into(),
-                attempt: 0,
-                max_attempts: 1,
-                last_error: String::new(),
-                created_by: "triage".into(),
-                notify_chat: String::new(),
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-                session_id: String::new(),
-                mode: "sweborg".into(),
-                backend: String::new(),
-                workspace_id: 0,
-                project_id: 0,
-                task_type: String::new(),
-                requires_exhaustive_corpus_review: false,
-                started_at: None,
-                completed_at: None,
-                duration_secs: None,
-                review_status: None,
-                revision_count: 0,
-                chat_thread: String::new(),
+            let task = {
+                let mut t = Task::new(
+                    format!("triage:{}", proposal.id),
+                    "",
+                    proposal.repo_path.clone(),
+                    "sweborg",
+                )
+                .with_created_by("triage");
+                t.id = proposal.id;
+                t.status = "triage".into();
+                t.max_attempts = 1;
+                t
             };
 
             let phase = PhaseConfig {

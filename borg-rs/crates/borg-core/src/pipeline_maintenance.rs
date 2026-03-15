@@ -54,34 +54,8 @@ impl Pipeline {
         let desc = format!(
             "Health check detected {kind} failure on main branch.\n\nError output:\n```\n{tail}\n```"
         );
-        let task = Task {
-            id: 0,
-            title: title.clone(),
-            description: desc,
-            repo_path: repo_path.to_string(),
-            branch: String::new(),
-            status: "backlog".into(),
-            attempt: 0,
-            max_attempts: 5,
-            last_error: String::new(),
-            created_by: "health-check".into(),
-            notify_chat: String::new(),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            session_id: String::new(),
-            mode: "sweborg".into(),
-            backend: String::new(),
-            workspace_id: 0,
-            project_id: 0,
-            task_type: String::new(),
-            requires_exhaustive_corpus_review: false,
-            started_at: None,
-            completed_at: None,
-            duration_secs: None,
-            review_status: None,
-            revision_count: 0,
-            chat_thread: String::new(),
-        };
+        let task = Task::new(title.clone(), desc, repo_path, "sweborg")
+            .with_created_by("health-check");
         match self.db.insert_task(&task) {
             Ok(id) => {
                 info!("Health: created fix task #{id} for {repo_path} {kind} failure");

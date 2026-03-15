@@ -7,34 +7,11 @@ mod support;
 use support::open_db;
 
 fn make_task(db: &Db) -> i64 {
-    let task = Task {
-        id: 0,
-        title: "Test task".into(),
-        description: "desc".into(),
-        repo_path: "/repo".into(),
-        branch: "task-1".into(),
-        status: "validate".into(),
-        attempt: 1,
-        max_attempts: 5,
-        last_error: String::new(),
-        created_by: "test".into(),
-        notify_chat: String::new(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-        session_id: String::new(),
-        mode: "sweborg".into(),
-        backend: String::new(),
-        workspace_id: 0,
-        project_id: 0,
-        task_type: String::new(),
-        requires_exhaustive_corpus_review: false,
-        started_at: None,
-        completed_at: None,
-        duration_secs: None,
-        review_status: None,
-        revision_count: 0,
-        chat_thread: String::new(),
-    };
+    let mut task = Task::new("Test task", "desc", "/repo", "sweborg")
+        .with_created_by("test");
+    task.branch = "task-1".into();
+    task.status = "validate".into();
+    task.attempt = 1;
     db.insert_task(&task).expect("insert_task")
 }
 

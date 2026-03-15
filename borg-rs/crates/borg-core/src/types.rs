@@ -122,6 +122,70 @@ pub struct Task {
     pub chat_thread: String,
 }
 
+impl Task {
+    pub fn new(
+        title: impl Into<String>,
+        description: impl Into<String>,
+        repo_path: impl Into<String>,
+        mode: impl Into<String>,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            id: 0,
+            title: title.into(),
+            description: description.into(),
+            repo_path: repo_path.into(),
+            branch: String::new(),
+            status: "backlog".into(),
+            attempt: 0,
+            max_attempts: 5,
+            last_error: String::new(),
+            created_by: String::new(),
+            notify_chat: String::new(),
+            created_at: now,
+            updated_at: now,
+            session_id: String::new(),
+            mode: mode.into(),
+            backend: String::new(),
+            workspace_id: 0,
+            project_id: 0,
+            task_type: String::new(),
+            requires_exhaustive_corpus_review: false,
+            started_at: None,
+            completed_at: None,
+            duration_secs: None,
+            review_status: None,
+            revision_count: 0,
+            chat_thread: String::new(),
+        }
+    }
+
+    pub fn with_backend(mut self, backend: impl Into<String>) -> Self {
+        self.backend = backend.into();
+        self
+    }
+
+    pub fn with_project(mut self, project_id: i64) -> Self {
+        self.project_id = project_id;
+        self
+    }
+
+    pub fn with_created_by(mut self, created_by: impl Into<String>) -> Self {
+        self.created_by = created_by.into();
+        self
+    }
+
+    pub fn with_notify_chat(mut self, notify_chat: impl Into<String>) -> Self {
+        self.notify_chat = notify_chat.into();
+        self
+    }
+
+    pub fn with_workspace(mut self, workspace_id: i64) -> Self {
+        self.workspace_id = workspace_id;
+        self
+    }
+}
+
 /// A user-facing proposal that can be promoted to a Task.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Proposal {

@@ -6,34 +6,13 @@ use borg_core::{
 use chrono::Utc;
 
 fn make_task(title: &str, description: &str, last_error: &str) -> Task {
-    Task {
-        id: 1,
-        title: title.to_string(),
-        description: description.to_string(),
-        repo_path: String::new(),
-        branch: String::new(),
-        status: "impl".to_string(),
-        attempt: 1,
-        max_attempts: 3,
-        last_error: last_error.to_string(),
-        created_by: String::new(),
-        notify_chat: String::new(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-        session_id: String::new(),
-        mode: String::new(),
-        backend: String::new(),
-        workspace_id: 0,
-        project_id: 0,
-        task_type: String::new(),
-        requires_exhaustive_corpus_review: false,
-        started_at: None,
-        completed_at: None,
-        duration_secs: None,
-        review_status: None,
-        revision_count: 0,
-        chat_thread: String::new(),
-    }
+    let mut t = Task::new(title, description, "", "");
+    t.id = 1;
+    t.status = "impl".to_string();
+    t.attempt = 1;
+    t.max_attempts = 3;
+    t.last_error = last_error.to_string();
+    t
 }
 
 fn make_ctx() -> PhaseContext {

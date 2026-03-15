@@ -611,7 +611,7 @@ impl AgentBackend for ClaudeBackend {
                 };
                 let input = serde_json::json!({
                     "prompt": instruction,
-                    "model": if ctx.model.is_empty() { "claude-sonnet-4-6".to_string() } else { ctx.model.clone() },
+                    "model": ctx.model.clone(),
                     "sessionId": task.session_id.clone(),
                     "systemPrompt": phase.system_prompt.clone(),
                     "allowedTools": effective_allowed_tools.clone(),
