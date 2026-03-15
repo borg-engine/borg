@@ -9,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Linking,
 } from "react-native";
+import Markdown from "react-native-markdown-display";
 import { useLocalSearchParams, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, {
@@ -34,135 +34,62 @@ import { lightImpact } from "@/lib/haptics";
 import { colors, spacing, radius, common } from "@/lib/theme";
 import type { ChatMessage } from "@/lib/api";
 
-function renderMarkdown(text: string): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  let key = 0;
-
-  const codeBlockRe = /```[\s\S]*?```/g;
-  let lastIdx = 0;
-  let match;
-
-  while ((match = codeBlockRe.exec(text)) !== null) {
-    if (match.index > lastIdx) {
-      parts.push(...renderInline(text.slice(lastIdx, match.index), key));
-      key += 100;
-    }
-    const code = match[0].replace(/^```\w*\n?/, "").replace(/\n?```$/, "");
-    parts.push(
-      <View key={`cb-${key++}`} style={mdStyles.codeBlock}>
-        <Text style={mdStyles.codeText} selectable>
-          {code}
-        </Text>
-      </View>,
-    );
-    lastIdx = match.index + match[0].length;
-  }
-
-  if (lastIdx < text.length) {
-    parts.push(...renderInline(text.slice(lastIdx), key));
-  }
-
-  return parts;
-}
-
-function renderInline(text: string, startKey: number): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  let k = startKey;
-  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(\[[^\]]+\]\([^)]+\))/g;
-  let lastIdx = 0;
-  let match;
-
-  while ((match = re.exec(text)) !== null) {
-    if (match.index > lastIdx) {
-      parts.push(
-        <Text key={`t-${k++}`} style={mdStyles.plainText}>
-          {text.slice(lastIdx, match.index)}
-        </Text>,
-      );
-    }
-
-    const m = match[0];
-    if (m.startsWith("`")) {
-      parts.push(
-        <Text key={`ic-${k++}`} style={mdStyles.inlineCode}>
-          {m.slice(1, -1)}
-        </Text>,
-      );
-    } else if (m.startsWith("**")) {
-      parts.push(
-        <Text key={`b-${k++}`} style={mdStyles.bold}>
-          {m.slice(2, -2)}
-        </Text>,
-      );
-    } else if (m.startsWith("*")) {
-      parts.push(
-        <Text key={`i-${k++}`} style={mdStyles.italic}>
-          {m.slice(1, -1)}
-        </Text>,
-      );
-    } else if (m.startsWith("[")) {
-      const linkMatch = m.match(/\[([^\]]+)\]\(([^)]+)\)/);
-      if (linkMatch) {
-        parts.push(
-          <Text
-            key={`l-${k++}`}
-            style={mdStyles.link}
-            onPress={() => Linking.openURL(linkMatch[2])}
-          >
-            {linkMatch[1]}
-          </Text>,
-        );
-      }
-    }
-
-    lastIdx = match.index + m.length;
-  }
-
-  if (lastIdx < text.length) {
-    parts.push(
-      <Text key={`t-${k++}`} style={mdStyles.plainText}>
-        {text.slice(lastIdx)}
-      </Text>,
-    );
-  }
-
-  return parts;
-}
-
-const mdStyles = StyleSheet.create({
-  plainText: {},
-  bold: {
-    fontWeight: "700",
-  },
-  italic: {
-    fontStyle: "italic",
-  },
-  inlineCode: {
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontSize: 13,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 4,
-    paddingHorizontal: 4,
-  },
-  link: {
-    color: colors.info,
-    textDecorationLine: "underline",
-  },
-  codeBlock: {
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: radius.sm,
+const markdownStyles = {
+  body: { color: colors.text, fontSize: 15, lineHeight: 21 },
+  heading1: { color: colors.text, fontSize: 24, fontWeight: "700" as const, marginVertical: 8 },
+  heading2: { color: colors.text, fontSize: 20, fontWeight: "600" as const, marginVertical: 6 },
+  heading3: { color: colors.text, fontSize: 17, fontWeight: "600" as const, marginVertical: 4 },
+  heading4: { color: colors.text, fontSize: 15, fontWeight: "600" as const, marginVertical: 4 },
+  code_block: {
+    backgroundColor: colors.bg,
+    padding: 12,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
-    marginVertical: spacing.xs,
-  },
-  codeText: {
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     fontSize: 12,
     color: colors.textSecondary,
     lineHeight: 18,
   },
-});
+  code_inline: {
+    backgroundColor: colors.bg,
+    paddingHorizontal: 4,
+    borderRadius: 4,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    color: colors.accent,
+    fontSize: 13,
+  },
+  fence: {
+    backgroundColor: colors.bg,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  blockquote: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    paddingLeft: 12,
+    marginVertical: 4,
+    backgroundColor: "transparent",
+  },
+  bullet_list: { marginVertical: 4 },
+  ordered_list: { marginVertical: 4 },
+  list_item: { color: colors.text },
+  link: { color: colors.info },
+  strong: { fontWeight: "700" as const },
+  em: { fontStyle: "italic" as const },
+  hr: { backgroundColor: colors.border, height: 1, marginVertical: 12 },
+  table: { borderColor: colors.border },
+  tr: { borderBottomColor: colors.border },
+  th: { color: colors.text, fontWeight: "600" as const, padding: 6 },
+  td: { color: colors.text, padding: 6 },
+  paragraph: { marginTop: 0, marginBottom: 4 },
+};
 
 function TypingIndicator() {
   const dot1 = useSharedValue(0);
@@ -236,17 +163,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           isUser ? styles.bubbleUser : styles.bubbleAssistant,
         ]}
       >
-        <Text
-          style={[
-            styles.messageText,
-            isUser ? styles.messageTextUser : styles.messageTextAssistant,
-          ]}
-          selectable
-        >
-          {isUser
-            ? message.content
-            : renderMarkdown(message.content)}
-        </Text>
+        {isUser ? (
+          <Text style={[styles.messageText, styles.messageTextUser]} selectable>
+            {message.content}
+          </Text>
+        ) : (
+          <Markdown style={markdownStyles}>{message.content}</Markdown>
+        )}
         <Text style={[styles.messageTime, isUser && styles.messageTimeUser]}>
           {new Date(message.created_at).toLocaleTimeString([], {
             hour: "2-digit",
@@ -296,9 +219,7 @@ function StreamingBubble({ thread }: { thread: string }) {
         <Ionicons name="cube" size={14} color={colors.accent} />
       </View>
       <View style={[styles.bubble, styles.bubbleAssistant]}>
-        <Text style={styles.messageTextAssistant} selectable>
-          {renderMarkdown(text)}
-        </Text>
+        <Markdown style={markdownStyles}>{text}</Markdown>
       </View>
     </Animated.View>
   );
