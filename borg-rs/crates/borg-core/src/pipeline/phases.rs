@@ -212,28 +212,67 @@ impl Pipeline {
     /// Generate a per-user scoped agent token for user-created tasks,
     /// or fall back to the system admin token for system-created tasks.
     fn resolve_agent_token(&self, task: &Task, system_token: &str) -> String {
-        const SYSTEM_CREATORS: &[&str] = &["seed", "proposal", "health-check", "observer"];
-        let created_by = task.created_by.trim();
-        if created_by.is_empty()
-            || SYSTEM_CREATORS.contains(&created_by)
-            || created_by.starts_with("cron:")
-        {
-            return system_token.to_string();
-        }
         if self.jwt_secret.is_empty() {
             return system_token.to_string();
         }
+
+        let created_by = task.created_by.trim();
+        let workspace_id = if task.workspace_id > 0 {
+            task.workspace_id
+        } else {
+            // Fallback: use workspace 1 (the default workspace)
+            1
+        };
+
+        const SYSTEM_CREATORS: &[&str] = &["seed", "proposal", "health-check", "observer"];
+        let is_system = created_by.is_empty()
+            || SYSTEM_CREATORS.contains(&created_by)
+            || created_by.starts_with("cron:");
+
+        if is_system {
+            // System-created tasks get a workspace-scoped token with a
+            // synthetic "borg-system" identity. NOT admin — just workspace
+            // member access to the specific workspace that owns the repo.
+            let token = crate::token::generate_agent_token(
+                &self.jwt_secret,
+                0, // system user id
+                "borg-system",
+                workspace_id,
+                false, // NOT admin
+                86400,
+            );
+            if token.is_empty() {
+                warn!(task_id = task.id, "system agent token generation failed, using fallback");
+                return system_token.to_string();
+            }
+            return token;
+        }
+
+        // User-created tasks: look up the actual user
         let user = self.db.get_user_by_username(created_by).ok().flatten();
         let Some((user_id, _, _, _, is_admin)) = user else {
-            info!(
+            // User not found — generate a workspace-scoped non-admin token
+            let token = crate::token::generate_agent_token(
+                &self.jwt_secret,
+                0,
+                created_by,
+                workspace_id,
+                false,
+                86400,
+            );
+            if !token.is_empty() {
+                return token;
+            }
+            warn!(
                 task_id = task.id,
                 created_by,
-                "no DB user found for task creator, using system token"
+                "no DB user found and token gen failed, using system token"
             );
             return system_token.to_string();
         };
-        let workspace_id = if task.workspace_id > 0 {
-            task.workspace_id
+
+        let ws = if workspace_id > 0 {
+            workspace_id
         } else {
             self.db
                 .get_user_default_workspace_id(user_id)
@@ -245,9 +284,9 @@ impl Pipeline {
             &self.jwt_secret,
             user_id,
             created_by,
-            workspace_id,
+            ws,
             is_admin,
-            86400, // 24h TTL
+            86400,
         );
         if token.is_empty() {
             warn!(task_id = task.id, "agent token generation failed, using system token");
