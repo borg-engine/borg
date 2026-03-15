@@ -369,6 +369,7 @@ fn spawn_telegram_poller(
                                     &ai_request_count2,
                                     None,
                                     None,
+                                    None,
                                 )
                                 .await
                                 {
@@ -571,6 +572,7 @@ async fn spawn_sidecar_manager(
                                     &ai_request_count2,
                                     None,
                                     None,
+                                    None,
                                 )
                                 .await
                                 {
@@ -748,6 +750,7 @@ async fn spawn_sidecar_manager(
                                     &chat_tx2,
                                     &csm2,
                                     &ai_request_count2,
+                                    None,
                                     None,
                                     None,
                                 )
@@ -950,6 +953,7 @@ fn spawn_imap_poller(
                         &chat_tx,
                         &csm,
                         &ai_count,
+                        None,
                         None,
                         None,
                     )
@@ -1859,6 +1863,18 @@ async fn main() -> anyhow::Result<()> {
     let registry = build_registry(&config, &db, sandbox_mode.clone())?;
     let force_restart = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
+    let jwt_secret = {
+        let key = "jwt_secret";
+        match db.get_config(key) {
+            Ok(Some(s)) if !s.is_empty() => s,
+            _ => {
+                let s = auth::generate_token();
+                let _ = db.set_config(key, &s);
+                s
+            },
+        }
+    };
+
     let (mut pipeline, pipeline_rx) = Pipeline::new(
         Arc::clone(&db),
         Arc::clone(&registry),
@@ -1867,6 +1883,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&force_restart),
         agent_network_available,
         Arc::clone(&ai_request_count),
+        jwt_secret.clone(),
     );
     pipeline.chat_event_tx = Some(chat_event_tx.clone());
     let pipeline_event_tx = pipeline.event_tx.clone();
@@ -2020,17 +2037,7 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::clone(&config),
         ai_request_count,
         api_token: api_token.clone(),
-        jwt_secret: {
-            let key = "jwt_secret";
-            match db.get_config(key) {
-                Ok(Some(s)) if !s.is_empty() => s,
-                _ => {
-                    let s = auth::generate_token();
-                    let _ = db.set_config(key, &s);
-                    s
-                },
-            }
-        },
+        jwt_secret: jwt_secret.clone(),
         start_time: Instant::now(),
         log_tx,
         log_ring,

@@ -475,9 +475,6 @@ impl AgentBackend for ClaudeBackend {
                     .env("RUSTUP_HOME", &rustup_home)
                     .env("CARGO_HOME", &cargo_home)
                     .env("API_BASE_URL", &reachable_borg_api_url)
-                    // TODO: API_TOKEN is a global system token — agents can access any
-                    // workspace/project via admin-level endpoints. Replace with scoped
-                    // per-user tokens that have the same permissions as the creating user.
                     .env("API_TOKEN", &ctx.borg_api_token);
                 if !gh_token.is_empty() {
                     cmd.env("GH_TOKEN", &gh_token);
@@ -524,7 +521,6 @@ impl AgentBackend for ClaudeBackend {
                 if !reachable_borg_api_url.is_empty() {
                     env_kv.push(("API_BASE_URL".to_string(), reachable_borg_api_url.clone()));
                 }
-                // TODO: same scoped-token concern as bwrap — see above
                 if !ctx.borg_api_token.is_empty() {
                     env_kv.push(("API_TOKEN".to_string(), ctx.borg_api_token.clone()));
                 }
@@ -594,7 +590,6 @@ impl AgentBackend for ClaudeBackend {
                     .env("CARGO_HOME", &cargo_home)
                     .env("PATH", &augmented_path)
                     .env("API_BASE_URL", &reachable_borg_api_url)
-                    // TODO: same scoped-token concern as bwrap — see above
                     .env("API_TOKEN", &ctx.borg_api_token);
                 if !gh_token.is_empty() {
                     cmd.env("GH_TOKEN", &gh_token);

@@ -88,6 +88,8 @@ pub struct Pipeline {
     pub embed_registry: crate::knowledge::EmbeddingRegistry,
     /// Set to true during graceful shutdown — prevents dispatching new tasks.
     pub draining: Arc<std::sync::atomic::AtomicBool>,
+    /// JWT secret for generating per-user scoped agent tokens.
+    pub jwt_secret: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -167,6 +169,7 @@ impl Pipeline {
         force_restart: Arc<std::sync::atomic::AtomicBool>,
         agent_network_available: bool,
         ai_request_count: Arc<AtomicU64>,
+        jwt_secret: String,
     ) -> (Self, broadcast::Receiver<PipelineEvent>) {
         let (tx, rx) = broadcast::channel(256);
         // Capture git HEAD for each watched repo at startup (used for self-update detection)
@@ -204,6 +207,7 @@ impl Pipeline {
             agent_network_available,
             embed_registry: crate::knowledge::EmbeddingRegistry::from_env(),
             draining: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            jwt_secret,
         };
         (p, rx)
     }

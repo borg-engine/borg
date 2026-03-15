@@ -2340,6 +2340,7 @@ pub(crate) async fn email_inbound(
             &ai_count,
             None,
             None,
+            None,
         )
         .await
         {

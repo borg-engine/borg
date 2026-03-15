@@ -24,6 +24,7 @@ pub mod secrets;
 pub mod sidecar;
 pub mod stream;
 pub mod telegram;
+pub mod token;
 pub mod tool_calls;
 pub mod tool_update;
 pub mod traits;

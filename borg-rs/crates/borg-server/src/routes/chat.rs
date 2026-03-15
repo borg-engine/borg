@@ -134,6 +134,7 @@ pub(crate) async fn run_chat_agent(
     ai_request_count: &Arc<AtomicU64>,
     user_id: Option<i64>,
     model_override: Option<String>,
+    jwt_secret: Option<&str>,
 ) -> anyhow::Result<String> {
     let session_dir = format!(
         "{}/sessions/chat-{}",
@@ -308,8 +309,31 @@ pub(crate) async fn run_chat_agent(
     }
 
     let api_url = format!("http://127.0.0.1:{}", config.web.port);
-    let api_token =
+    let system_api_token =
         std::fs::read_to_string(format!("{}/.api-token", config.data_dir)).unwrap_or_default();
+    let api_token = match (user_id, jwt_secret) {
+        (Some(uid), Some(secret)) if uid > 0 && !secret.is_empty() => {
+            match db.get_user_by_id(uid).ok().flatten() {
+                Some((_id, username, _display, is_admin)) => {
+                    let ws_id = db
+                        .get_user_default_workspace_id(uid)
+                        .ok()
+                        .flatten()
+                        .unwrap_or(0);
+                    let token = borg_core::token::generate_agent_token(
+                        secret, uid, &username, ws_id, is_admin, 86400,
+                    );
+                    if token.is_empty() {
+                        system_api_token
+                    } else {
+                        token
+                    }
+                },
+                None => system_api_token,
+            }
+        },
+        _ => system_api_token,
+    };
 
     // Collect legal provider keys from DB for legal mode chat
     let legal_linked_creds: Vec<(String, String)> = if is_legal {
@@ -922,6 +946,7 @@ pub(crate) async fn post_project_chat(
     let text2 = body.text.clone();
     let model2 = body.model.clone();
     let uid = user.id;
+    let jwt_secret2 = state.jwt_secret.clone();
     state
         .active_chat_agents
         .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
@@ -943,6 +968,7 @@ pub(crate) async fn post_project_chat(
             &state2.ai_request_count,
             Some(uid),
             model2,
+            Some(&jwt_secret2),
         )
         .await
         {
@@ -1025,6 +1051,7 @@ pub(crate) async fn post_chat(
     let text2 = body.text.clone();
     let model2 = body.model.clone();
     let uid = user.id;
+    let jwt_secret2 = state.jwt_secret.clone();
     state
         .active_chat_agents
         .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
@@ -1046,6 +1073,7 @@ pub(crate) async fn post_chat(
             &state2.ai_request_count,
             Some(uid),
             model2,
+            Some(&jwt_secret2),
         )
         .await
         {

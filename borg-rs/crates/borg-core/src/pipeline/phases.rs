@@ -139,6 +139,12 @@ impl Pipeline {
 
         let gh_resolved = self.resolve_gh_token(&task.created_by);
 
+        let system_api_token = std::fs::read_to_string(format!("{}/.api-token", self.config.data_dir))
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let borg_api_token = self.resolve_agent_token(task, &system_api_token);
+
         PhaseContext {
             task: task.clone(),
             repo_config: self.repo_config(task),
@@ -175,10 +181,7 @@ impl Pipeline {
             experimental_domains: self.config.pipeline.experimental_domains,
             isolated,
             borg_api_url: format!("http://127.0.0.1:{}", self.config.web.port),
-            borg_api_token: std::fs::read_to_string(format!("{}/.api-token", self.config.data_dir))
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
+            borg_api_token,
             chat_context,
             github_token: gh_resolved.0.clone(),
             github_token_is_user: gh_resolved.1,
@@ -204,6 +207,53 @@ impl Pipeline {
             },
             ms365_token: self.resolve_ms365_token(&task.created_by),
         }
+    }
+
+    /// Generate a per-user scoped agent token for user-created tasks,
+    /// or fall back to the system admin token for system-created tasks.
+    fn resolve_agent_token(&self, task: &Task, system_token: &str) -> String {
+        const SYSTEM_CREATORS: &[&str] = &["seed", "proposal", "health-check", "observer"];
+        let created_by = task.created_by.trim();
+        if created_by.is_empty()
+            || SYSTEM_CREATORS.contains(&created_by)
+            || created_by.starts_with("cron:")
+        {
+            return system_token.to_string();
+        }
+        if self.jwt_secret.is_empty() {
+            return system_token.to_string();
+        }
+        let user = self.db.get_user_by_username(created_by).ok().flatten();
+        let Some((user_id, _, _, _, is_admin)) = user else {
+            info!(
+                task_id = task.id,
+                created_by,
+                "no DB user found for task creator, using system token"
+            );
+            return system_token.to_string();
+        };
+        let workspace_id = if task.workspace_id > 0 {
+            task.workspace_id
+        } else {
+            self.db
+                .get_user_default_workspace_id(user_id)
+                .ok()
+                .flatten()
+                .unwrap_or(0)
+        };
+        let token = crate::token::generate_agent_token(
+            &self.jwt_secret,
+            user_id,
+            created_by,
+            workspace_id,
+            is_admin,
+            86400, // 24h TTL
+        );
+        if token.is_empty() {
+            warn!(task_id = task.id, "agent token generation failed, using system token");
+            return system_token.to_string();
+        }
+        token
     }
 
     fn resolve_ms365_token(&self, created_by: &str) -> String {
