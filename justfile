@@ -16,6 +16,10 @@ r:
 dash:
     cd apps/web && bun install && bun run format && bun run build
 
+# Build Tauri desktop app
+desktop:
+    cd apps/desktop/src-tauri && cargo tauri build
+
 # Build Docker agent image
 image:
     docker build -t borg-agent:latest -f container/Dockerfile container/
