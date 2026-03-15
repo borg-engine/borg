@@ -2029,6 +2029,52 @@ impl Db {
         Ok(rows)
     }
 
+    // ── Push Tokens ─────────────────────────────────────────────────────
+
+    pub fn register_push_token(&self, user_id: i64, token: &str, platform: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        conn.execute(
+            "INSERT INTO push_tokens (user_id, token, platform) VALUES (?1, ?2, ?3) \
+             ON CONFLICT(token) DO UPDATE SET user_id = excluded.user_id, platform = excluded.platform",
+            params![user_id, token, platform],
+        )
+        .context("register_push_token")?;
+        Ok(())
+    }
+
+    pub fn unregister_push_token(&self, token: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        conn.execute(
+            "DELETE FROM push_tokens WHERE token = ?1",
+            params![token],
+        )
+        .context("unregister_push_token")?;
+        Ok(())
+    }
+
+    pub fn get_push_tokens_for_user(&self, user_id: i64) -> Result<Vec<(String, String)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let mut stmt = conn.prepare(
+            "SELECT token, platform FROM push_tokens WHERE user_id = ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![user_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<pg::Result<Vec<_>>>()
+            .context("get_push_tokens_for_user")?;
+        Ok(rows)
+    }
+
     pub fn list_tool_calls_by_run(
         &self,
         run_id: &str,

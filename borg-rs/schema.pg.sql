@@ -403,6 +403,17 @@ CREATE TABLE IF NOT EXISTS cloud_connections (
 );
 CREATE INDEX IF NOT EXISTS idx_cloud_connections_project ON cloud_connections(project_id);
 
+-- ── Push notifications ────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS push_tokens (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    platform TEXT NOT NULL,  -- 'ios' | 'android'
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id);
+
 -- ── Misc / legacy ─────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS state (

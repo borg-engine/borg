@@ -1727,6 +1727,9 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
         .route("/api/borgsearch/file/:id", get(routes::agent_get_file))
         .route("/api/borgsearch/files", get(routes::agent_list_files))
         .route("/api/borgsearch/coverage", get(routes::agent_coverage))
+        // Push notifications
+        .route("/api/push/register", post(routes::register_push_token))
+        .route("/api/push/unregister", delete(routes::unregister_push_token))
         // Tool calls & usage
         .route("/api/tool-calls", get(routes::list_tool_calls))
         .route("/api/usage", get(routes::get_usage))
