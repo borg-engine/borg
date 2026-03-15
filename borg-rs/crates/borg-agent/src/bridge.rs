@@ -380,20 +380,7 @@ impl AgentBackend for AgentSdkBackend {
         let mut instruction =
             crate::instruction::build_instruction(task, phase, &ctx, file_listing.as_deref());
 
-        // Agent-SDK uses MCP tools for document access. The MCP tools are deferred
-        // and must be fetched via ToolSearch before use. Prepend retrieval instructions.
-        let retrieval_preamble = "\
-             IMPORTANT: Your FIRST actions must be document retrieval. The project corpus is \
-             accessible only via MCP tools. These are deferred tools — you MUST call ToolSearch \
-             to load them before use.\n\n\
-             Step 1: Call ToolSearch with query \"select:mcp__borg__list_documents,mcp__borg__search_documents,mcp__borg__read_document,mcp__borg__check_coverage,mcp__borg__get_document_categories\" to fetch the MCP tool schemas.\n\
-             Step 2: Call mcp__borg__list_documents to inventory all project documents.\n\
-             Step 3: Call mcp__borg__search_documents with at least 3 distinct queries.\n\
-             Step 4: Call mcp__borg__read_document to read full documents for key clauses.\n\
-             Step 5: Call mcp__borg__check_coverage to verify analysis coverage.\n\n\
-             Do NOT write any deliverables until steps 1-4 are complete. The retrieval protocol \
-             guard WILL reject your work if these tools are not called.\n\n---\n\n";
-        instruction = format!("{retrieval_preamble}{instruction}");
+        // MCP tools are available natively (not deferred) — no ToolSearch needed.
 
         // Build MCP servers config first so we know what tools to allow
         let mcp_servers = if !ctx.borg_api_token.is_empty() && !ctx.borg_api_url.is_empty() {
@@ -484,13 +471,6 @@ impl AgentBackend for AgentSdkBackend {
             }
         }
 
-        info!(
-            task_id = task.id,
-            allowed_tools = ?allowed,
-            mcp_null = mcp_servers.is_null(),
-            "bridge run_phase: tools config"
-        );
-
         let request_id = next_request_id();
         let request = QueryRequest {
             r#type: "query".into(),
@@ -498,17 +478,10 @@ impl AgentBackend for AgentSdkBackend {
             prompt: instruction,
             options: QueryOptions {
                 cwd: Some(ctx.work_dir.clone()),
-                system_prompt: {
-                    let mut sp = phase.system_prompt.clone();
-                    // Inject MCP retrieval instructions into system prompt
-                    sp.push_str(
-                        "\n\nCRITICAL: Before writing any analysis or deliverables, you MUST \
-                         use the MCP document tools to search and read the project corpus. \
-                         Start by calling mcp__borg__list_documents, then mcp__borg__search_documents \
-                         with multiple queries, then mcp__borg__read_document for key documents. \
-                         The retrieval protocol guard WILL reject your work if these tools are not called.",
-                    );
-                    Some(sp)
+                system_prompt: if phase.system_prompt.is_empty() {
+                    None
+                } else {
+                    Some(phase.system_prompt.clone())
                 },
                 allowed_tools: allowed,
                 disallowed_tools: disallowed,
