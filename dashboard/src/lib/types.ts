@@ -377,6 +377,14 @@ export interface ToolCallEvent {
   error?: string;
 }
 
+export interface UsageSummary {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+  message_count: number;
+  task_count: number;
+}
+
 export function isActiveStatus(status: string) {
   return !["done", "merged", "failed", "blocked"].includes(status);
 }

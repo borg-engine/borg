@@ -26,6 +26,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { UsagePanel } from "./usage-panel";
 
 function formatUptime(seconds: number) {
   const d = Math.floor(seconds / 86400);
@@ -538,6 +539,8 @@ export function SettingsPanel() {
                 />
               </Section>
             )}
+
+            <UsagePanel />
           </>
         )}
 

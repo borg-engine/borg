@@ -1,51 +1,33 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft,
   Brain,
   Check,
   ChevronDown,
   ChevronRight,
-  FileText,
   Folder,
-  RotateCw,
   Search,
   Trash2,
-  Upload,
   User,
   Wrench,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FtsSearchResult, UploadSession } from "@/lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FtsSearchResult } from "@/lib/api";
 import {
-  completeProjectUploadSession,
   createProject,
-  createProjectUploadSession,
   deleteAllKnowledgeFiles,
-  deleteAllProjectFiles,
   deleteAllUserKnowledgeFiles,
   deleteKnowledgeFile,
-  deleteProjectFile,
   deleteUserKnowledgeFile,
   fetchKnowledgeContent,
-  fetchProjectFileContent,
-  fetchProjectFileText,
   fetchUserKnowledgeContent,
-  getProjectUploadSessionStatus,
-  listProjectUploadSessions,
-  reextractProjectFile,
-  retryProjectUploadSession,
   searchDocuments,
   uploadKnowledgeFile,
-  uploadProjectUploadChunk,
   uploadUserKnowledgeFile,
   useCustomModes,
   useDeleteProject,
   useKnowledgeFiles,
-
   useModes,
-  useProjectDocumentVersions,
   useProjects,
-  useSettings,
   useSharedProjects,
   useUserKnowledgeFiles,
 } from "@/lib/api";
@@ -54,8 +36,6 @@ import type { KnowledgeFile, ProjectDocument } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { getVocabulary, useVocabulary } from "@/lib/vocabulary";
 import { ChatBody } from "./chat-body";
-import { CloudStoragePanel } from "./cloud-storage";
-import { GitReposPanel } from "./git-repos-panel";
 import {
   downloadFile,
   FileListItem,
@@ -65,17 +45,12 @@ import {
   FileUploadArea,
   formatFileSize,
   isPreviewable,
-  useFileList,
-  useFilePreview,
 } from "./file-list-shared";
+import { GitReposPanel } from "./git-repos-panel";
 import { ProjectDetail } from "./project-detail";
-import { MarkdownLegalViewer } from "./viewers/markdown-legal-viewer";
-import { RedlineViewer } from "./viewers/redline-viewer";
+import { DocumentViewWrapper } from "./project-legal-view";
+import { ProjectFileManager } from "./project-file-manager";
 
-const RESUMABLE_UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024;
-const RESUMABLE_UPLOAD_PARALLEL_CHUNKS = 4;
-const RESUMABLE_UPLOAD_CHUNK_RETRIES = 3;
-const UPLOAD_SESSION_KEY_PREFIX = "borg-upload-session";
 const LEGAL_VOCAB = getVocabulary("lawborg");
 
 function isLegalWorkflowMode(mode: { name: string; label?: string; phases: Array<{ name: string }> }): boolean {
@@ -89,78 +64,8 @@ function isLegalWorkflowMode(mode: { name: string; label?: string; phases: Array
   );
 }
 
-type FileUploadProgress = {
-  id: string;
-  fileName: string;
-  uploadedBytes: number;
-  totalBytes: number;
-  status: "starting" | "uploading" | "processing" | "done" | "failed";
-  sessionId?: number;
-  error?: string;
-};
-
 function openPipelinesView() {
   window.dispatchEvent(new CustomEvent("borg:navigate", { detail: { view: "creator" } }));
-}
-
-function DocumentViewWrapper({
-  projectId,
-  doc,
-  viewMode,
-  onBack,
-  onToggleMode,
-  defaultTemplateId,
-}: {
-  projectId: number;
-  doc: ProjectDocument;
-  viewMode: "view" | "redline";
-  onBack: () => void;
-  onToggleMode: () => void;
-  defaultTemplateId?: number | null;
-}) {
-  const { data: versions = [] } = useProjectDocumentVersions(projectId, doc.task_id, doc.file_name);
-  const vocab = useVocabulary();
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.07] px-4 py-3">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-[12px] text-zinc-400 hover:text-zinc-200 transition-colors"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to {vocab.projectSingular}
-        </button>
-        <span className="text-[12px] text-zinc-600">·</span>
-        <span className="truncate text-[12px] text-zinc-400">{doc.file_name}</span>
-        {versions.length >= 2 && (
-          <button
-            onClick={onToggleMode}
-            className={cn(
-              "ml-auto rounded-lg border px-3 py-1 text-[12px] font-medium transition-colors",
-              viewMode === "redline"
-                ? "border-blue-500/30 bg-blue-500/10 text-blue-400"
-                : "border-white/[0.08] text-zinc-400 hover:border-white/[0.14] hover:text-zinc-200",
-            )}
-          >
-            {viewMode === "redline" ? "Document View" : "Compare Versions"}
-          </button>
-        )}
-      </div>
-      <div className="min-h-0 flex-1">
-        {viewMode === "redline" && versions.length >= 2 ? (
-          <RedlineViewer projectId={projectId} taskId={doc.task_id} path={doc.file_name} versions={versions} />
-        ) : (
-          <MarkdownLegalViewer
-            projectId={projectId}
-            taskId={doc.task_id}
-            path={doc.file_name}
-            defaultTemplateId={defaultTemplateId}
-          />
-        )}
-      </div>
-    </div>
-  );
 }
 
 type WorkflowOption = {
@@ -174,7 +79,6 @@ export function ProjectsPanel() {
   const { data: sharedProjects = [] } = useSharedProjects();
   const { data: modes = [] } = useModes();
   const { data: customModes = [] } = useCustomModes();
-  const { data: settings } = useSettings();
   const vocab = useVocabulary();
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [showMemory, setShowMemory] = useState<false | "org" | "my">(false);
@@ -256,39 +160,8 @@ export function ProjectsPanel() {
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? projects[0] ?? null;
   const activeProjectId = selectedProject?.id ?? null;
-  const fl = useFileList(activeProjectId);
-  const { filePage, files, filesLoading, fileSearch, setFileSearch, refetchFiles, resetPagination } = fl;
-  const fileSummary = filePage?.summary;
-  const { previewFile, setPreviewFile } = useFilePreview();
   const [selectedDoc, setSelectedDoc] = useState<ProjectDocument | null>(null);
   const [docViewMode, setDocViewMode] = useState<"view" | "redline">("view");
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [deleteFilesError, setDeleteFilesError] = useState<string | null>(null);
-  const [deletingAllFiles, setDeletingAllFiles] = useState(false);
-  const [textViewFile, setTextViewFile] = useState<{ id: number; name: string; text: string } | null>(null);
-  const [extracting, setExtracting] = useState<number | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadSessions, setUploadSessions] = useState<UploadSession[]>([]);
-  const [uploadSessionCounts, setUploadSessionCounts] = useState<Record<string, number>>({});
-  const [uploadSessionsLoading, setUploadSessionsLoading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<FileUploadProgress[]>([]);
-  const [dragOver, setDragOver] = useState(false);
-  const dropRef = useRef<HTMLDivElement>(null);
-
-  const totalBytes = fileSummary?.total_bytes ?? 0;
-  const projectMaxBytes = Math.max(1, settings?.project_max_bytes ?? 100 * 1024 * 1024);
-
-  const updateUploadProgress = useCallback((id: string, patch: Partial<FileUploadProgress>) => {
-    setUploadProgress((prev) => prev.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)));
-  }, []);
-
-  const refreshUploadSessions = useCallback(async () => {
-    if (!activeProjectId) return;
-    const data = await listProjectUploadSessions(activeProjectId, 30);
-    setUploadSessions(data.sessions || []);
-    setUploadSessionCounts(data.counts || {});
-  }, [activeProjectId]);
 
   useEffect(() => {
     if (!selectedProjectId && projects.length > 0) {
@@ -318,28 +191,6 @@ export function ProjectsPanel() {
     if (activeProjectId) {
       window.dispatchEvent(new CustomEvent("borg:project-selected", { detail: activeProjectId }));
     }
-  }, [activeProjectId]);
-
-  useEffect(() => {
-    if (!activeProjectId) return;
-    let cancelled = false;
-    const load = async () => {
-      setUploadSessionsLoading(true);
-      try {
-        const data = await listProjectUploadSessions(activeProjectId, 30);
-        if (cancelled) return;
-        setUploadSessions(data.sessions || []);
-        setUploadSessionCounts(data.counts || {});
-      } finally {
-        if (!cancelled) setUploadSessionsLoading(false);
-      }
-    };
-    load();
-    const t = setInterval(load, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
   }, [activeProjectId]);
 
   useEffect(() => {
@@ -396,250 +247,6 @@ export function ProjectsPanel() {
       setSelectedProjectId(created.id);
     } finally {
       setCreating(false);
-    }
-  }
-
-  async function handleDeleteAllProjectFiles() {
-    if (!activeProjectId || deletingAllFiles) return;
-    if (
-      !confirm(
-        `Delete all documents in this ${vocab.projectSingular}? This removes every file in the ${vocab.projectSingular}, not just the current search results.`,
-      )
-    ) {
-      return;
-    }
-    setDeleteFilesError(null);
-    setDeletingAllFiles(true);
-    try {
-      await deleteAllProjectFiles(activeProjectId);
-      setPreviewFile(null);
-      setTextViewFile(null);
-      resetPagination();
-      await refetchFiles();
-    } catch (err) {
-      setDeleteFilesError(
-        err instanceof Error ? err.message : `Failed to delete ${vocab.projectDocsLabel.toLowerCase()}`,
-      );
-    } finally {
-      setDeletingAllFiles(false);
-    }
-  }
-
-  function uploadSessionStorageKey(projectId: number, file: File): string {
-    return `${UPLOAD_SESSION_KEY_PREFIX}:${projectId}:${file.name}:${file.size}:${file.lastModified}`;
-  }
-
-  function buildChunkQueueFromRanges(ranges: Array<[number, number]>, totalChunks: number): number[] {
-    const queue: number[] = [];
-    if (ranges.length === 0) {
-      for (let idx = 0; idx < totalChunks; idx += 1) queue.push(idx);
-      return queue;
-    }
-    for (const [startRaw, endRaw] of ranges) {
-      const start = Math.max(0, startRaw);
-      const end = Math.min(totalChunks - 1, endRaw);
-      for (let idx = start; idx <= end; idx += 1) queue.push(idx);
-    }
-    return queue;
-  }
-
-  async function uploadChunkQueue(
-    projectId: number,
-    sessionId: number,
-    file: File,
-    chunkSize: number,
-    queue: number[],
-    onChunkUploaded: (bytes: number) => void,
-  ) {
-    const workerCount = Math.min(RESUMABLE_UPLOAD_PARALLEL_CHUNKS, queue.length);
-    await Promise.all(
-      Array.from({ length: workerCount }, async () => {
-        while (true) {
-          const chunkIndex = queue.shift();
-          if (chunkIndex === undefined) return;
-          const start = chunkIndex * chunkSize;
-          const end = Math.min(start + chunkSize, file.size);
-          const blob = file.slice(start, end);
-          let uploaded = false;
-          let lastErr: unknown = null;
-          for (let attempt = 1; attempt <= RESUMABLE_UPLOAD_CHUNK_RETRIES; attempt += 1) {
-            try {
-              await uploadProjectUploadChunk(projectId, sessionId, chunkIndex, blob);
-              uploaded = true;
-              break;
-            } catch (err) {
-              lastErr = err;
-              if (attempt < RESUMABLE_UPLOAD_CHUNK_RETRIES) {
-                await new Promise((resolve) => setTimeout(resolve, attempt * 500));
-              }
-            }
-          }
-          if (!uploaded) {
-            throw lastErr instanceof Error ? lastErr : new Error("chunk upload failed");
-          }
-          onChunkUploaded(blob.size);
-        }
-      }),
-    );
-  }
-
-  async function handleUpload(filesToUpload: FileList | File[]) {
-    if (!activeProjectId || uploading) return;
-    setUploading(true);
-    setUploadError(null);
-    const files = Array.from(filesToUpload).filter((file) => file.size > 0);
-    if (files.length === 0) {
-      setUploadError("No non-empty files selected.");
-      setUploading(false);
-      return;
-    }
-    const startingProgress: FileUploadProgress[] = files.map((file, idx) => ({
-      id: `${Date.now()}-${idx}-${file.name}`,
-      fileName: file.name,
-      totalBytes: file.size,
-      uploadedBytes: 0,
-      status: "starting",
-    }));
-    setUploadProgress(startingProgress);
-    const fileFailures: Array<{ fileName: string; error: string }> = [];
-    try {
-      for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
-        const file = files[fileIndex];
-        const progressId = startingProgress[fileIndex]?.id ?? `${Date.now()}-${fileIndex}-${file.name}`;
-        try {
-          const chunkSize = RESUMABLE_UPLOAD_CHUNK_SIZE;
-          const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
-          const sessionKey = uploadSessionStorageKey(activeProjectId, file);
-          let sessionId = Number(localStorage.getItem(sessionKey) || "");
-          let status = null as Awaited<ReturnType<typeof getProjectUploadSessionStatus>> | null;
-
-          if (!(Number.isFinite(sessionId) && sessionId > 0)) {
-            sessionId = 0;
-          } else {
-            try {
-              status = await getProjectUploadSessionStatus(activeProjectId, sessionId);
-              if (status.session.status !== "uploading") {
-                localStorage.removeItem(sessionKey);
-              }
-            } catch {
-              sessionId = 0;
-              status = null;
-              localStorage.removeItem(sessionKey);
-            }
-          }
-
-          if (!status) {
-            const created = await createProjectUploadSession(activeProjectId, {
-              file_name: file.name,
-              mime_type: file.type || "application/octet-stream",
-              file_size: file.size,
-              chunk_size: chunkSize,
-              total_chunks: totalChunks,
-              is_zip: file.name.toLowerCase().endsWith(".zip"),
-            });
-            sessionId = created.session_id;
-            localStorage.setItem(sessionKey, String(sessionId));
-            status = await getProjectUploadSessionStatus(activeProjectId, sessionId);
-          }
-
-          updateUploadProgress(progressId, {
-            sessionId,
-            uploadedBytes: status.session.uploaded_bytes,
-            status: status.session.status === "uploading" ? "uploading" : status.session.status,
-          });
-
-          if (status.session.status === "uploading") {
-            const queue = buildChunkQueueFromRanges(status.missing_ranges, status.total_chunks);
-            await uploadChunkQueue(activeProjectId, sessionId, file, status.session.chunk_size, queue, (bytes) => {
-              setUploadProgress((prev) =>
-                prev.map((entry) =>
-                  entry.id === progressId
-                    ? {
-                        ...entry,
-                        uploadedBytes: Math.min(entry.uploadedBytes + bytes, entry.totalBytes),
-                        status: "uploading",
-                      }
-                    : entry,
-                ),
-              );
-            });
-            await completeProjectUploadSession(activeProjectId, sessionId);
-            localStorage.removeItem(sessionKey);
-            updateUploadProgress(progressId, {
-              uploadedBytes: file.size,
-              status: "processing",
-            });
-          } else if (status.session.status === "done") {
-            localStorage.removeItem(sessionKey);
-            updateUploadProgress(progressId, {
-              uploadedBytes: file.size,
-              status: "done",
-            });
-          } else if (status.session.status === "failed") {
-            setUploadProgress((prev) =>
-              prev.map((entry) =>
-                entry.id === progressId
-                  ? { ...entry, status: "failed", error: status.session.error || "upload processing failed" }
-                  : entry,
-              ),
-            );
-          } else {
-            updateUploadProgress(progressId, {
-              uploadedBytes: file.size,
-              status: "processing",
-            });
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "upload failed";
-          fileFailures.push({ fileName: file.name, error: msg });
-          updateUploadProgress(progressId, {
-            status: "failed",
-            error: msg,
-          });
-        }
-      }
-      resetPagination();
-      await refetchFiles();
-      await refreshUploadSessions();
-      if (fileFailures.length > 0) {
-        const sample = fileFailures[0];
-        const summary =
-          fileFailures.length === 1
-            ? `Upload failed for ${sample.fileName}: ${sample.error}`
-            : `${fileFailures.length} files failed (first: ${sample.fileName}: ${sample.error})`;
-        setUploadError(summary);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "upload failed";
-      setUploadError(
-        msg === "413" ? `Upload exceeds project limit (${formatFileSize(projectMaxBytes)}).` : `Upload failed (${msg})`,
-      );
-      setUploadProgress((prev) =>
-        prev.map((entry) => (entry.status === "done" ? entry : { ...entry, status: "failed", error: msg })),
-      );
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragOver(false);
-      const droppedFiles = e.dataTransfer.files;
-      if (droppedFiles.length > 0) handleUpload(droppedFiles);
-    },
-    [handleUpload],
-  );
-
-  async function retryUploadSession(sessionId: number) {
-    if (!activeProjectId) return;
-    try {
-      await retryProjectUploadSession(activeProjectId, sessionId);
-      await refreshUploadSessions();
-    } catch {
-      // no-op
     }
   }
 
@@ -1063,310 +670,7 @@ export function ProjectsPanel() {
             />
           )
         ) : (
-          <div className="flex flex-col h-full">
-            {/* Sticky top: header + search + upload */}
-            <div className="shrink-0 mx-auto w-full max-w-3xl px-6 pt-8 pb-4 space-y-4">
-              {/* Header */}
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1c1a17] ring-1 ring-amber-900/20">
-                  <Folder className="h-6 w-6 text-amber-400/60" />
-                </div>
-                <div>
-                  <h2 className="text-[20px] font-semibold text-[#e8e0d4]">
-                    <span className="text-[14px] text-[#6b6459] tabular-nums mr-2">#{selectedProject.id}</span>
-                    {selectedProject.name}
-                  </h2>
-                  <p className="text-[13px] text-[#6b6459]">{vocab.projectDocsDescription}</p>
-                </div>
-              </div>
-
-              {/* Search & stats */}
-              <FileSearchBar
-                value={fileSearch}
-                onChange={(v) => {
-                  setFileSearch(v);
-                  resetPagination();
-                }}
-                placeholder={`Search ${vocab.projectSingular} files...`}
-                stats={
-                  <>
-                    {fileSummary?.total_files ?? files.length} files {formatFileSize(totalBytes)}/
-                    {formatFileSize(projectMaxBytes)}
-                  </>
-                }
-              />
-
-              {/* Drag-and-drop upload area */}
-              <div
-                ref={dropRef}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOver(true);
-                }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={cn(
-                  "rounded-xl border-2 border-dashed p-4 transition-colors cursor-pointer",
-                  dragOver
-                    ? "border-amber-500/40 bg-amber-500/[0.04]"
-                    : "border-[#2a2520] bg-[#151412] hover:border-amber-500/20",
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#1c1a17]">
-                    <Upload className="h-4 w-4 text-[#6b6459]" />
-                  </div>
-                  <div>
-                    <p className="text-[13px] font-medium text-[#e8e0d4]">
-                      Drop files here or <span className="text-amber-400">browse</span>
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-[#6b6459]">Supports any file type. Multiple files allowed.</p>
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    onChange={(e) => e.target.files && handleUpload(e.target.files)}
-                    className="hidden"
-                  />
-                </div>
-              </div>
-
-              {uploadError && <p className="text-[12px] text-red-400">{uploadError}</p>}
-              {deleteFilesError && <p className="text-[12px] text-red-400">{deleteFilesError}</p>}
-
-              {/* Upload progress */}
-              {uploadProgress.length > 0 && (
-                <div className="space-y-2 rounded-xl border border-[#2a2520] bg-[#151412] p-4">
-                  {uploadProgress.map((entry) => {
-                    const pct = entry.totalBytes > 0 ? Math.round((entry.uploadedBytes / entry.totalBytes) * 100) : 0;
-                    return (
-                      <div key={entry.id} className="text-[12px]">
-                        <div className="flex items-center justify-between gap-2 text-[#e8e0d4]">
-                          <span className="truncate">{entry.fileName}</span>
-                          <span className="shrink-0 text-[#6b6459]">
-                            {entry.status} {["uploading", "processing", "done"].includes(entry.status) ? `${pct}%` : ""}
-                          </span>
-                        </div>
-                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-[#1c1a17]">
-                          <div
-                            className={cn(
-                              "h-full transition-all",
-                              entry.status === "failed" ? "bg-red-500/70" : "bg-amber-500/70",
-                            )}
-                            style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
-                          />
-                        </div>
-                        {entry.error && <div className="mt-0.5 text-[10px] text-red-400">{entry.error}</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Scrollable: file list + cloud + sessions */}
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="mx-auto w-full max-w-3xl px-6 pb-8 space-y-6">
-                {/* File list */}
-                <div className="space-y-3">
-                  {filesLoading && files.length === 0 && (
-                    <div className="flex items-center justify-center py-12">
-                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#2a2520] border-t-amber-400" />
-                    </div>
-                  )}
-                  {!filesLoading && files.length === 0 && (
-                    <div className="flex flex-col items-center py-12 text-center">
-                      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1c1a17] ring-1 ring-amber-900/20">
-                        <FileText className="h-6 w-6 text-[#6b6459]" />
-                      </div>
-                      <p className="text-[14px] text-[#9c9486]">
-                        {filePage && filePage.total > 0 ? "No files match your search" : "No files uploaded yet"}
-                      </p>
-                      <p className="mt-1 text-[12px] text-[#6b6459]">
-                        {filePage && filePage.total > 0
-                          ? "Try a different search term"
-                          : `Upload files to make them available for this ${vocab.projectSingular}`}
-                      </p>
-                    </div>
-                  )}
-                  {files.map((f) => {
-                    const canPreview = isPreviewable(f);
-                    return (
-                      <div
-                        key={f.id}
-                        onClick={() => canPreview && setPreviewFile(f)}
-                        className={cn(
-                          "group rounded-xl border border-[#2a2520] bg-[#151412] p-4 transition-colors hover:border-amber-900/30",
-                          canPreview && "cursor-pointer",
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-3 min-w-0">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#1c1a17] ring-1 ring-amber-900/20">
-                              <FileText className="h-4 w-4 text-[#6b6459]" />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-[13px] font-medium text-[#e8e0d4] truncate">{f.file_name}</div>
-                              <div className="mt-0.5 text-[12px] text-[#6b6459]">
-                                {formatFileSize(f.size_bytes)}
-                                {f.source_path && f.source_path !== f.file_name && (
-                                  <span className="ml-1.5">· {f.source_path}</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {f.has_text && (
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (!activeProjectId) return;
-                                  const data = await fetchProjectFileText(activeProjectId, f.id);
-                                  setTextViewFile({ id: f.id, name: data.file_name, text: data.extracted_text });
-                                }}
-                                className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-[#232019] hover:text-emerald-400"
-                                title={`View extracted text (${(f.text_chars / 1000).toFixed(1)}k chars)`}
-                              >
-                                <FileText className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            {!f.has_text && (
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (!activeProjectId) return;
-                                  setExtracting(f.id);
-                                  try {
-                                    await reextractProjectFile(activeProjectId, f.id);
-                                    refetchFiles();
-                                  } finally {
-                                    setExtracting(null);
-                                  }
-                                }}
-                                disabled={extracting === f.id}
-                                className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4] disabled:animate-spin"
-                                title="Extract text"
-                              >
-                                <RotateCw className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (!activeProjectId) return;
-                                if (!confirm(`Delete "${f.file_name}"?`)) return;
-                                await deleteProjectFile(activeProjectId, f.id);
-                                refetchFiles();
-                              }}
-                              className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-[#232019] hover:text-red-400"
-                              title="Delete file"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                        {f.has_text && (
-                          <div className="mt-3 flex items-center gap-2">
-                            <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
-                              Extracted
-                            </span>
-                            <span className="text-[11px] text-[#6b6459]">
-                              {(f.text_chars / 1000).toFixed(1)}k chars
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  {/* Pagination */}
-                  {filePage && (
-                    <FileListPagination
-                      filePage={filePage}
-                      currentOffset={fl.currentFilePage.offset}
-                      fileCount={files.length}
-                      pageSize={fl.pageSize}
-                      onPageSizeChange={(s) => {
-                        fl.setPageSize(s);
-                        resetPagination();
-                      }}
-                      canGoPrev={fl.filePageStack.length > 1}
-                      onPrev={() => fl.setFilePageStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev))}
-                      canGoNext={!!(filePage.has_more && filePage.next_cursor)}
-                      onNext={() => {
-                        if (!filePage.next_cursor) return;
-                        fl.setFilePageStack((prev) => [
-                          ...prev,
-                          {
-                            cursor: filePage?.next_cursor ?? null,
-                            offset: fl.currentFilePage.offset + files.length,
-                          },
-                        ]);
-                      }}
-                      actions={
-                        <button
-                          type="button"
-                          onClick={handleDeleteAllProjectFiles}
-                          disabled={deletingAllFiles}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/[0.08] px-3 py-1.5 text-[12px] font-medium text-red-300 transition-colors hover:bg-red-500/[0.14] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          {deletingAllFiles ? "Deleting..." : "Delete All"}
-                        </button>
-                      }
-                    />
-                  )}
-                </div>
-
-                {/* Upload sessions (compact) */}
-                {(uploadSessions.length > 0 || uploadSessionsLoading) && (
-                  <div className="rounded-xl border border-[#2a2520] bg-[#151412] p-4">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-[12px] font-semibold text-[#e8e0d4]">Upload Sessions</span>
-                      <span className="text-[11px] text-[#6b6459] tabular-nums">
-                        {uploadSessionCounts.uploading ?? 0} uploading · {uploadSessionCounts.processing ?? 0}{" "}
-                        processing · {uploadSessionCounts.done ?? 0} done
-                      </span>
-                    </div>
-                    <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                      {uploadSessions.slice(0, 8).map((s) => (
-                        <div
-                          key={s.id}
-                          className="flex items-center justify-between rounded-lg border border-[#2a2520] px-3 py-2 text-[12px]"
-                        >
-                          <span className="truncate pr-2 text-[#e8e0d4]">
-                            #{s.id} {s.file_name}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[#6b6459]">{s.status}</span>
-                            {s.status === "failed" && (
-                              <button
-                                onClick={() => retryUploadSession(s.id)}
-                                className="rounded-lg border border-amber-500/30 px-2 py-1 text-[11px] text-amber-300 hover:bg-amber-500/10"
-                              >
-                                Retry
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <CloudStoragePanel
-                  projectId={activeProjectId}
-                  settings={settings ?? null}
-                  onImported={() => {
-                    resetPagination();
-                    refetchFiles();
-                  }}
-                />
-              </div>
-            </div>
-          </div>
+          <ProjectFileManager project={selectedProject} />
         )}
       </div>
 
@@ -1374,31 +678,6 @@ export function ProjectsPanel() {
       {!isSWE && showMemory && (
         <div className="flex h-full w-[30vw] shrink-0 flex-col border-l border-[#2a2520] bg-[#0f0e0c] overflow-hidden">
           <ChatBody thread="web:dashboard" className="bg-[#0f0e0c]" />
-        </div>
-      )}
-
-      {activeProjectId && (
-        <FilePreviewWrapper file={previewFile} fetchContent={(id) => fetchProjectFileContent(activeProjectId, id)} onClose={() => setPreviewFile(null)} />
-      )}
-      {textViewFile && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setTextViewFile(null)}
-        >
-          <div
-            className="mx-4 flex max-h-[80vh] w-full max-w-3xl flex-col rounded-xl border border-white/10 bg-zinc-900 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-              <span className="text-[15px] font-semibold text-zinc-100">{textViewFile.name} — Extracted Text</span>
-              <button onClick={() => setTextViewFile(null)} className="text-zinc-500 hover:text-zinc-300">
-                ✕
-              </button>
-            </div>
-            <pre className="flex-1 overflow-auto whitespace-pre-wrap p-5 font-mono text-[13px] leading-relaxed text-zinc-300">
-              {textViewFile.text}
-            </pre>
-          </div>
         </div>
       )}
     </div>

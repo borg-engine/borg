@@ -30,6 +30,7 @@ import type {
   TaskMessage,
   TaskOutput,
   ToolCallEvent,
+  UsageSummary,
 } from "./types";
 
 // Runtime base URL: set window.__API_BASE_URL__ = "https://api.example.com" in a <script> before the app loads.
@@ -1961,5 +1962,21 @@ export function useSharedProjects() {
   return useQuery<SharedProject[]>({
     queryKey: ["shared-projects"],
     queryFn: () => fetchJson("/api/shared-projects"),
+  });
+}
+
+export async function getUsageSummary(from?: string, to?: string): Promise<UsageSummary> {
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const qs = params.toString();
+  return fetchJson(`/api/usage${qs ? `?${qs}` : ""}`);
+}
+
+export function useUsageSummary(from?: string, to?: string) {
+  return useQuery<UsageSummary>({
+    queryKey: ["usage", from, to],
+    queryFn: () => getUsageSummary(from, to),
+    staleTime: 30_000,
   });
 }
