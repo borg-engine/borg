@@ -871,6 +871,34 @@ fn spawn_pipeline_event_forwarder(
     });
 }
 
+/// Update agent CLI tools (claude, codex) at startup so they're always current.
+async fn update_agent_tools() {
+    let cmds: &[(&str, &[&str])] = &[
+        ("bun", &["install", "-g", "@anthropic-ai/claude-code@latest"]),
+        ("bun", &["install", "-g", "@openai/codex@latest"]),
+    ];
+    for (bin, args) in cmds {
+        match tokio::process::Command::new(bin)
+            .args(*args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .await
+        {
+            Ok(out) if out.status.success() => {
+                info!("updated: {bin} {}", args.join(" "));
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                warn!("failed to update {bin} {}: {stderr}", args.join(" "));
+            }
+            Err(e) => {
+                warn!("failed to run {bin}: {e}");
+            }
+        }
+    }
+}
+
 fn spawn_ingestion_workers(
     ingestion_queue: Arc<ingestion::IngestionQueue>,
     db: Arc<Db>,
@@ -1238,6 +1266,11 @@ fn build_registry(
 
 fn spawn_post_state_tasks(state: &Arc<AppState>, config: &Arc<Config>, db: &Arc<Db>) {
     routes::spawn_linked_credential_maintenance(Arc::clone(state));
+
+    // Update agent CLI tools in the background at startup
+    tokio::spawn(async {
+        update_agent_tools().await;
+    });
 
     let worker_loops: usize = std::env::var("INGEST_WORKER_LOOPS")
         .ok()
