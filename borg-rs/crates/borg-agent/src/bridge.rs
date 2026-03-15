@@ -151,9 +151,14 @@ async fn run_bridge_query(
         cmd.env(&k, &v);
     }
 
-    // Pass through oauth token if set
+    // Pass through oauth token if set (from process env or request env)
     if let Ok(token) = std::env::var("CLAUDE_CODE_OAUTH_TOKEN") {
         cmd.env("CLAUDE_CODE_OAUTH_TOKEN", &token);
+    }
+    // Also pass request env vars to the subprocess directly (not just via stdin JSON)
+    // so the SDK can pick them up during initialization before reading stdin.
+    for (k, v) in &request.options.env {
+        cmd.env(k, v);
     }
 
     let mut child = cmd.spawn().context("failed to spawn agent-bridge")?;
@@ -343,7 +348,11 @@ impl AgentSdkBackend {
     fn build_env(&self, extra: &HashMap<String, String>) -> HashMap<String, String> {
         let mut env = self.provider.to_env_vars();
         env.extend(extra.iter().map(|(k, v)| (k.clone(), v.clone())));
-        if !self.base_url.is_empty() {
+        // Only set ANTHROPIC_BASE_URL for Direct/Bedrock/Vertex providers.
+        // For Subscription (OAuth) mode, the SDK must talk to api.anthropic.com
+        // directly — routing through the local proxy causes 401 since it
+        // doesn't handle OAuth tokens.
+        if !self.base_url.is_empty() && !matches!(self.provider, ProviderConfig::Subscription) {
             env.insert("ANTHROPIC_BASE_URL".into(), self.base_url.clone());
         }
         env
@@ -428,6 +437,18 @@ impl AgentBackend for AgentSdkBackend {
             Some(ctx.model.clone())
         };
 
+        let mut env = self.build_env(&ctx.api_keys);
+        if !ctx.oauth_token.is_empty() {
+            env.insert("CLAUDE_CODE_OAUTH_TOKEN".into(), ctx.oauth_token.clone());
+        } else if let Some(home) = std::env::var_os("HOME") {
+            let creds_path = std::path::Path::new(&home).join(".claude/.credentials.json");
+            if let Some(token) = borg_core::config::read_oauth_from_credentials(
+                creds_path.to_str().unwrap_or(""),
+            ) {
+                env.insert("CLAUDE_CODE_OAUTH_TOKEN".into(), token);
+            }
+        }
+
         let request_id = next_request_id();
         let request = QueryRequest {
             r#type: "query".into(),
@@ -448,7 +469,7 @@ impl AgentBackend for AgentSdkBackend {
                 max_budget_usd: None,
                 permission_mode: Some("bypassPermissions".into()),
                 resume,
-                env: self.build_env(&ctx.api_keys),
+                env,
             },
         };
 
@@ -514,6 +535,18 @@ impl AgentBackend for AgentSdkBackend {
         let mut env = self.build_env(&ctx.api_keys);
         if !ctx.oauth_token.is_empty() {
             env.insert("CLAUDE_CODE_OAUTH_TOKEN".into(), ctx.oauth_token.clone());
+        } else {
+            // Fallback: read OAuth token from the user's home credentials file,
+            // same as the CLI backend does. This handles benchmark/isolated runs
+            // where linked credentials aren't in the DB.
+            if let Some(home) = std::env::var_os("HOME") {
+                let creds_path = std::path::Path::new(&home).join(".claude/.credentials.json");
+                if let Some(token) = borg_core::config::read_oauth_from_credentials(
+                    creds_path.to_str().unwrap_or(""),
+                ) {
+                    env.insert("CLAUDE_CODE_OAUTH_TOKEN".into(), token);
+                }
+            }
         }
         env.extend(ctx.provider_env.iter().map(|(k, v)| (k.clone(), v.clone())));
 

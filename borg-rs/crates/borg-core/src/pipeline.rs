@@ -625,7 +625,7 @@ impl Pipeline {
         ctx: &mut PhaseContext,
     ) -> Result<()> {
         let provider = match backend_name {
-            "claude" => PROVIDER_CLAUDE,
+            "claude" | "agent-sdk" => PROVIDER_CLAUDE,
             "codex" => PROVIDER_OPENAI,
             _ => return Ok(()),
         };
@@ -2497,7 +2497,12 @@ impl Pipeline {
             let changes_recommendation = uncertainty.changes_sign || uncertainty.changes_close_only;
             let support_confirmed = matches!(
                 uncertainty.support_status.trim(),
-                "record_confirmed" | "confirmed_via_clarification" | "confirmed"
+                "record_confirmed"
+                    | "confirmed_via_clarification"
+                    | "confirmed"
+                    | "asked_but_unavailable"
+                    | "clarification_attempted"
+                    | "asked_unavailable"
             );
             let support_missing = !support_confirmed;
             let not_blocked = uncertainty.recommended_treatment.trim() != "blocked_clarification";
@@ -2528,12 +2533,19 @@ impl Pipeline {
         // uncertainty at all.
         // Collect ALL failing uncertainties so the model can fix them in one pass.
         // Skip in revision stages where clarification budget may be exhausted.
-        if task.revision_count == 0 {
+        // Also skip after attempt >= 4 — the model has had enough chances to ask
+        // questions and further rejections just burn attempts without value.
+        if task.revision_count == 0 && task.attempt < 4 {
             let mut failing_issues: Vec<String> = Vec::new();
             for uncertainty in &state.uncertainties {
                 let confirmed = matches!(
                     uncertainty.support_status.trim(),
-                    "record_confirmed" | "confirmed_via_clarification" | "confirmed"
+                    "record_confirmed"
+                    | "confirmed_via_clarification"
+                    | "confirmed"
+                    | "asked_but_unavailable"
+                    | "clarification_attempted"
+                    | "asked_unavailable"
                 );
                 if confirmed {
                     continue;
@@ -2556,11 +2568,11 @@ impl Pipeline {
                      blocked_clarification.\n\
                      Failing uncertainties:\n{}\n\
                      In the initial review stage, every uncertainty whose support is not \
-                     \"record_confirmed\" or \"confirmed_via_clarification\" MUST use the \
-                     clarification channel. If a fact is truly immaterial to your recommendation, \
-                     do not list it as an uncertainty. For each listed uncertainty with unconfirmed \
-                     support, set recommended_treatment to \"blocked_clarification\" and write \
-                     .borg/signal.json to ask about it. Ask one question at a time, then re-evaluate.",
+                     \"record_confirmed\", \"confirmed_via_clarification\", or \"asked_but_unavailable\" \
+                     MUST use the clarification channel. If a fact is truly immaterial, don't list \
+                     it as an uncertainty. For each failing uncertainty: set recommended_treatment \
+                     to \"blocked_clarification\" and write .borg/signal.json to ask about it. \
+                     If clarification returned no answer, set support_status to \"asked_but_unavailable\".",
                     failing_issues.len(),
                     failing_issues.join("\n")
                 ));
@@ -2585,7 +2597,12 @@ impl Pipeline {
                 )
                 && !matches!(
                     claim.support_status.trim(),
-                    "record_confirmed" | "supported" | "coverage_verified"
+                    "record_confirmed"
+                        | "supported"
+                        | "coverage_verified"
+                        | "confirmed_via_clarification"
+                        | "confirmed"
+                        | "asked_but_unavailable"
                 )
             {
                 return Some(format!(
