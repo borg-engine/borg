@@ -5,11 +5,13 @@ import {
   GitMerge,
   Lightbulb,
   ListTodo,
+  Menu,
   MessageSquare,
   Plug,
   Settings,
   Terminal,
   Wrench,
+  X,
   Zap,
 } from "lucide-react";
 import type { ErrorInfo, ReactNode } from "react";
@@ -479,6 +481,7 @@ function AppInner() {
   const [repoFilter, setRepoFilter] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("tasks");
   const [mobileBottomTab, setMobileBottomTab] = useState<"queue" | "proposals">("proposals");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { logs, connected } = useLogs();
   const { data: status } = useStatus();
   const { mode: uiMode } = useUIMode();
@@ -535,7 +538,7 @@ function AppInner() {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col bg-[#0f0e0c] text-foreground antialiased" style={{ height: "100dvh" }}>
+      <div className="flex flex-col bg-[#0f0e0c] text-foreground antialiased text-[16px]" style={{ height: "100dvh" }}>
         <Header connected={connected} mobile />
 
         <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
@@ -556,17 +559,19 @@ function AppInner() {
               <div className="flex shrink-0 border-b border-[#2a2520]">
                 <button
                   onClick={() => setMobileBottomTab("proposals")}
-                  className={`flex-1 py-2.5 text-[13px] font-medium transition-colors ${
-                    mobileBottomTab === "proposals" ? "text-[#e8e0d4] border-b-2 border-amber-400" : "text-[#6b6459]"
-                  }`}
+                  className={cn(
+                    "flex-1 min-h-[44px] text-[14px] font-medium transition-colors",
+                    mobileBottomTab === "proposals" ? "text-[#e8e0d4] border-b-2 border-amber-400" : "text-[#6b6459]",
+                  )}
                 >
                   Proposals
                 </button>
                 <button
                   onClick={() => setMobileBottomTab("queue")}
-                  className={`flex-1 py-2.5 text-[13px] font-medium transition-colors ${
-                    mobileBottomTab === "queue" ? "text-[#e8e0d4] border-b-2 border-amber-400" : "text-[#6b6459]"
-                  }`}
+                  className={cn(
+                    "flex-1 min-h-[44px] text-[14px] font-medium transition-colors",
+                    mobileBottomTab === "queue" ? "text-[#e8e0d4] border-b-2 border-amber-400" : "text-[#6b6459]",
+                  )}
                 >
                   Queue
                 </button>
@@ -595,12 +600,12 @@ function AppInner() {
                 key={key}
                 onClick={() => setMobileTab(key)}
                 className={cn(
-                  "flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 active:opacity-70 transition-colors",
+                  "flex flex-1 flex-col items-center gap-0.5 min-h-[44px] min-w-[44px] pt-2 pb-1.5 active:opacity-70 transition-colors",
                   mobileTab === key ? "text-amber-400" : "text-[#6b6459]",
                 )}
               >
                 <Icon className="h-5 w-5" strokeWidth={mobileTab === key ? 2 : 1.5} />
-                <span className="text-[10px] font-medium">{label}</span>
+                <span className="text-[11px] font-medium">{label}</span>
               </button>
             );
           })}
@@ -612,8 +617,16 @@ function AppInner() {
   // Desktop layout
   return (
     <div className="flex h-screen bg-[#0f0e0c] text-foreground antialiased">
-      {/* Sidebar nav — 52px in flow, expands to 140px on hover overlaying content */}
-      <div className="relative w-[52px] shrink-0">
+      {/* Sidebar backdrop overlay for md screens */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar nav — hidden on md, 52px on lg, expands to 160px on hover */}
+      <div className="relative hidden lg:block w-[52px] shrink-0">
         <nav
           className={cn(
             "group/nav absolute inset-y-0 left-0 z-40 flex w-[52px] hover:w-[160px] flex-col items-start border-r pb-4 overflow-hidden transition-[width] duration-100 ease-out",
@@ -646,7 +659,7 @@ function AppInner() {
                   title={label}
                   aria-label={label}
                   className={cn(
-                    "group relative flex h-10 w-full items-center gap-3 rounded-xl px-[10px]",
+                    "group relative flex h-10 min-h-[44px] w-full items-center gap-3 rounded-xl px-[10px]",
                     view === key
                       ? sidebarAlert
                         ? "bg-red-400/20 text-red-50"
@@ -705,17 +718,114 @@ function AppInner() {
         </nav>
       </div>
 
+      {/* Sidebar drawer for md screens (768-1023px) */}
+      <nav
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 flex w-[240px] flex-col border-r pb-4 overflow-hidden transition-transform duration-200 ease-out lg:hidden",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full",
+          sidebarAlert
+            ? "border-red-500/30 bg-red-950/95"
+            : "border-[#2a2520] bg-[#151412]",
+        )}
+      >
+        <div className="flex h-14 items-center justify-between px-4 shrink-0">
+          <div className={cn("borg-logo h-8 w-8", domain.accentBg)}>
+            <BorgLogo expanded />
+          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors"
+            aria-label="Close sidebar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex flex-1 flex-col items-start gap-0.5 w-full px-3 overflow-y-auto">
+          {navItems.map(({ key, label: defaultLabel, Icon }) => {
+            const label = navLabelOverrides[key] ?? defaultLabel;
+            return (
+              <button
+                key={key}
+                onClick={() => { setView(key); setSidebarOpen(false); }}
+                aria-label={label}
+                className={cn(
+                  "relative flex h-11 min-h-[44px] w-full items-center gap-3 rounded-xl px-3",
+                  view === key
+                    ? sidebarAlert
+                      ? "bg-red-400/20 text-red-50"
+                      : "bg-amber-500/[0.08] text-[#e8e0d4]"
+                    : sidebarAlert
+                      ? "text-red-200/80 hover:bg-red-400/15 hover:text-red-50"
+                      : "text-[#6b6459] hover:bg-amber-500/[0.05] hover:text-[#9c9486]",
+                )}
+              >
+                <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={view === key ? 2 : 1.5} />
+                <span className="text-[14px] font-medium">{label}</span>
+                {view === key && (
+                  <div
+                    className={cn(
+                      "absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full",
+                      sidebarAlert ? "bg-red-300" : "bg-amber-400",
+                    )}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-auto flex w-full flex-col items-start gap-3 shrink-0 px-4 py-2">
+          {(status?.dispatched_agents ?? 0) > 0 && (
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/15 ring-1 ring-amber-500/20">
+                <span className="text-[11px] font-bold tabular-nums text-amber-400">{status?.dispatched_agents}</span>
+              </div>
+              <span className="text-[12px] text-[#9c9486]">active agent(s)</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2" title={connected ? "Server connected" : "Server disconnected"}>
+            <div
+              className={cn(
+                "h-2.5 w-2.5 rounded-full",
+                connected
+                  ? "bg-emerald-500 shadow-[0_0_8px_rgba(200,160,80,0.3)]"
+                  : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]",
+              )}
+            />
+            <span className="text-[12px] text-[#6b6459]">{connected ? "Connected" : "Offline"}</span>
+          </div>
+        </div>
+      </nav>
+
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {isSWE && (
-          <Header connected={connected} view={view} repoFilter={repoFilter} onRepoFilterChange={setRepoFilter} />
+          <Header
+            connected={connected}
+            view={view}
+            repoFilter={repoFilter}
+            onRepoFilterChange={setRepoFilter}
+            onMenuToggle={() => setSidebarOpen((v) => !v)}
+          />
+        )}
+        {!isSWE && (
+          <div className="flex h-14 shrink-0 items-center border-b border-[#2a2520] px-4 lg:hidden">
+            <button
+              onClick={() => setSidebarOpen((v) => !v)}
+              className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors"
+              aria-label="Toggle sidebar"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          </div>
         )}
 
-        <div className="min-h-0 flex-1 flex overflow-hidden">
+        <div className="min-h-0 flex-1 flex flex-col md:flex-row overflow-hidden">
           <div className="min-w-0 flex-1 overflow-hidden" style={{ contain: "strict" }}>
             {view === "tasks" && (
-              <div className="flex h-full">
-                <div className="w-[320px] shrink-0 overflow-hidden border-r border-[#2a2520]">
+              <div className="flex h-full flex-col md:flex-row">
+                <div className="md:w-[320px] shrink-0 overflow-hidden border-b md:border-b-0 md:border-r border-[#2a2520] max-h-[40vh] md:max-h-none">
                   <TaskList selectedId={selectedTaskId} onSelect={handleSelectTask} repoFilter={repoFilter} />
                 </div>
                 <div className="min-w-0 flex-1 overflow-hidden">
@@ -769,7 +879,7 @@ function EmptyState({
         <p className="mt-2 text-[13px] text-[#6b6459]">or create a new one from the header</p>
       </div>
       {status && isSWE && (
-        <div className="flex gap-8 mt-2">
+        <div className="flex flex-wrap justify-center gap-4 md:gap-8 mt-2 px-4">
           <StatPill value={status.active_tasks} label="Active" color="text-blue-400" />
           <StatPill value={status.merged_tasks} label="Merged" color="text-emerald-400" />
           <StatPill value={status.ai_requests} label="AI Calls" color="text-cyan-400" />

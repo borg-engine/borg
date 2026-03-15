@@ -64,7 +64,7 @@ export function ChatDrawer({ defaultThread = "web:dashboard", view }: ChatDrawer
   if (view === "projects" && !isSWE) return null;
 
   return (
-    <div className="flex h-full w-[30vw] shrink-0 flex-col border-l border-[#2a2520] bg-[#0f0e0c] overflow-hidden">
+    <div className="hidden md:flex h-full w-full md:w-[40vw] lg:w-[30vw] shrink-0 flex-col border-l border-[#2a2520] bg-[#0f0e0c] overflow-hidden">
       <div className="min-h-0 flex-1">
         <ChatBody thread={thread} />
       </div>

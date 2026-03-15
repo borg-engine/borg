@@ -131,7 +131,7 @@ function TaskRow({
     <button
       onClick={onClick}
       className={cn(
-        "flex w-full flex-col gap-1 rounded-xl px-3.5 py-2.5 text-left transition-all",
+        "flex w-full flex-col gap-1 rounded-xl px-3.5 py-2.5 min-h-[44px] text-left transition-all",
         "hover:bg-[#1c1a17]",
         isActive && !isStuck && "bg-amber-500/[0.03]",
         isStuck && "bg-red-500/[0.04]",

@@ -730,6 +730,18 @@ html:not(.dark) .shadow-\[0_0_8px_rgba\(200\,160\,80\,0\.3\)\] {
 
 /* --- Base layer --- */
 
+/* --- Responsive tables --- */
+.responsive-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 767px) {
+  table {
+    min-width: 600px;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

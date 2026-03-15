@@ -301,9 +301,9 @@ export function ChatPanel() {
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-[#2a2520] bg-[#0f0e0c]/80 backdrop-blur-sm">
-        <div className="mx-auto max-w-3xl px-4 py-4">
-          <div className="relative flex items-end gap-2 rounded-2xl border border-[#2a2520] bg-[#1c1a17] px-4 py-3 transition-colors focus-within:border-amber-500/20 focus-within:bg-[#232019]">
+      <div className="shrink-0 border-t border-[#2a2520] bg-[#0f0e0c]/80 backdrop-blur-sm" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+        <div className="mx-auto max-w-3xl px-3 md:px-4 py-3 md:py-4">
+          <div className="relative flex items-end gap-2 rounded-2xl border border-[#2a2520] bg-[#1c1a17] px-3 md:px-4 py-2.5 md:py-3 transition-colors focus-within:border-amber-500/20 focus-within:bg-[#232019]">
             <textarea
               ref={inputRef}
               value={input}
@@ -311,7 +311,7 @@ export function ChatPanel() {
               onKeyDown={handleKeyDown}
               placeholder="Message Borg..."
               rows={1}
-              className="max-h-[200px] min-h-[24px] flex-1 resize-none bg-transparent text-[14px] leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none"
+              className="max-h-[200px] min-h-[24px] flex-1 resize-none bg-transparent text-[16px] md:text-[14px] leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none"
             />
             <div className="flex shrink-0 items-center gap-1">
               {dictation.supported && (
@@ -319,7 +319,7 @@ export function ChatPanel() {
                   onClick={dictation.toggle}
                   title={dictation.listening ? "Stop dictation" : "Start dictation"}
                   className={cn(
-                    "rounded-lg p-2 transition-colors",
+                    "rounded-lg p-2 min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors",
                     dictation.listening
                       ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
                       : "text-[#6b6459] hover:text-[#9c9486] hover:bg-[#232019]",
@@ -332,7 +332,7 @@ export function ChatPanel() {
                 onClick={handleSend}
                 disabled={!input.trim() || sending}
                 className={cn(
-                  "rounded-lg p-2 transition-all",
+                  "rounded-lg p-2 min-h-[44px] min-w-[44px] flex items-center justify-center transition-all",
                   input.trim() && !sending
                     ? "bg-amber-500 text-white hover:bg-amber-400 shadow-lg shadow-amber-500/25"
                     : "text-[#6b6459] cursor-not-allowed",

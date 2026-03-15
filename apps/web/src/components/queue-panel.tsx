@@ -27,7 +27,7 @@ export function QueuePanel({ repoFilter }: QueuePanelProps) {
           {filtered?.map((e) => (
             <div
               key={e.id}
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] transition-colors hover:bg-[#1c1a17]"
+              className="flex items-center gap-3 rounded-xl px-4 py-3 min-h-[44px] text-[13px] transition-colors hover:bg-[#1c1a17] overflow-x-auto"
             >
               <StatusBadge status={e.status} />
               {multiRepo && !repoFilter && e.repo_path && (
@@ -36,7 +36,7 @@ export function QueuePanel({ repoFilter }: QueuePanelProps) {
                 </span>
               )}
               <span className="flex-1 truncate font-mono text-[13px] text-[#e8e0d4]">{e.branch}</span>
-              <span className="font-mono text-[11px] text-[#6b6459]">#{e.task_id}</span>
+              <span className="shrink-0 font-mono text-[11px] text-[#6b6459]">#{e.task_id}</span>
             </div>
           ))}
           {!filtered?.length && (

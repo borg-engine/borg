@@ -392,13 +392,13 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-[#2a2520] bg-[#0f0e0c]/90 px-3 py-2.5">
+      <div className="shrink-0 border-t border-[#2a2520] bg-[#0f0e0c]/90 px-3 py-2.5" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.625rem)" }}>
         {availableModels.length > 1 && (
           <div className="mb-1.5 flex items-center" ref={modelDropdownRef}>
             <div className="relative">
               <button
                 onClick={() => setShowModelPicker(!showModelPicker)}
-                className="flex items-center gap-1.5 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:border-[#2a2520]/80 hover:text-[#e8e0d4]"
+                className="flex items-center gap-1.5 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 min-h-[44px] md:min-h-0 text-[12px] text-[#9c9486] transition-colors hover:border-[#2a2520]/80 hover:text-[#e8e0d4]"
               >
                 <Sparkles className="h-3 w-3 text-amber-400/60" />
                 <span>{(availableModels.find((m) => m.model === selectedModel) ?? availableModels[0])?.label}</span>
@@ -421,7 +421,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
                             setShowModelPicker(false);
                           }}
                           className={cn(
-                            "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[#232019]",
+                            "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 min-h-[44px] md:min-h-0 text-left text-[13px] transition-colors hover:bg-[#232019]",
                             isActive ? "bg-[#232019] text-[#e8e0d4]" : "text-[#9c9486]",
                           )}
                         >
@@ -446,14 +446,14 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
             onKeyDown={handleKeyDown}
             placeholder="Message Borg..."
             rows={1}
-            className="max-h-[120px] min-h-[20px] flex-1 resize-none bg-transparent text-[13px] leading-relaxed text-[#e8e0d4] placeholder:text-[#6b6459] focus:outline-none"
+            className="max-h-[120px] min-h-[20px] flex-1 resize-none bg-transparent text-[16px] md:text-[13px] leading-relaxed text-[#e8e0d4] placeholder:text-[#6b6459] focus:outline-none"
           />
           <div className="flex shrink-0 items-center gap-0.5">
             {dictation.supported && (
               <button
                 onClick={dictation.toggle}
                 className={cn(
-                  "rounded-lg p-1.5 transition-colors",
+                  "rounded-lg p-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center transition-colors",
                   dictation.listening ? "bg-red-500/20 text-red-400" : "text-[#6b6459] hover:text-[#9c9486]",
                 )}
               >
@@ -464,7 +464,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
               onClick={handleSend}
               disabled={!input.trim() || sending}
               className={cn(
-                "rounded-lg p-1.5 transition-all",
+                "rounded-lg p-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center transition-all",
                 input.trim() && !sending
                   ? "bg-amber-500 text-white hover:bg-amber-400 shadow-lg shadow-amber-500/25"
                   : "text-[#6b6459] cursor-not-allowed",

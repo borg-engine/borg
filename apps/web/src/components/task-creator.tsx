@@ -110,23 +110,24 @@ export function TaskCreator({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-3.5 py-2 text-[12px] font-medium text-amber-400 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/25"
+        className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-3.5 py-2 min-h-[44px] text-[12px] font-medium text-amber-400 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/25"
       >
         <Plus className="h-3.5 w-3.5" />
-        {buttonLabel}
+        <span className="hidden md:inline">{buttonLabel}</span>
+        <span className="md:hidden">New</span>
       </button>
     );
   }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 backdrop-blur-sm pt-[15vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 backdrop-blur-sm pt-[5vh] md:pt-[15vh] overflow-y-auto"
       onClick={() => setOpen(false)}
     >
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
-        className="w-full max-w-lg rounded-2xl border border-[#2a2520] bg-[#1c1a17] p-6 shadow-2xl"
+        className="w-full max-w-lg rounded-2xl border border-[#2a2520] bg-[#1c1a17] p-4 md:p-6 mx-3 md:mx-0 shadow-2xl mb-[5vh]"
       >
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-[16px] font-semibold text-zinc-100">Create Task</h2>

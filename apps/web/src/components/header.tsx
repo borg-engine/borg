@@ -1,3 +1,4 @@
+import { Menu } from "lucide-react";
 import { useState } from "react";
 import { getSelectedWorkspaceId, switchWorkspace, useStatus, useWorkspaces } from "@/lib/api";
 import { useDomain } from "@/lib/domain";
@@ -48,12 +49,14 @@ export function Header({
   view,
   repoFilter,
   onRepoFilterChange,
+  onMenuToggle,
 }: {
   connected: boolean;
   mobile?: boolean;
   view?: View;
   repoFilter?: string | null;
   onRepoFilterChange?: (repo: string | null) => void;
+  onMenuToggle?: () => void;
 }) {
   const { data: status } = useStatus();
   const { data: workspaceData } = useWorkspaces();
@@ -66,7 +69,7 @@ export function Header({
 
   if (mobile) {
     return (
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[#2a2520] bg-[#0f0e0c] px-5">
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[#2a2520] bg-[#0f0e0c] px-4">
         <div className="flex items-center gap-2.5">
           <div className={`borg-logo h-6 w-6 ${domain.accentBg}`}>
             <BorgLogo size="mobile" />
@@ -104,13 +107,22 @@ export function Header({
   const multiRepo = repos.length > 1;
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-4 border-b border-[#2a2520] px-6">
-      <h1 className="text-[15px] font-semibold text-[#e8e0d4]">{VIEW_TITLES[view ?? "tasks"]}</h1>
+    <header className="flex h-14 shrink-0 items-center gap-2 md:gap-4 border-b border-[#2a2520] px-3 md:px-6">
+      {onMenuToggle && (
+        <button
+          onClick={onMenuToggle}
+          className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors lg:hidden"
+          aria-label="Toggle sidebar"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      )}
+      <h1 className="text-[15px] font-semibold text-[#e8e0d4] truncate">{VIEW_TITLES[view ?? "tasks"]}</h1>
 
       {!isMinimal && (
         <>
-          <div className="h-4 w-px bg-[#2a2520]" />
-          <div className="flex items-center gap-4 text-[12px] text-[#6b6459]">
+          <div className="h-4 w-px bg-[#2a2520] hidden lg:block" />
+          <div className="hidden lg:flex items-center gap-4 text-[12px] text-[#6b6459]">
             {status?.continuous_mode && (
               <span className="flex items-center gap-1.5 text-[#9c9486]">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -145,7 +157,7 @@ export function Header({
         </>
       )}
 
-      <div className="ml-auto flex items-center gap-4">
+      <div className="ml-auto flex items-center gap-2 md:gap-4">
         {workspaces.length > 0 && (
           <select
             value={selectedWorkspaceId || ""}
@@ -161,7 +173,7 @@ export function Header({
                 setSwitchingWorkspace(false);
               }
             }}
-            className="h-7 max-w-[220px] shrink-0 rounded-lg border border-[#2a2520] bg-amber-500/[0.03] px-2 text-[12px] text-[#9c9486] outline-none"
+            className="h-8 min-h-[44px] md:min-h-0 md:h-7 max-w-[180px] md:max-w-[220px] shrink-0 rounded-lg border border-[#2a2520] bg-amber-500/[0.03] px-2 text-[13px] md:text-[12px] text-[#9c9486] outline-none"
           >
             {workspaces.map((workspace) => (
               <option key={workspace.workspace_id} value={workspace.workspace_id}>
@@ -174,7 +186,7 @@ export function Header({
           <select
             value={repoFilter ?? ""}
             onChange={(e) => onRepoFilterChange(e.target.value || null)}
-            className="h-7 shrink-0 rounded-lg border border-[#2a2520] bg-amber-500/[0.03] px-2 text-[12px] text-[#9c9486] outline-none"
+            className="hidden md:block h-7 shrink-0 rounded-lg border border-[#2a2520] bg-amber-500/[0.03] px-2 text-[12px] text-[#9c9486] outline-none"
           >
             <option value="">All repos</option>
             {repos.map((r) => (
