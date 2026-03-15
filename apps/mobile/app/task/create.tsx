@@ -43,15 +43,7 @@ export default function CreateTaskScreen() {
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerTitle: "New Task",
-          headerStyle: { backgroundColor: colors.bg },
-          headerTintColor: colors.text,
-          headerShadowVisible: false,
-        }}
-      />
+      <Stack.Screen options={{ headerTitle: "New Task" }} />
       <ScrollView
         style={common.screen}
         contentContainerStyle={styles.content}

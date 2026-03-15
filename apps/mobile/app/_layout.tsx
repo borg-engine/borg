@@ -7,6 +7,14 @@ import { queryClient } from "@/lib/query";
 import { AuthProvider } from "@/lib/auth-context";
 import { colors } from "@/lib/theme";
 
+const headerOptions = {
+  headerShown: true,
+  headerStyle: { backgroundColor: colors.bg },
+  headerTintColor: colors.text,
+  headerShadowVisible: false,
+  headerTitleStyle: { fontWeight: "600" as const, fontSize: 17 },
+} as const;
+
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -20,37 +28,29 @@ export default function RootLayout() {
               animation: "slide_from_right",
             }}
           >
+            <Stack.Screen name="index" options={{ animation: "none" }} />
             <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
             <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
             <Stack.Screen
               name="task/[id]"
+              options={{ ...headerOptions, headerTitle: "Task" }}
+            />
+            <Stack.Screen
+              name="task/create"
               options={{
-                headerShown: true,
-                headerTitle: "Task",
-                headerStyle: { backgroundColor: colors.bg },
-                headerTintColor: colors.text,
-                headerShadowVisible: false,
+                ...headerOptions,
+                headerTitle: "New Task",
+                presentation: "modal",
+                animation: "slide_from_bottom",
               }}
             />
             <Stack.Screen
               name="project/[id]"
-              options={{
-                headerShown: true,
-                headerTitle: "Project",
-                headerStyle: { backgroundColor: colors.bg },
-                headerTintColor: colors.text,
-                headerShadowVisible: false,
-              }}
+              options={{ ...headerOptions, headerTitle: "Project" }}
             />
             <Stack.Screen
               name="chat/[thread]"
-              options={{
-                headerShown: true,
-                headerTitle: "Chat",
-                headerStyle: { backgroundColor: colors.bg },
-                headerTintColor: colors.text,
-                headerShadowVisible: false,
-              }}
+              options={{ ...headerOptions, headerTitle: "Chat" }}
             />
           </Stack>
         </AuthProvider>
