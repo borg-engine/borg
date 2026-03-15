@@ -10,6 +10,7 @@ Borg is an autonomous AI agent orchestrator written in Rust. It connects to Tele
 apps/
   web/                    # React + Vite + Tailwind web dashboard
   desktop/                # Tauri 2 desktop app (wraps web frontend)
+  mobile/                 # React Native + Expo mobile app (iOS/Android)
 packages/
   api/                    # @borg/api — shared types + framework-agnostic API client
   hooks/                  # @borg/hooks — shared React hooks (WIP)
@@ -35,6 +36,8 @@ just b                 # Build release binary
 just deploy            # Build and restart service
 just dash              # Build web dashboard
 just desktop           # Build Tauri desktop app
+just mobile            # Start Expo dev server for mobile app
+just mobile-check      # Verify mobile bundles (iOS + Android)
 just setup             # Full setup (image + sidecar + dashboard + build)
 ```
 

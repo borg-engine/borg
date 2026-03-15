@@ -20,6 +20,14 @@ dash:
 desktop:
     cd apps/desktop/src-tauri && cargo tauri build
 
+# Start Expo dev server for mobile app
+mobile:
+    cd apps/mobile && bun start
+
+# Verify mobile app bundles (iOS + Android)
+mobile-check:
+    cd apps/mobile && npx expo export --platform ios && npx expo export --platform android && rm -rf dist
+
 # Build Docker agent image
 image:
     docker build -t borg-agent:latest -f container/Dockerfile container/
