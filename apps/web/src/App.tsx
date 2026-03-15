@@ -131,6 +131,8 @@ const MOBILE_TABS = [
   { key: "chat" as const, label: "Chat", Icon: MessageSquare },
 ] as const;
 
+const SWE_ONLY_KEYS = ["tasks", "queue", "proposals", "logs", "auto-tasks"];
+
 function detectDefaultMode(
   domain: { defaultMode: "minimal" | "advanced" },
   repos?: { mode: string; is_self: boolean }[],
@@ -514,8 +516,6 @@ function AppInner() {
     [vocab],
   );
 
-  const SWE_ONLY_KEYS = ["tasks", "queue", "proposals", "logs", "auto-tasks"];
-
   const navItems = useMemo(
     () =>
       ALL_NAV_ITEMS.filter((item) => {
@@ -524,7 +524,7 @@ function AppInner() {
         if (!isSWE && SWE_ONLY_KEYS.includes(item.key)) return false;
         return uiMode === "advanced" || item.minimalVisible;
       }),
-    [uiMode, domain, isSWE, SWE_ONLY_KEYS.includes],
+    [uiMode, domain, isSWE],
   );
 
   useEffect(() => {
@@ -856,7 +856,7 @@ function AppInner() {
       </nav>
 
       {/* Main content */}
-      <div className="flex min-w-0 flex-1 flex-col max-w-screen-2xl">
+      <div className="flex min-w-0 flex-1 flex-col max-w-screen-2xl mx-auto">
         {isSWE && (
           <Header
             connected={connected}
@@ -867,7 +867,7 @@ function AppInner() {
           />
         )}
         {!isSWE && (
-          <div className="flex h-14 shrink-0 items-center border-b border-[#2a2520] px-4 lg:hidden">
+          <div className="flex h-14 shrink-0 items-center gap-3 border-b border-[#2a2520] px-4 lg:hidden">
             <button
               onClick={() => setSidebarOpen((v) => !v)}
               className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors"
@@ -875,6 +875,10 @@ function AppInner() {
             >
               <Menu className="h-5 w-5" />
             </button>
+            <div className={cn("borg-logo h-7 w-7", domain.accentBg)}>
+              <BorgLogo expanded />
+            </div>
+            <span className="text-[15px] font-semibold text-[#e8e0d4]">{PRODUCT_WORD}</span>
           </div>
         )}
 

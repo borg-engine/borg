@@ -98,12 +98,12 @@ export function useChatThreads() {
   });
 }
 
-export function useChatMessages(thread: string) {
+export function useChatMessages(thread: string, { polling = false }: { polling?: boolean } = {}) {
   return useQuery<ChatMessage[]>({
     queryKey: ["chat-messages", thread],
     queryFn: () => fetchChatMessages(thread),
     enabled: !!thread,
-    refetchInterval: 5_000,
+    refetchInterval: polling ? 5_000 : false,
   });
 }
 

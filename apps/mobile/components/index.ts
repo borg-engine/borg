@@ -5,8 +5,6 @@ export { EmptyState } from "./EmptyState";
 export { LoadingScreen } from "./LoadingScreen";
 export { ErrorScreen } from "./ErrorScreen";
 export { TaskCard } from "./TaskCard";
-export { SearchBar } from "./SearchBar";
-export { SectionHeader } from "./SectionHeader";
 
 // UI component library
 export {

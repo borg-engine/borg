@@ -1,9 +1,10 @@
-import { StyleSheet } from "react-native";
+import { StyleSheet, Platform } from "react-native";
 
 export const colors = {
   bg: "#0f0e0c",
   bgElevated: "#1c1a17",
   bgCard: "#1c1a17",
+  card: "#1c1a17",
   bgInput: "#262320",
   bgHover: "#2a2723",
   border: "#33302b",
@@ -53,6 +54,8 @@ export const radius = {
   full: 9999,
 } as const;
 
+export const fontSize = { xs: 11, sm: 13, md: 15, lg: 17, xl: 20, xxl: 28 } as const;
+
 export const fonts = {
   body: { fontSize: 15, lineHeight: 22 },
   bodySmall: { fontSize: 13, lineHeight: 18 },
@@ -60,7 +63,7 @@ export const fonts = {
   heading: { fontSize: 22, lineHeight: 28, fontWeight: "700" as const },
   subheading: { fontSize: 17, lineHeight: 24, fontWeight: "600" as const },
   label: { fontSize: 13, lineHeight: 18, fontWeight: "600" as const },
-  mono: { fontSize: 13, lineHeight: 18, fontFamily: "SpaceMono" },
+  mono: { fontSize: 13, lineHeight: 18, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
 } as const;
 
 export function statusColor(status: string): string {

@@ -228,15 +228,6 @@
   }
 }
 
-@keyframes timeline-fade-in {
-  0% {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 @keyframes timeline-collapse {
   0% {
     grid-template-rows: 1fr;
@@ -245,15 +236,6 @@
   to {
     grid-template-rows: 0fr;
     opacity: 0;
-  }
-}
-
-@keyframes shimmertext {
-  0% {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
   }
 }
 

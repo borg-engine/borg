@@ -180,7 +180,7 @@ export function fetchChatMessages(thread: string): Promise<ChatMessage[]> {
 }
 
 export function sendChatMessage(thread: string, content: string): Promise<ChatMessage> {
-  return postJson("/api/chat", { thread, content });
+  return postJson("/api/chat", { thread, text: content });
 }
 
 // Usage

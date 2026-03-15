@@ -96,9 +96,12 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&show_hide, &tasks, &separator, &quit])?;
 
-    let _tray = TrayIconBuilder::with_id("main-tray")
-        .icon(app.default_window_icon().cloned().unwrap())
-        .menu(&menu)
+    let mut tray_builder = TrayIconBuilder::with_id("main-tray")
+        .menu(&menu);
+    if let Some(icon) = app.default_window_icon().cloned() {
+        tray_builder = tray_builder.icon(icon);
+    }
+    let _tray = tray_builder
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show_hide" => toggle_window_visibility(app),
             "tasks" => navigate_to(app, "#/tasks"),

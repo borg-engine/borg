@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { useLocalSearchParams, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -283,7 +284,7 @@ const streamStyles = StyleSheet.create({
   },
   line: {
     fontSize: 12,
-    fontFamily: "SpaceMono",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     color: colors.textSecondary,
     lineHeight: 18,
   },
@@ -726,7 +727,7 @@ const styles = StyleSheet.create({
   },
   outputText: {
     fontSize: 12,
-    fontFamily: "SpaceMono",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     color: colors.textSecondary,
     lineHeight: 18,
   },

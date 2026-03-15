@@ -138,7 +138,7 @@ const mdStyles = StyleSheet.create({
     fontStyle: "italic",
   },
   inlineCode: {
-    fontFamily: "SpaceMono",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     fontSize: 13,
     backgroundColor: "rgba(255,255,255,0.06)",
     borderRadius: 4,
@@ -157,7 +157,7 @@ const mdStyles = StyleSheet.create({
     marginVertical: spacing.xs,
   },
   codeText: {
-    fontFamily: "SpaceMono",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     fontSize: 12,
     color: colors.textSecondary,
     lineHeight: 18,
