@@ -2,16 +2,18 @@ import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
-  Alert,
 } from "react-native";
 import { router, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { useCreateTask, useModes, useProjects } from "@/lib/query";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { useToast } from "@/components/ui/Toast";
+import { lightImpact, successNotification, selectionFeedback } from "@/lib/haptics";
 import { colors, spacing, radius, common } from "@/lib/theme";
 
 export default function CreateTaskScreen() {
@@ -19,15 +21,19 @@ export default function CreateTaskScreen() {
   const [description, setDescription] = useState("");
   const [selectedMode, setSelectedMode] = useState<string | undefined>();
   const [selectedProject, setSelectedProject] = useState<number | undefined>();
+  const [titleError, setTitleError] = useState("");
   const createMutation = useCreateTask();
   const { data: modes } = useModes();
   const { data: projects } = useProjects();
+  const toast = useToast();
 
   const handleCreate = useCallback(async () => {
     if (!title.trim()) {
-      Alert.alert("Error", "Title is required");
+      setTitleError("Title is required");
       return;
     }
+    setTitleError("");
+    lightImpact();
     try {
       const task = await createMutation.mutateAsync({
         title: title.trim(),
@@ -35,11 +41,13 @@ export default function CreateTaskScreen() {
         mode: selectedMode,
         project_id: selectedProject,
       });
+      successNotification();
+      toast.show("Task created successfully", "success");
       router.replace(`/task/${task.id}` as any);
     } catch (err: any) {
-      Alert.alert("Error", err?.message || "Failed to create task");
+      toast.show(err?.message || "Failed to create task", "error");
     }
-  }, [title, description, selectedMode, selectedProject, createMutation]);
+  }, [title, description, selectedMode, selectedProject, createMutation, toast]);
 
   return (
     <>
@@ -48,116 +56,116 @@ export default function CreateTaskScreen() {
         style={common.screen}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.field}>
-          <Text style={styles.label}>Title</Text>
-          <TextInput
-            style={common.input}
+        <Animated.View entering={FadeInDown.duration(300).delay(0)}>
+          <Input
+            label="Title"
             placeholder="What needs to be done?"
-            placeholderTextColor={colors.textTertiary}
             value={title}
-            onChangeText={setTitle}
+            onChangeText={(t) => {
+              setTitle(t);
+              if (titleError) setTitleError("");
+            }}
+            error={titleError}
             autoFocus
             returnKeyType="next"
           />
-        </View>
+        </Animated.View>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Description</Text>
-          <TextInput
-            style={[common.input, styles.multilineInput]}
+        <Animated.View entering={FadeInDown.duration(300).delay(50)}>
+          <Input
+            label="Description"
             placeholder="Detailed description, acceptance criteria..."
-            placeholderTextColor={colors.textTertiary}
             value={description}
             onChangeText={setDescription}
             multiline
             numberOfLines={4}
-            textAlignVertical="top"
           />
-        </View>
+        </Animated.View>
 
         {projects && projects.length > 0 && (
-          <View style={styles.field}>
-            <Text style={styles.label}>Project</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.optionRow}
-            >
-              <Pressable
-                style={[styles.option, !selectedProject && styles.optionActive]}
-                onPress={() => setSelectedProject(undefined)}
+          <Animated.View entering={FadeInDown.duration(300).delay(100)}>
+            <View style={styles.field}>
+              <Text style={styles.label}>Project</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.optionRow}
               >
-                <Text
-                  style={[styles.optionText, !selectedProject && styles.optionTextActive]}
-                >
-                  None
-                </Text>
-              </Pressable>
-              {projects.map((p) => (
                 <Pressable
-                  key={p.id}
-                  style={[styles.option, selectedProject === p.id && styles.optionActive]}
-                  onPress={() => setSelectedProject(p.id)}
+                  style={[styles.option, !selectedProject && styles.optionActive]}
+                  onPress={() => { setSelectedProject(undefined); selectionFeedback(); }}
                 >
                   <Text
-                    style={[
-                      styles.optionText,
-                      selectedProject === p.id && styles.optionTextActive,
-                    ]}
+                    style={[styles.optionText, !selectedProject && styles.optionTextActive]}
                   >
-                    {p.name}
+                    None
                   </Text>
                 </Pressable>
-              ))}
-            </ScrollView>
-          </View>
+                {projects.map((p) => (
+                  <Pressable
+                    key={p.id}
+                    style={[styles.option, selectedProject === p.id && styles.optionActive]}
+                    onPress={() => { setSelectedProject(p.id); selectionFeedback(); }}
+                  >
+                    <Text
+                      style={[
+                        styles.optionText,
+                        selectedProject === p.id && styles.optionTextActive,
+                      ]}
+                    >
+                      {p.name}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          </Animated.View>
         )}
 
         {modes && modes.length > 0 && (
-          <View style={styles.field}>
-            <Text style={styles.label}>Mode</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.optionRow}
-            >
-              {modes.map((m) => (
-                <Pressable
-                  key={m.name}
-                  style={[styles.option, selectedMode === m.name && styles.optionActive]}
-                  onPress={() =>
-                    setSelectedMode(selectedMode === m.name ? undefined : m.name)
-                  }
-                >
-                  <Text
-                    style={[
-                      styles.optionText,
-                      selectedMode === m.name && styles.optionTextActive,
-                    ]}
+          <Animated.View entering={FadeInDown.duration(300).delay(150)}>
+            <View style={styles.field}>
+              <Text style={styles.label}>Mode</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.optionRow}
+              >
+                {modes.map((m) => (
+                  <Pressable
+                    key={m.name}
+                    style={[styles.option, selectedMode === m.name && styles.optionActive]}
+                    onPress={() => {
+                      setSelectedMode(selectedMode === m.name ? undefined : m.name);
+                      selectionFeedback();
+                    }}
                   >
-                    {m.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
+                    <Text
+                      style={[
+                        styles.optionText,
+                        selectedMode === m.name && styles.optionTextActive,
+                      ]}
+                    >
+                      {m.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          </Animated.View>
         )}
 
-        <Pressable
-          style={[common.buttonPrimary, styles.createButton, createMutation.isPending && styles.disabled]}
-          onPress={handleCreate}
-          disabled={createMutation.isPending}
-        >
-          {createMutation.isPending ? (
-            <ActivityIndicator size="small" color={colors.textInverse} />
-          ) : (
-            <>
-              <Ionicons name="rocket" size={18} color={colors.textInverse} />
-              <Text style={common.buttonPrimaryText}>Create Task</Text>
-            </>
-          )}
-        </Pressable>
+        <Animated.View entering={FadeInDown.duration(300).delay(200)}>
+          <Button
+            title="Create Task"
+            onPress={handleCreate}
+            loading={createMutation.isPending}
+            icon={<Ionicons name="rocket" size={18} color={colors.textInverse} />}
+            style={styles.createButton}
+          />
+        </Animated.View>
       </ScrollView>
     </>
   );
@@ -178,10 +186,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
-  multilineInput: {
-    minHeight: 100,
-    paddingTop: spacing.md,
   },
   optionRow: {
     gap: spacing.sm,
@@ -207,12 +211,11 @@ const styles = StyleSheet.create({
     color: colors.accent,
   },
   createButton: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingVertical: 16,
     marginTop: spacing.md,
-  },
-  disabled: {
-    opacity: 0.6,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
   },
 });

@@ -1,7 +1,9 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius, common } from "@/lib/theme";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import { Button } from "@/components/ui/Button";
+import { colors, spacing, radius } from "@/lib/theme";
 
 interface Props {
   message?: string;
@@ -11,15 +13,21 @@ interface Props {
 export function ErrorScreen({ message, onRetry }: Props) {
   return (
     <View style={styles.container}>
-      <View style={styles.iconWrap}>
+      <Animated.View entering={FadeIn.duration(300)} style={styles.iconWrap}>
         <Ionicons name="alert-circle-outline" size={44} color={colors.error} />
-      </View>
-      <Text style={styles.title}>Something went wrong</Text>
-      {message && <Text style={styles.message}>{message}</Text>}
+      </Animated.View>
+      <Animated.View entering={FadeInDown.duration(300).delay(100)}>
+        <Text style={styles.title}>Something went wrong</Text>
+      </Animated.View>
+      {message && (
+        <Animated.View entering={FadeInDown.duration(300).delay(150)}>
+          <Text style={styles.message}>{message}</Text>
+        </Animated.View>
+      )}
       {onRetry && (
-        <Pressable style={common.buttonPrimary} onPress={onRetry}>
-          <Text style={common.buttonPrimaryText}>Try Again</Text>
-        </Pressable>
+        <Animated.View entering={FadeInDown.duration(300).delay(200)}>
+          <Button title="Try Again" onPress={onRetry} />
+        </Animated.View>
       )}
     </View>
   );
@@ -31,28 +39,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.xxxl,
+    paddingHorizontal: 32,
   },
   iconWrap: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: colors.errorBg,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.lg,
+    marginBottom: 16,
   },
   title: {
     fontSize: 17,
     fontWeight: "600",
     color: colors.text,
-    marginBottom: spacing.sm,
+    marginBottom: 8,
+    textAlign: "center",
   },
   message: {
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: "center",
-    marginBottom: spacing.xl,
+    marginBottom: 20,
     lineHeight: 20,
   },
 });

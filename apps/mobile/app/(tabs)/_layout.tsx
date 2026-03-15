@@ -1,6 +1,7 @@
 import React from "react";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { selectionFeedback } from "@/lib/haptics";
 import { colors } from "@/lib/theme";
 
 export default function TabLayout() {
@@ -21,6 +22,9 @@ export default function TabLayout() {
           fontSize: 11,
           fontWeight: "500",
         },
+        tabBarItemStyle: {
+          gap: 2,
+        },
         headerStyle: {
           backgroundColor: colors.bg,
         },
@@ -31,13 +35,18 @@ export default function TabLayout() {
           fontSize: 17,
         },
       }}
+      screenListeners={{
+        tabPress: () => {
+          selectionFeedback();
+        },
+      }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: "Tasks",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="list" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "list" : "list-outline"} size={size} color={color} />
           ),
         }}
       />
@@ -45,8 +54,8 @@ export default function TabLayout() {
         name="projects"
         options={{
           title: "Projects",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="folder" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "folder" : "folder-outline"} size={size} color={color} />
           ),
         }}
       />
@@ -54,8 +63,8 @@ export default function TabLayout() {
         name="chat"
         options={{
           title: "Chat",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubbles" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "chatbubbles" : "chatbubbles-outline"} size={size} color={color} />
           ),
         }}
       />
@@ -63,8 +72,8 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? "settings" : "settings-outline"} size={size} color={color} />
           ),
         }}
       />

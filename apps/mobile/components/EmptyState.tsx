@@ -1,7 +1,8 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius } from "@/lib/theme";
+import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
+import { colors, spacing } from "@/lib/theme";
 
 interface Props {
   icon: keyof typeof Ionicons.glyphMap;
@@ -12,11 +13,17 @@ interface Props {
 export function EmptyState({ icon, title, subtitle }: Props) {
   return (
     <View style={styles.container}>
-      <View style={styles.iconContainer}>
+      <Animated.View entering={FadeIn.duration(400)} style={styles.iconContainer}>
         <Ionicons name={icon} size={40} color={colors.textTertiary} />
-      </View>
-      <Text style={styles.title}>{title}</Text>
-      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+      </Animated.View>
+      <Animated.View entering={FadeInUp.duration(400).delay(100)}>
+        <Text style={styles.title}>{title}</Text>
+      </Animated.View>
+      {subtitle && (
+        <Animated.View entering={FadeInUp.duration(400).delay(150)}>
+          <Text style={styles.subtitle}>{subtitle}</Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -26,7 +33,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.xxxl,
+    paddingHorizontal: 32,
     paddingVertical: 60,
   },
   iconContainer: {

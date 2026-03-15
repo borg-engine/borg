@@ -9,51 +9,74 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, {
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useChatThreads } from "@/lib/query";
 import { EmptyState } from "@/components/EmptyState";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { SkeletonList } from "@/components/ui/Skeleton";
 import { ErrorScreen } from "@/components/ErrorScreen";
+import { lightImpact } from "@/lib/haptics";
 import { colors, spacing, radius, common } from "@/lib/theme";
 import { timeAgo, truncate } from "@/lib/utils";
 import type { ChatThread } from "@/lib/api";
 
 function ThreadCard({ thread, index }: { thread: ChatThread; index: number }) {
+  const scale = useSharedValue(1);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const gesture = Gesture.Tap()
+    .onBegin(() => {
+      scale.value = withTiming(0.975, { duration: 80 });
+    })
+    .onFinalize(() => {
+      scale.value = withTiming(1, { duration: 120 });
+    })
+    .onEnd(() => {
+      lightImpact();
+      router.push(`/chat/${encodeURIComponent(thread.thread)}`);
+    });
+
   return (
-    <Animated.View entering={FadeInDown.duration(300).delay(index * 40)}>
-      <Pressable
-        style={styles.card}
-        onPress={() => router.push(`/chat/${encodeURIComponent(thread.thread)}`)}
-        android_ripple={{ color: colors.bgHover }}
-      >
-        <View style={styles.cardLeft}>
-          <View style={styles.avatar}>
-            <Ionicons name="chatbubble" size={18} color={colors.accent} />
+    <Animated.View entering={FadeInDown.duration(300).delay(Math.min(index * 40, 200))}>
+      <GestureDetector gesture={gesture}>
+        <Animated.View style={[styles.card, animStyle]}>
+          <View style={styles.cardLeft}>
+            <View style={styles.avatar}>
+              <Ionicons name="chatbubble" size={18} color={colors.accent} />
+            </View>
           </View>
-        </View>
-        <View style={styles.cardContent}>
-          <View style={common.rowBetween}>
-            <Text style={styles.threadName} numberOfLines={1}>
-              {thread.project_name || thread.thread}
-            </Text>
-            {thread.last_at && (
-              <Text style={styles.time}>{timeAgo(thread.last_at)}</Text>
+          <View style={styles.cardContent}>
+            <View style={common.rowBetween}>
+              <Text style={styles.threadName} numberOfLines={1}>
+                {thread.project_name || thread.thread}
+              </Text>
+              {thread.last_at && (
+                <Text style={styles.time}>{timeAgo(thread.last_at)}</Text>
+              )}
+            </View>
+            {thread.last_message && (
+              <Text style={styles.preview} numberOfLines={2}>
+                {truncate(thread.last_message, 120)}
+              </Text>
             )}
+            <View style={styles.countRow}>
+              <Ionicons name="chatbubbles-outline" size={12} color={colors.textTertiary} />
+              <Text style={styles.countText}>
+                {thread.message_count} message{thread.message_count !== 1 ? "s" : ""}
+              </Text>
+            </View>
           </View>
-          {thread.last_message && (
-            <Text style={styles.preview} numberOfLines={2}>
-              {truncate(thread.last_message, 120)}
-            </Text>
-          )}
-          <View style={styles.countRow}>
-            <Ionicons name="chatbubbles-outline" size={12} color={colors.textTertiary} />
-            <Text style={styles.countText}>
-              {thread.message_count} message{thread.message_count !== 1 ? "s" : ""}
-            </Text>
-          </View>
-        </View>
-        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-      </Pressable>
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+        </Animated.View>
+      </GestureDetector>
     </Animated.View>
   );
 }
@@ -68,7 +91,16 @@ export default function ChatScreen() {
     [],
   );
 
-  if (isLoading) return <LoadingScreen />;
+  if (isLoading) {
+    return (
+      <View style={common.screen}>
+        <View style={styles.skeletonContainer}>
+          <SkeletonList count={4} />
+        </View>
+      </View>
+    );
+  }
+
   if (error) return <ErrorScreen message={error.message} onRetry={refetch} />;
 
   return (
@@ -87,6 +119,7 @@ export default function ChatScreen() {
             onRefresh={refetch}
             tintColor={colors.accent}
             colors={[colors.accent]}
+            progressBackgroundColor={colors.bgCard}
           />
         }
         ListEmptyComponent={
@@ -112,6 +145,9 @@ const styles = StyleSheet.create({
   listEmpty: {
     flexGrow: 1,
   },
+  skeletonContainer: {
+    padding: spacing.lg,
+  },
   card: {
     flexDirection: "row",
     alignItems: "center",
@@ -121,6 +157,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     gap: spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 1,
   },
   cardLeft: {},
   avatar: {

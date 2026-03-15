@@ -1,5 +1,11 @@
 import React from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  FadeIn,
+} from "react-native-reanimated";
 import { colors, spacing, radius } from "@/lib/theme";
 
 interface Chip {
@@ -14,6 +20,38 @@ interface Props {
   onSelect: (key: string) => void;
 }
 
+function AnimatedChip({
+  chip,
+  active,
+  onPress,
+}: {
+  chip: Chip;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[styles.chip, active && styles.chipActive]}
+      onPress={onPress}
+    >
+      <Text style={[styles.chipText, active && styles.chipTextActive]}>
+        {chip.label}
+      </Text>
+      {chip.count !== undefined && (
+        <Animated.View
+          key={`${chip.key}-${chip.count}`}
+          entering={FadeIn.duration(200)}
+          style={[styles.countBadge, active && styles.countBadgeActive]}
+        >
+          <Text style={[styles.countText, active && styles.countTextActive]}>
+            {chip.count}
+          </Text>
+        </Animated.View>
+      )}
+    </Pressable>
+  );
+}
+
 export function FilterChips({ chips, selected, onSelect }: Props) {
   return (
     <ScrollView
@@ -21,34 +59,20 @@ export function FilterChips({ chips, selected, onSelect }: Props) {
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.container}
     >
-      {chips.map((chip) => {
-        const active = chip.key === selected;
-        return (
-          <Pressable
-            key={chip.key}
-            style={[styles.chip, active && styles.chipActive]}
-            onPress={() => onSelect(chip.key)}
-          >
-            <Text style={[styles.chipText, active && styles.chipTextActive]}>
-              {chip.label}
-            </Text>
-            {chip.count !== undefined && (
-              <View style={[styles.countBadge, active && styles.countBadgeActive]}>
-                <Text style={[styles.countText, active && styles.countTextActive]}>
-                  {chip.count}
-                </Text>
-              </View>
-            )}
-          </Pressable>
-        );
-      })}
+      {chips.map((chip) => (
+        <AnimatedChip
+          key={chip.key}
+          chip={chip}
+          active={chip.key === selected}
+          onPress={() => onSelect(chip.key)}
+        />
+      ))}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     gap: spacing.sm,
   },

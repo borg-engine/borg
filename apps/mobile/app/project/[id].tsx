@@ -4,7 +4,6 @@ import {
   Text,
   FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   RefreshControl,
 } from "react-native";
@@ -17,6 +16,9 @@ import { ModeBadge } from "@/components/ModeBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { ErrorScreen } from "@/components/ErrorScreen";
+import { SkeletonList } from "@/components/ui/Skeleton";
+import { Divider } from "@/components/ui/Divider";
+import { lightImpact, selectionFeedback } from "@/lib/haptics";
 import { colors, spacing, radius, common } from "@/lib/theme";
 import { timeAgo } from "@/lib/utils";
 import type { ProjectTask, ProjectFile } from "@borg/api";
@@ -27,7 +29,7 @@ function TaskItem({ task }: { task: ProjectTask }) {
   return (
     <Pressable
       style={styles.taskItem}
-      onPress={() => router.push(`/task/${task.id}`)}
+      onPress={() => { lightImpact(); router.push(`/task/${task.id}`); }}
     >
       <View style={common.rowBetween}>
         <Text style={styles.taskTitle} numberOfLines={1}>
@@ -59,7 +61,9 @@ function FileItem({ file }: { file: ProjectFile }) {
 
   return (
     <View style={styles.fileItem}>
-      <Ionicons name={icon as any} size={20} color={colors.textSecondary} />
+      <View style={styles.fileIconWrap}>
+        <Ionicons name={icon as any} size={20} color={colors.textSecondary} />
+      </View>
       <View style={styles.fileInfo}>
         <Text style={styles.fileName} numberOfLines={1}>
           {file.file_name}
@@ -84,13 +88,11 @@ export default function ProjectDetailScreen() {
   const [tab, setTab] = useState<Tab>("tasks");
 
   const { data: project, isLoading: loadingProject, error: projectError, refetch: refetchProject } = useProject(projectId);
-  const { data: tasks, isLoading: loadingTasks, refetch: refetchTasks } = useProjectTasks(projectId);
-  const { data: filePage, isLoading: loadingFiles, refetch: refetchFiles } = useProjectFiles(projectId);
+  const { data: tasks, isLoading: loadingTasks, refetch: refetchTasks, isRefetching: refreshingTasks } = useProjectTasks(projectId);
+  const { data: filePage, isLoading: loadingFiles, refetch: refetchFiles, isRefetching: refreshingFiles } = useProjectFiles(projectId);
 
   const files = filePage?.items ?? [];
-
-  const isLoading = loadingProject;
-  const isRefreshing = false;
+  const isRefreshing = tab === "tasks" ? refreshingTasks : refreshingFiles;
 
   const refetchAll = useCallback(() => {
     refetchProject();
@@ -98,7 +100,7 @@ export default function ProjectDetailScreen() {
     refetchFiles();
   }, [refetchProject, refetchTasks, refetchFiles]);
 
-  if (isLoading) return <LoadingScreen />;
+  if (loadingProject) return <LoadingScreen />;
   if (projectError || !project) {
     return <ErrorScreen message={projectError?.message} onRetry={refetchProject} />;
   }
@@ -133,10 +135,10 @@ export default function ProjectDetailScreen() {
         <View style={styles.tabBar}>
           <Pressable
             style={[styles.tabItem, tab === "tasks" && styles.tabItemActive]}
-            onPress={() => setTab("tasks")}
+            onPress={() => { setTab("tasks"); selectionFeedback(); }}
           >
             <Ionicons
-              name="list"
+              name={tab === "tasks" ? "list" : "list-outline"}
               size={16}
               color={tab === "tasks" ? colors.accent : colors.textTertiary}
             />
@@ -146,10 +148,10 @@ export default function ProjectDetailScreen() {
           </Pressable>
           <Pressable
             style={[styles.tabItem, tab === "files" && styles.tabItemActive]}
-            onPress={() => setTab("files")}
+            onPress={() => { setTab("files"); selectionFeedback(); }}
           >
             <Ionicons
-              name="document-text"
+              name={tab === "files" ? "document-text" : "document-text-outline"}
               size={16}
               color={tab === "files" ? colors.accent : colors.textTertiary}
             />
@@ -174,11 +176,14 @@ export default function ProjectDetailScreen() {
                 onRefresh={refetchAll}
                 tintColor={colors.accent}
                 colors={[colors.accent]}
+                progressBackgroundColor={colors.bgCard}
               />
             }
             ListEmptyComponent={
               loadingTasks ? (
-                <LoadingScreen />
+                <View style={styles.skeletonContainer}>
+                  <SkeletonList count={3} />
+                </View>
               ) : (
                 <EmptyState
                   icon="document-text-outline"
@@ -188,7 +193,7 @@ export default function ProjectDetailScreen() {
               )
             }
             showsVerticalScrollIndicator={false}
-            ItemSeparatorComponent={() => <View style={common.separator} />}
+            ItemSeparatorComponent={() => <Divider />}
           />
         )}
 
@@ -207,11 +212,14 @@ export default function ProjectDetailScreen() {
                 onRefresh={refetchAll}
                 tintColor={colors.accent}
                 colors={[colors.accent]}
+                progressBackgroundColor={colors.bgCard}
               />
             }
             ListEmptyComponent={
               loadingFiles ? (
-                <LoadingScreen />
+                <View style={styles.skeletonContainer}>
+                  <SkeletonList count={3} />
+                </View>
               ) : (
                 <EmptyState
                   icon="folder-open-outline"
@@ -221,7 +229,7 @@ export default function ProjectDetailScreen() {
               )
             }
             showsVerticalScrollIndicator={false}
-            ItemSeparatorComponent={() => <View style={common.separator} />}
+            ItemSeparatorComponent={() => <Divider />}
           />
         )}
       </View>
@@ -267,6 +275,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingVertical: spacing.md,
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 1,
   },
   statValue: {
     fontSize: 20,
@@ -313,6 +326,9 @@ const styles = StyleSheet.create({
   listEmpty: {
     flexGrow: 1,
   },
+  skeletonContainer: {
+    paddingTop: spacing.lg,
+  },
   taskItem: {
     paddingVertical: spacing.md,
     gap: spacing.xs,
@@ -337,6 +353,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: spacing.md,
     gap: spacing.md,
+  },
+  fileIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: colors.bgHover,
+    alignItems: "center",
+    justifyContent: "center",
   },
   fileInfo: {
     flex: 1,

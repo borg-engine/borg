@@ -10,55 +10,77 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, {
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useProjects } from "@/lib/query";
 import { ModeBadge } from "@/components/ModeBadge";
 import { EmptyState } from "@/components/EmptyState";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { SkeletonList } from "@/components/ui/Skeleton";
 import { ErrorScreen } from "@/components/ErrorScreen";
+import { lightImpact } from "@/lib/haptics";
 import { colors, spacing, radius, common } from "@/lib/theme";
 import { timeAgo } from "@/lib/utils";
 import type { Project } from "@borg/api";
 
 function ProjectCard({ project, index }: { project: Project; index: number }) {
   const counts = project.task_counts;
+  const scale = useSharedValue(1);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const gesture = Gesture.Tap()
+    .onBegin(() => {
+      scale.value = withTiming(0.975, { duration: 80 });
+    })
+    .onFinalize(() => {
+      scale.value = withTiming(1, { duration: 120 });
+    })
+    .onEnd(() => {
+      lightImpact();
+      router.push(`/project/${project.id}`);
+    });
 
   return (
-    <Animated.View entering={FadeInDown.duration(300).delay(index * 50)}>
-      <Pressable
-        style={styles.card}
-        onPress={() => router.push(`/project/${project.id}`)}
-        android_ripple={{ color: colors.bgHover }}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.iconCircle}>
-            <Ionicons name="folder" size={20} color={colors.accent} />
-          </View>
-          <View style={styles.cardHeaderText}>
-            <Text style={styles.projectName} numberOfLines={1}>
-              {project.name}
-            </Text>
-            <View style={common.row}>
-              <ModeBadge mode={project.mode} />
-              {project.jurisdiction && (
-                <Text style={styles.jurisdiction}>{project.jurisdiction}</Text>
-              )}
+    <Animated.View entering={FadeInDown.duration(300).delay(Math.min(index * 50, 250))}>
+      <GestureDetector gesture={gesture}>
+        <Animated.View style={[styles.card, animStyle]}>
+          <View style={styles.cardHeader}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="folder" size={20} color={colors.accent} />
             </View>
+            <View style={styles.cardHeaderText}>
+              <Text style={styles.projectName} numberOfLines={1}>
+                {project.name}
+              </Text>
+              <View style={common.row}>
+                <ModeBadge mode={project.mode} />
+                {project.jurisdiction && (
+                  <Text style={styles.jurisdiction}>{project.jurisdiction}</Text>
+                )}
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-        </View>
 
-        {counts && (
-          <View style={styles.countsRow}>
-            <CountPill label="Active" count={counts.active} color={colors.statusActive} />
-            <CountPill label="Review" count={counts.review} color={colors.statusReview} />
-            <CountPill label="Done" count={counts.done} color={colors.statusDone} />
-            <CountPill label="Failed" count={counts.failed} color={colors.statusFailed} />
-          </View>
-        )}
+          {counts && (
+            <View style={styles.countsRow}>
+              <CountPill label="Active" count={counts.active} color={colors.statusActive} />
+              <CountPill label="Review" count={counts.review} color={colors.statusReview} />
+              <CountPill label="Done" count={counts.done} color={colors.statusDone} />
+              <CountPill label="Failed" count={counts.failed} color={colors.statusFailed} />
+            </View>
+          )}
 
-        <Text style={styles.createdAt}>Created {timeAgo(project.created_at)}</Text>
-      </Pressable>
+          <Text style={styles.createdAt}>Created {timeAgo(project.created_at)}</Text>
+        </Animated.View>
+      </GestureDetector>
     </Animated.View>
   );
 }
@@ -98,7 +120,16 @@ export default function ProjectsScreen() {
     [],
   );
 
-  if (isLoading) return <LoadingScreen />;
+  if (isLoading) {
+    return (
+      <View style={common.screen}>
+        <View style={styles.skeletonContainer}>
+          <SkeletonList count={3} />
+        </View>
+      </View>
+    );
+  }
+
   if (error) return <ErrorScreen message={error.message} onRetry={refetch} />;
 
   return (
@@ -114,9 +145,10 @@ export default function ProjectsScreen() {
             onChangeText={setSearch}
             autoCapitalize="none"
             autoCorrect={false}
+            selectionColor={colors.accent}
           />
           {search.length > 0 && (
-            <Pressable onPress={() => setSearch("")}>
+            <Pressable onPress={() => setSearch("")} hitSlop={8}>
               <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
             </Pressable>
           )}
@@ -137,6 +169,7 @@ export default function ProjectsScreen() {
             onRefresh={refetch}
             tintColor={colors.accent}
             colors={[colors.accent]}
+            progressBackgroundColor={colors.bgCard}
           />
         }
         ListEmptyComponent={
@@ -181,6 +214,9 @@ const styles = StyleSheet.create({
   listEmpty: {
     flexGrow: 1,
   },
+  skeletonContainer: {
+    padding: spacing.lg,
+  },
   card: {
     backgroundColor: colors.bgCard,
     borderRadius: radius.lg,
@@ -188,6 +224,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     gap: spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: "row",
