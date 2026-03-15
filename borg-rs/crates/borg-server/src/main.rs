@@ -1582,6 +1582,11 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
         .route("/api/mcp/servers", post(routes::upsert_custom_mcp_server))
         .route("/api/mcp/servers/:id", delete(routes::delete_custom_mcp_server))
         .route("/api/mcp/servers/:id/toggle", put(routes::toggle_custom_mcp_server))
+        // Microsoft 365 OAuth
+        .route("/api/user/microsoft/auth", get(routes::ms365_auth_init))
+        .route("/api/user/microsoft/callback", get(routes::ms365_auth_callback))
+        .route("/api/user/microsoft/status", get(routes::ms365_status))
+        .route("/api/user/microsoft", delete(routes::ms365_disconnect))
         // Cache volumes
         .route("/api/cache", get(routes::list_cache_volumes))
         .route("/api/cache/:name", delete(routes::delete_cache_volume))

@@ -1027,6 +1027,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 clarification_resume_reuses_prior_review: false,
                 clarification_resume_question: String::new(),
                 custom_mcp_servers: Vec::new(),
+                ms365_token: String::new(),
             };
 
             tokio::fs::create_dir_all(&ctx.session_dir).await.ok();

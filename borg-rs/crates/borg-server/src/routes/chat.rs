@@ -338,6 +338,11 @@ pub(crate) async fn run_chat_agent(
             .unwrap_or_default();
         borg_agent::mcp::custom_servers_from_db(rows)
     };
+    let ms365_token = if let Some(uid) = user_id {
+        crate::routes::microsoft::refresh_ms365_token(db, uid).await
+    } else {
+        None
+    };
     let mcp_servers = borg_agent::mcp::build_mcp_servers_json(
         &api_url,
         &api_token,
@@ -347,6 +352,7 @@ pub(crate) async fn run_chat_agent(
         Some(chat_key),
         &legal_linked_creds,
         &custom_servers,
+        ms365_token.as_deref(),
     );
 
     if !mcp_servers.is_empty() {

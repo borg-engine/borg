@@ -59,6 +59,7 @@ fn make_ctx() -> PhaseContext {
         clarification_resume_reuses_prior_review: false,
         clarification_resume_question: String::new(),
         custom_mcp_servers: Vec::new(),
+        ms365_token: String::new(),
     }
 }
 

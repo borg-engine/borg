@@ -302,6 +302,7 @@ impl AgentBackend for ClaudeBackend {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
+            let ms365 = if ctx.ms365_token.is_empty() { None } else { Some(ctx.ms365_token.as_str()) };
             let mcp_servers = crate::mcp::build_mcp_servers_json(
                 &reachable_borg_api_url,
                 &ctx.borg_api_token,
@@ -311,6 +312,7 @@ impl AgentBackend for ClaudeBackend {
                 None,
                 &api_keys_vec,
                 &ctx.custom_mcp_servers,
+                ms365,
             );
             if !mcp_servers.is_empty() {
                 let borg_loaded = mcp_servers.contains_key("borg");

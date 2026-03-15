@@ -198,7 +198,36 @@ impl Pipeline {
                     })
                     .collect()
             },
+            ms365_token: self.resolve_ms365_token(&task.created_by),
         }
+    }
+
+    fn resolve_ms365_token(&self, created_by: &str) -> String {
+        if created_by.is_empty() {
+            return String::new();
+        }
+        let user_id = self
+            .db
+            .get_user_by_username(created_by)
+            .ok()
+            .flatten()
+            .map(|(id, _, _, _, _)| id)
+            .unwrap_or(0);
+        if user_id == 0 {
+            return String::new();
+        }
+        // Synchronous check — if token exists and not expired, return it.
+        // Full async refresh happens at agent dispatch time.
+        let encrypted = self
+            .db
+            .get_user_setting(user_id, "ms365_access_token")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if encrypted.is_empty() {
+            return String::new();
+        }
+        crate::db::Db::decrypt_secret(&encrypted)
     }
 
     fn clear_session_provider_credentials(session_dir: &str, provider: &str) {

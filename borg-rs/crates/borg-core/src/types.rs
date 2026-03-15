@@ -681,6 +681,8 @@ pub struct PhaseContext {
     pub clarification_resume_question: String,
     /// User-configured custom MCP servers for this workspace.
     pub custom_mcp_servers: Vec<CustomMcpServer>,
+    /// Microsoft 365 OAuth access token (refreshed, plaintext) for the task creator.
+    pub ms365_token: String,
 }
 
 /// A user-configured MCP server ready for injection into the agent config.

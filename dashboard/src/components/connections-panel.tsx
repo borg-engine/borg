@@ -1,20 +1,23 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronLeft, Github, GitBranch, MessageSquare, Plug, Plus, Power, Settings2, Trash2 } from "lucide-react";
+import { Building2, ChevronDown, ChevronLeft, Github, GitBranch, MessageSquare, Plug, Plus, Power, Settings2, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  apiBase,
   connectDiscordBot,
   connectSlackBot,
   connectTelegramBot,
   type CustomMcpServer,
   deleteCustomMcpServer,
   disconnectDiscordBot,
+  disconnectMs365,
   disconnectSlackBot,
   disconnectTelegramBot,
   logoutWhatsApp,
   toggleCustomMcpServer,
   upsertCustomMcpServer,
   useCustomMcpServers,
+  useMs365Status,
   type UserSettings,
   updateUserSettings,
   useUserSettings,
@@ -53,6 +56,12 @@ export function ConnectionsPanel() {
               <GitHubCard />
               <GitLabCard />
               <CodebergCard />
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={<Building2 className="h-4 w-4" />} title="Productivity">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Microsoft365Card />
             </div>
           </CollapsibleSection>
 
@@ -454,6 +463,92 @@ function SlackCard() {
         </ol>
       }
     />
+  );
+}
+
+// ── Microsoft 365 card ────────────────────────────────────────────────────
+
+function Microsoft365Card() {
+  const queryClient = useQueryClient();
+  const { data: status } = useMs365Status();
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  // Handle OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+    const hashParams = new URLSearchParams(hash.split("?")[1] || "");
+
+    if (hashParams.get("ms365_connected") || params.get("ms365_connected")) {
+      queryClient.invalidateQueries({ queryKey: ["ms365-status"] });
+      window.history.replaceState({}, "", window.location.pathname + window.location.hash.split("?")[0]);
+    }
+  }, [queryClient]);
+
+  if (!status) return null;
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    try {
+      await disconnectMs365();
+      queryClient.invalidateQueries({ queryKey: ["ms365-status"] });
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  function handleConnect() {
+    window.location.href = `${apiBase()}/api/user/microsoft/auth`;
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        icon={<MicrosoftIcon />}
+        iconBg=""
+        title="Microsoft 365"
+        subtitle="Email, calendar, Teams, SharePoint, and OneDrive via Graph API"
+        status={status.connected ? "connected" : undefined}
+        statusLabel={status.connected ? status.account_email : undefined}
+        customIconStyle={{ background: "rgb(0 120 212 / 0.1)", boxShadow: "inset 0 0 0 1px rgb(0 120 212 / 0.2)" }}
+      />
+
+      {status.connected ? (
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            onClick={handleConnect}
+            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+          >
+            Reconnect
+          </button>
+          <button
+            onClick={handleDisconnect}
+            disabled={disconnecting}
+            className="rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-1.5 text-[12px] text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
+          >
+            Disconnect
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3 pt-1">
+          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
+            <p className="font-medium text-[#e8e0d4]">What you get</p>
+            <ul className="list-disc list-inside space-y-1 text-[12px]">
+              <li>Agents can read and send emails via Outlook</li>
+              <li>Manage calendar events and meetings</li>
+              <li>Access Teams messages and channels</li>
+              <li>Browse SharePoint sites and documents</li>
+            </ul>
+          </div>
+          <button
+            onClick={handleConnect}
+            className="rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20"
+          >
+            Connect with Microsoft
+          </button>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -1307,6 +1402,17 @@ function SlackIcon() {
         d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"
         fill="#E01E5A"
       />
+    </svg>
+  );
+}
+
+function MicrosoftIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4.5 w-4.5">
+      <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+      <rect x="13" y="1" width="10" height="10" fill="#7FBA00" />
+      <rect x="1" y="13" width="10" height="10" fill="#00A4EF" />
+      <rect x="13" y="13" width="10" height="10" fill="#FFB900" />
     </svg>
   );
 }

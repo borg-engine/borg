@@ -55,6 +55,7 @@ pub struct ChatContext {
     pub api_keys: HashMap<String, String>,
     pub knowledge_dir: String,
     pub custom_mcp_servers: Vec<crate::types::CustomMcpServer>,
+    pub ms365_token: String,
 }
 
 /// Response from a chat agent turn.

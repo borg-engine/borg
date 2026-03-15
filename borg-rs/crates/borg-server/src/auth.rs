@@ -323,6 +323,8 @@ fn is_exempt(path: &str) -> bool {
         || path.starts_with("/api/auth/sso/")
         || path == "/api/email/inbound"
         || path.starts_with("/api/public/")
+        || path.starts_with("/api/cloud/") && path.ends_with("/callback")
+        || path == "/api/user/microsoft/callback"
         || !path.starts_with("/api/")
 }
 

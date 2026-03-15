@@ -389,6 +389,7 @@ impl AgentBackend for AgentSdkBackend {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
+            let ms365 = if ctx.ms365_token.is_empty() { None } else { Some(ctx.ms365_token.as_str()) };
             let servers = crate::mcp::build_mcp_servers_json(
                 &ctx.borg_api_url,
                 &ctx.borg_api_token,
@@ -398,6 +399,7 @@ impl AgentBackend for AgentSdkBackend {
                 None,
                 &api_keys_vec,
                 &ctx.custom_mcp_servers,
+                ms365,
             );
             json!(servers)
         } else {
@@ -534,6 +536,7 @@ impl AgentBackend for AgentSdkBackend {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
+            let ms365 = if ctx.ms365_token.is_empty() { None } else { Some(ctx.ms365_token.as_str()) };
             let servers = crate::mcp::build_mcp_servers_json(
                 &ctx.borg_api_url,
                 &ctx.borg_api_token,
@@ -543,6 +546,7 @@ impl AgentBackend for AgentSdkBackend {
                 ctx.chat_thread.as_deref(),
                 &api_keys_vec,
                 &ctx.custom_mcp_servers,
+                ms365,
             );
             json!(servers)
         } else {

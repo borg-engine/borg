@@ -68,6 +68,7 @@ pub fn build_mcp_servers_json(
     chat_thread: Option<&str>,
     linked_creds: &[(String, String)],
     custom_servers: &[CustomMcpServer],
+    ms365_token: Option<&str>,
 ) -> Map<String, Value> {
     let mut mcp_servers = Map::new();
 
@@ -145,6 +146,22 @@ pub fn build_mcp_servers_json(
                 "env": env_map,
             }),
         );
+    }
+
+    // Microsoft 365 via OAuth token
+    if let Some(token) = ms365_token {
+        if !token.is_empty() && !mcp_servers.contains_key("microsoft-365") {
+            let mut env_vars = Map::new();
+            env_vars.insert("MS365_MCP_OAUTH_TOKEN".into(), json!(token));
+            mcp_servers.insert(
+                "microsoft-365".into(),
+                json!({
+                    "command": "npx",
+                    "args": ["-y", "@softeria/ms-365-mcp-server", "--org-mode"],
+                    "env": env_vars,
+                }),
+            );
+        }
     }
 
     mcp_servers

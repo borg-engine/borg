@@ -439,6 +439,27 @@ export async function toggleCustomMcpServer(id: number, enabled: boolean): Promi
   return r.json();
 }
 
+// ── Microsoft 365 ───────────────────────────────────────────────────────
+
+export interface Ms365Status {
+  connected: boolean;
+  account_email: string;
+}
+
+export function useMs365Status() {
+  return useQuery<Ms365Status>({
+    queryKey: ["ms365-status"],
+    queryFn: () => fetchJson<Ms365Status>("/api/user/microsoft/status"),
+    staleTime: 30_000,
+  });
+}
+
+export async function disconnectMs365(): Promise<{ ok: boolean }> {
+  const r = await apiFetch("/api/user/microsoft", { method: "DELETE" });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
 export interface LinkedCredential {
   id: number;
   user_id: number;

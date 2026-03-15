@@ -1241,7 +1241,7 @@ impl Db {
         })
     }
 
-    fn encrypt_secret(secret: &str) -> String {
+    pub fn encrypt_secret(secret: &str) -> String {
         if let Some(key_bytes) = Self::master_key_bytes() {
             use aes_gcm::{
                 aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -1263,7 +1263,7 @@ impl Db {
         secret.to_string()
     }
 
-    fn decrypt_secret(secret: &str) -> String {
+    pub fn decrypt_secret(secret: &str) -> String {
         if let Some(encoded) = secret.strip_prefix("enc:v1:") {
             if let Some(key_bytes) = Self::master_key_bytes() {
                 use base64::Engine;
