@@ -50,243 +50,66 @@ export function ConnectionsPanel() {
 // ── Discord ───────────────────────────────────────────────────────────────
 
 function DiscordCard() {
-  const queryClient = useQueryClient();
   const { data: userSettings } = useUserSettings();
-  const [editing, setEditing] = useState(false);
-  const [token, setToken] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
   if (!userSettings) return null;
-
-  const connected = userSettings.discord_bot_connected;
-  const botUsername = userSettings.discord_bot_username;
-
-  async function handleConnect() {
-    setSaving(true);
-    setError("");
-    try {
-      await connectDiscordBot(token);
-      setToken("");
-      setEditing(false);
-      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to connect");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDisconnect() {
-    setSaving(true);
-    try {
-      await disconnectDiscordBot();
-      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
-    <Card>
-      <CardHeader
-        icon={<DiscordIcon />}
-        iconBg="bg-[#5865F2]/10 ring-[#5865F2]/20"
-        title="Discord"
-        subtitle="Chat with your agent from any Discord server or DM"
-        status={connected ? "connected" : undefined}
-        statusLabel={connected ? botUsername : undefined}
-      />
-
-      {connected && !editing ? (
-        <div className="flex items-center gap-2 pt-1">
-          <button
-            onClick={() => setEditing(true)}
-            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
-          >
-            Change Bot
-          </button>
-          <button
-            onClick={handleDisconnect}
-            disabled={saving}
-            className="rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-1.5 text-[12px] text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
-          >
-            Disconnect
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-3 pt-1">
-          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
-            <p className="font-medium text-[#e8e0d4]">Setup</p>
-            <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
-              <li>
-                Go to the <span className="font-medium text-[#e8e0d4]">Discord Developer Portal</span>
-              </li>
-              <li>Create a new Application, then add a Bot</li>
-              <li>
-                Enable <span className="font-medium text-[#e8e0d4]">Message Content Intent</span> under Privileged
-                Gateway Intents
-              </li>
-              <li>Copy the bot token and paste it below</li>
-            </ol>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Paste bot token"
-              className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
-              autoFocus
-            />
-            <button
-              onClick={handleConnect}
-              disabled={saving || !token.trim()}
-              className={cn(
-                "rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20",
-                (saving || !token.trim()) && "opacity-40 cursor-not-allowed",
-              )}
-            >
-              {saving ? "Verifying..." : "Connect"}
-            </button>
-            {connected && (
-              <button
-                onClick={() => {
-                  setEditing(false);
-                  setToken("");
-                  setError("");
-                }}
-                className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-          {error && <div className="text-[12px] text-red-400">{error}</div>}
-        </div>
-      )}
-    </Card>
+    <BotConnectionCard
+      icon={<DiscordIcon />}
+      iconBg="bg-[#5865F2]/10 ring-[#5865F2]/20"
+      title="Discord"
+      subtitle="Chat with your agent from any Discord server or DM"
+      connected={userSettings.discord_bot_connected}
+      displayName={userSettings.discord_bot_username}
+      connectFn={connectDiscordBot}
+      disconnectFn={disconnectDiscordBot}
+      tokenFields={[{ placeholder: "Paste bot token" }]}
+      setupInstructions={
+        <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
+          <li>
+            Go to the <span className="font-medium text-[#e8e0d4]">Discord Developer Portal</span>
+          </li>
+          <li>Create a new Application, then add a Bot</li>
+          <li>
+            Enable <span className="font-medium text-[#e8e0d4]">Message Content Intent</span> under Privileged Gateway
+            Intents
+          </li>
+          <li>Copy the bot token and paste it below</li>
+        </ol>
+      }
+    />
   );
 }
 
 // ── Telegram ──────────────────────────────────────────────────────────────
 
 function TelegramCard() {
-  const queryClient = useQueryClient();
   const { data: userSettings } = useUserSettings();
-  const [editing, setEditing] = useState(false);
-  const [token, setToken] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
   if (!userSettings) return null;
-
-  const connected = userSettings.telegram_bot_connected;
-  const botUsername = userSettings.telegram_bot_username;
-
-  async function handleConnect() {
-    setSaving(true);
-    setError("");
-    try {
-      await connectTelegramBot(token);
-      setToken("");
-      setEditing(false);
-      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to connect");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDisconnect() {
-    setSaving(true);
-    try {
-      await disconnectTelegramBot();
-      queryClient.invalidateQueries({ queryKey: ["user-settings"] });
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
-    <Card>
-      <CardHeader
-        icon={<TelegramIcon />}
-        iconBg="bg-[#229ED9]/10 ring-[#229ED9]/20"
-        title="Telegram"
-        subtitle="Chat with your agent from any Telegram conversation"
-        status={connected ? "connected" : undefined}
-        statusLabel={connected ? `@${botUsername}` : undefined}
-      />
-
-      {connected && !editing ? (
-        <div className="flex items-center gap-2 pt-1">
-          <button
-            onClick={() => setEditing(true)}
-            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
-          >
-            Change Bot
-          </button>
-          <button
-            onClick={handleDisconnect}
-            disabled={saving}
-            className="rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-1.5 text-[12px] text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
-          >
-            Disconnect
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-3 pt-1">
-          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
-            <p className="font-medium text-[#e8e0d4]">Setup</p>
-            <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
-              <li>
-                Open <span className="font-medium text-[#e8e0d4]">@BotFather</span> in Telegram
-              </li>
-              <li>
-                Send <code className="rounded bg-[#2a2520] px-1.5 py-0.5 text-[11px] text-amber-300">/newbot</code> and
-                follow the prompts
-              </li>
-              <li>Copy the bot token and paste it below</li>
-            </ol>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Paste bot token from @BotFather"
-              className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
-              autoFocus
-            />
-            <button
-              onClick={handleConnect}
-              disabled={saving || !token.trim()}
-              className={cn(
-                "rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20",
-                (saving || !token.trim()) && "opacity-40 cursor-not-allowed",
-              )}
-            >
-              {saving ? "Verifying..." : "Connect"}
-            </button>
-            {connected && (
-              <button
-                onClick={() => {
-                  setEditing(false);
-                  setToken("");
-                  setError("");
-                }}
-                className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-          {error && <div className="text-[12px] text-red-400">{error}</div>}
-        </div>
-      )}
-    </Card>
+    <BotConnectionCard
+      icon={<TelegramIcon />}
+      iconBg="bg-[#229ED9]/10 ring-[#229ED9]/20"
+      title="Telegram"
+      subtitle="Chat with your agent from any Telegram conversation"
+      connected={userSettings.telegram_bot_connected}
+      displayName={userSettings.telegram_bot_username}
+      formatStatus={(name) => `@${name}`}
+      connectFn={connectTelegramBot}
+      disconnectFn={disconnectTelegramBot}
+      tokenFields={[{ placeholder: "Paste bot token from @BotFather" }]}
+      setupInstructions={
+        <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
+          <li>
+            Open <span className="font-medium text-[#e8e0d4]">@BotFather</span> in Telegram
+          </li>
+          <li>
+            Send <code className="rounded bg-[#2a2520] px-1.5 py-0.5 text-[11px] text-amber-300">/newbot</code> and
+            follow the prompts
+          </li>
+          <li>Copy the bot token and paste it below</li>
+        </ol>
+      }
+    />
   );
 }
 
@@ -552,26 +375,84 @@ function PatCard({
 // ── Slack ──────────────────────────────────────────────────────────────────
 
 function SlackCard() {
-  const queryClient = useQueryClient();
   const { data: userSettings } = useUserSettings();
+  if (!userSettings) return null;
+  return (
+    <BotConnectionCard
+      icon={<SlackIcon />}
+      iconBg="bg-[#E01E5A]/8 ring-[#E01E5A]/15"
+      title="Slack"
+      subtitle="Chat with your agent from any Slack channel"
+      connected={userSettings.slack_bot_connected}
+      displayName={userSettings.slack_bot_name}
+      formatStatus={(name) => `@${name}`}
+      connectFn={connectSlackBot}
+      disconnectFn={disconnectSlackBot}
+      tokenFields={[
+        { placeholder: "Bot Token (xoxb-...)" },
+        { placeholder: "App-Level Token (xapp-...)" },
+      ]}
+      setupInstructions={
+        <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
+          <li>
+            Go to <span className="font-medium text-[#e8e0d4]">api.slack.com/apps</span> and create a new app
+          </li>
+          <li>
+            Enable <span className="font-medium text-[#e8e0d4]">Socket Mode</span> and generate an App-Level Token{" "}
+            <code className="rounded bg-[#2a2520] px-1.5 py-0.5 text-[11px] text-amber-300">xapp-...</code>
+          </li>
+          <li>
+            Add <span className="font-medium text-[#e8e0d4]">Bot Token Scopes</span>: chat:write, app_mentions:read,
+            im:history, channels:history
+          </li>
+          <li>Install to your workspace and copy the Bot Token</li>
+        </ol>
+      }
+    />
+  );
+}
+
+// ── Generic bot connection card ───────────────────────────────────────────
+
+function BotConnectionCard({
+  icon,
+  iconBg,
+  title,
+  subtitle,
+  setupInstructions,
+  tokenFields,
+  connected,
+  displayName,
+  formatStatus = (n) => n,
+  connectFn,
+  disconnectFn,
+}: {
+  icon: React.ReactNode;
+  iconBg: string;
+  title: string;
+  subtitle: string;
+  setupInstructions: React.ReactNode;
+  tokenFields: { placeholder: string }[];
+  connected: boolean;
+  displayName?: string;
+  formatStatus?: (name: string) => string;
+  connectFn: (...tokens: string[]) => Promise<unknown>;
+  disconnectFn: () => Promise<unknown>;
+}) {
+  const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [botToken, setBotToken] = useState("");
-  const [appToken, setAppToken] = useState("");
+  const [tokens, setTokens] = useState<string[]>(() => tokenFields.map(() => ""));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  if (!userSettings) return null;
-
-  const connected = userSettings.slack_bot_connected;
-  const botName = userSettings.slack_bot_name;
+  const allFilled = tokens.every((t) => t.trim());
 
   async function handleConnect() {
     setSaving(true);
     setError("");
     try {
-      await connectSlackBot(botToken, appToken);
-      setBotToken("");
-      setAppToken("");
+      await connectFn(...tokens);
+      setTokens(tokenFields.map(() => ""));
       setEditing(false);
       queryClient.invalidateQueries({ queryKey: ["user-settings"] });
     } catch (e) {
@@ -584,22 +465,30 @@ function SlackCard() {
   async function handleDisconnect() {
     setSaving(true);
     try {
-      await disconnectSlackBot();
+      await disconnectFn();
       queryClient.invalidateQueries({ queryKey: ["user-settings"] });
     } finally {
       setSaving(false);
     }
   }
 
+  function handleCancel() {
+    setEditing(false);
+    setTokens(tokenFields.map(() => ""));
+    setError("");
+  }
+
+  const statusLabel = connected && displayName ? formatStatus(displayName) : undefined;
+
   return (
     <Card>
       <CardHeader
-        icon={<SlackIcon />}
-        iconBg="bg-[#E01E5A]/8 ring-[#E01E5A]/15"
-        title="Slack"
-        subtitle="Chat with your agent from any Slack channel"
+        icon={icon}
+        iconBg={iconBg}
+        title={title}
+        subtitle={subtitle}
         status={connected ? "connected" : undefined}
-        statusLabel={connected ? `@${botName}` : undefined}
+        statusLabel={statusLabel}
       />
 
       {connected && !editing ? (
@@ -622,67 +511,74 @@ function SlackCard() {
         <div className="space-y-3 pt-1">
           <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
             <p className="font-medium text-[#e8e0d4]">Setup</p>
-            <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
-              <li>
-                Go to <span className="font-medium text-[#e8e0d4]">api.slack.com/apps</span> and create a new app
-              </li>
-              <li>
-                Enable <span className="font-medium text-[#e8e0d4]">Socket Mode</span> and generate an App-Level Token{" "}
-                <code className="rounded bg-[#2a2520] px-1.5 py-0.5 text-[11px] text-amber-300">xapp-...</code>
-              </li>
-              <li>
-                Add <span className="font-medium text-[#e8e0d4]">Bot Token Scopes</span>: chat:write, app_mentions:read,
-                im:history, channels:history
-              </li>
-              <li>Install to your workspace and copy the Bot Token</li>
-            </ol>
+            {setupInstructions}
           </div>
-          <div className="space-y-2">
-            <input
-              type="password"
-              value={botToken}
-              onChange={(e) => setBotToken(e.target.value)}
-              placeholder="Bot Token (xoxb-...)"
-              className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
-              autoFocus
-            />
-            <input
-              type="password"
-              value={appToken}
-              onChange={(e) => setAppToken(e.target.value)}
-              placeholder="App-Level Token (xapp-...)"
-              className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
-            />
+          {tokenFields.length === 1 ? (
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleConnect}
-                disabled={saving || !botToken.trim() || !appToken.trim()}
-                className={cn(
-                  "rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20",
-                  (saving || !botToken.trim() || !appToken.trim()) && "opacity-40 cursor-not-allowed",
-                )}
-              >
-                {saving ? "Verifying..." : "Connect"}
-              </button>
-              {connected && (
-                <button
-                  onClick={() => {
-                    setEditing(false);
-                    setBotToken("");
-                    setAppToken("");
-                    setError("");
-                  }}
-                  className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
-                >
-                  Cancel
-                </button>
-              )}
+              <input
+                type="password"
+                value={tokens[0]}
+                onChange={(e) => setTokens([e.target.value])}
+                placeholder={tokenFields[0].placeholder}
+                className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+                autoFocus
+              />
+              <ConnectButton saving={saving} disabled={!allFilled} onClick={handleConnect} />
+              {connected && <CancelButton onClick={handleCancel} />}
             </div>
-          </div>
+          ) : (
+            <div className="space-y-2">
+              {tokenFields.map((field, i) => (
+                <input
+                  key={i}
+                  type="password"
+                  value={tokens[i]}
+                  onChange={(e) => {
+                    const next = [...tokens];
+                    next[i] = e.target.value;
+                    setTokens(next);
+                  }}
+                  placeholder={field.placeholder}
+                  className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+                  autoFocus={i === 0}
+                />
+              ))}
+              <div className="flex items-center gap-2">
+                <ConnectButton saving={saving} disabled={!allFilled} onClick={handleConnect} />
+                {connected && <CancelButton onClick={handleCancel} />}
+              </div>
+            </div>
+          )}
           {error && <div className="text-[12px] text-red-400">{error}</div>}
         </div>
       )}
     </Card>
+  );
+}
+
+function ConnectButton({ saving, disabled, onClick }: { saving: boolean; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={saving || disabled}
+      className={cn(
+        "rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20",
+        (saving || disabled) && "opacity-40 cursor-not-allowed",
+      )}
+    >
+      {saving ? "Verifying..." : "Connect"}
+    </button>
+  );
+}
+
+function CancelButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
+    >
+      Cancel
+    </button>
   );
 }
 
