@@ -16,12 +16,12 @@ impl Pipeline {
         let (claude_coauthor, user_coauthor) = self.git_coauthor_settings();
         let system_prompt_suffix =
             Self::build_system_prompt_suffix(claude_coauthor, &user_coauthor);
-        let setup_script = if self.config.container_setup.is_empty() {
+        let setup_script = if self.config.container.setup.is_empty() {
             String::new()
         } else {
-            std::fs::canonicalize(&self.config.container_setup)
+            std::fs::canonicalize(&self.config.container.setup)
                 .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| self.config.container_setup.clone())
+                .unwrap_or_else(|_| self.config.container.setup.clone())
         };
         let mut api_keys = std::collections::HashMap::new();
         let workspace_owner =
@@ -147,7 +147,7 @@ impl Pipeline {
             work_dir,
             oauth_token: self.config.oauth_token.clone(),
             model: if self.config.model.is_empty() {
-                self.config.default_docker_model.clone()
+                self.config.pipeline.default_docker_model.clone()
             } else {
                 self.config.model.clone()
             },
@@ -172,9 +172,9 @@ impl Pipeline {
             agent_network,
             prior_research: Vec::new(),
             revision_count: task.revision_count,
-            experimental_domains: self.config.experimental_domains,
+            experimental_domains: self.config.pipeline.experimental_domains,
             isolated,
-            borg_api_url: format!("http://127.0.0.1:{}", self.config.web_port),
+            borg_api_url: format!("http://127.0.0.1:{}", self.config.web.port),
             borg_api_token: std::fs::read_to_string(format!("{}/.api-token", self.config.data_dir))
                 .unwrap_or_default()
                 .trim()
@@ -513,12 +513,12 @@ impl Pipeline {
 
     /// Git author pair from config, or None if not configured.
     fn git_author(&self) -> Option<(&str, &str)> {
-        if self.config.git_author_name.is_empty() {
+        if self.config.git.author_name.is_empty() {
             None
         } else {
             Some((
-                self.config.git_author_name.as_str(),
-                self.config.git_author_email.as_str(),
+                self.config.git.author_name.as_str(),
+                self.config.git.author_email.as_str(),
             ))
         }
     }
@@ -1456,7 +1456,7 @@ impl Pipeline {
         phase: &PhaseConfig,
         raw_stream: &str,
     ) -> Option<String> {
-        if !self.config.enforce_retrieval_protocol {
+        if !self.config.pipeline.enforce_retrieval_protocol {
             return None;
         }
         if raw_stream.trim().is_empty() {
