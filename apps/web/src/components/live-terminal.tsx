@@ -38,12 +38,12 @@ export function LiveTerminal({ events, streaming, title, phase }: LiveTerminalPr
     <div className="flex flex-col h-full overflow-hidden">
       <div ref={containerRef} className="flex-1 overflow-y-auto overscroll-contain p-3">
         {lines.length === 0 && !streaming && (
-          <div className="flex items-center justify-center py-8 text-[#6b6459] text-[13px]">
+          <div className="flex items-center justify-center py-8 text-[var(--color-text-tertiary)] text-[13px]">
             No live stream available
           </div>
         )}
         {lines.length === 0 && streaming && (
-          <div className="flex items-center justify-center py-8 text-[#6b6459] animate-pulse">
+          <div className="flex items-center justify-center py-8 text-[var(--color-text-tertiary)] animate-pulse">
             Connecting to agent...
           </div>
         )}

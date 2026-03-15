@@ -22,9 +22,9 @@ export function SeedList({
   return (
     <div className="space-y-3">
       {seeds.length === 0 && (
-        <div className="flex flex-col items-center rounded-xl border-2 border-dashed border-[#2a2520] py-12 text-center">
-          <p className="text-[14px] text-[#9c9486]">No auto tasks configured</p>
-          <p className="mt-1 text-[12px] text-[#6b6459]">
+        <div className="flex flex-col items-center rounded-xl border-2 border-dashed border-[var(--color-border)] py-12 text-center">
+          <p className="text-[14px] text-[var(--color-text-secondary)]">No auto tasks configured</p>
+          <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">
             Auto tasks are generated automatically when the pipeline is idle.
           </p>
         </div>
@@ -39,7 +39,7 @@ export function SeedList({
               "rounded-xl border transition-colors",
               expanded
                 ? "border-amber-500/30 bg-amber-500/[0.03]"
-                : "border-[#2a2520] bg-[#151412] hover:border-amber-900/30",
+                : "border-[var(--color-border)] bg-[var(--color-bg-secondary)] hover:border-amber-900/30",
             )}
           >
             {/* Summary row */}
@@ -47,13 +47,13 @@ export function SeedList({
               onClick={() => onExpand(expanded ? null : i)}
               className="flex w-full items-center gap-3 px-4 py-3 text-left"
             >
-              <span className="text-[10px] text-[#6b6459]">{expanded ? "\u25BC" : "\u25B6"}</span>
+              <span className="text-[10px] text-[var(--color-text-tertiary)]">{expanded ? "\u25BC" : "\u25B6"}</span>
               <span
-                className={cn("min-w-[80px] text-[13px] font-medium", seed.name ? "text-[#e8e0d4]" : "text-[#6b6459]")}
+                className={cn("min-w-[80px] text-[13px] font-medium", seed.name ? "text-[var(--color-text)]" : "text-[var(--color-text-tertiary)]")}
               >
                 {seed.name || "unnamed"}
               </span>
-              <span className="flex-1 truncate text-[12px] text-[#6b6459]">
+              <span className="flex-1 truncate text-[12px] text-[var(--color-text-tertiary)]">
                 {seed.label || seed.prompt.slice(0, 60) || "\u2014"}
               </span>
               <span
@@ -68,7 +68,7 @@ export function SeedList({
 
             {/* Expanded editor */}
             {expanded && (
-              <div className="border-t border-[#2a2520] px-4 pb-4 pt-3 space-y-4">
+              <div className="border-t border-[var(--color-border)] px-4 pb-4 pt-3 space-y-4">
                 <div className="flex gap-3">
                   <Field label="Name" className="flex-1">
                     <input
@@ -130,7 +130,7 @@ export function SeedList({
       {!readOnly && (
         <button
           onClick={onAdd}
-          className="rounded-lg bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] ring-1 ring-inset ring-[#2a2520] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+          className="rounded-lg bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-border)] transition-colors hover:bg-[var(--color-card-alt)] hover:text-[var(--color-text)]"
         >
           + Add Auto Task
         </button>
@@ -140,12 +140,12 @@ export function SeedList({
 }
 
 const inputCls =
-  "w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed";
+  "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed";
 
 function Field({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
   return (
     <div className={className}>
-      <div className="mb-1.5 text-[12px] font-medium text-[#9c9486]">{label}</div>
+      <div className="mb-1.5 text-[12px] font-medium text-[var(--color-text-secondary)]">{label}</div>
       {children}
     </div>
   );

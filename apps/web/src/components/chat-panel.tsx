@@ -186,12 +186,12 @@ export function ChatPanel() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-[#2a2520] px-5">
-        <h2 className="text-[14px] font-semibold text-[#e8e0d4]">Chat</h2>
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-5">
+        <h2 className="text-[14px] font-semibold text-[var(--color-text)]">Chat</h2>
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setShowThreads(!showThreads)}
-            className="flex items-center gap-1.5 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:border-[#2a2520]/80 hover:text-[#e8e0d4]"
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border)]/80 hover:text-[var(--color-text)]"
           >
             {thread === "web:dashboard" ? (
               <Globe className="h-3 w-3 text-amber-400/60" />
@@ -202,8 +202,8 @@ export function ChatPanel() {
             <ChevronDown className="h-3 w-3" />
           </button>
           {showThreads && (
-            <div className="absolute right-0 top-full z-50 mt-2 min-w-[220px] overflow-hidden rounded-xl border border-[#2a2520] bg-[#1c1a17] shadow-2xl">
-              <div className="px-3 pt-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6b6459]">
+            <div className="absolute right-0 top-full z-50 mt-2 min-w-[220px] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl">
+              <div className="px-3 pt-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
                 Scope
               </div>
               <div className="p-1.5 pt-0">
@@ -213,20 +213,20 @@ export function ChatPanel() {
                     setShowThreads(false);
                   }}
                   className={cn(
-                    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[#232019]",
-                    thread === "web:dashboard" ? "bg-[#232019] text-[#e8e0d4]" : "text-[#9c9486]",
+                    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--color-card-alt)]",
+                    thread === "web:dashboard" ? "bg-[var(--color-card-alt)] text-[var(--color-text)]" : "text-[var(--color-text-secondary)]",
                   )}
                 >
                   <Globe className="h-3.5 w-3.5 shrink-0 text-amber-400/50" />
                   <div>
                     <div>Global</div>
-                    <div className="text-[10px] text-[#6b6459]">Uses global knowledge base</div>
+                    <div className="text-[10px] text-[var(--color-text-tertiary)]">Uses global knowledge base</div>
                   </div>
                 </button>
               </div>
               {projects.length > 0 && (
                 <>
-                  <div className="px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6b6459]">
+                  <div className="px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
                     Projects
                   </div>
                   <div className="p-1.5 pt-0 max-h-[240px] overflow-y-auto">
@@ -240,11 +240,11 @@ export function ChatPanel() {
                             setShowThreads(false);
                           }}
                           className={cn(
-                            "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[#232019]",
-                            thread === tid ? "bg-[#232019] text-[#e8e0d4]" : "text-[#9c9486]",
+                            "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--color-card-alt)]",
+                            thread === tid ? "bg-[var(--color-card-alt)] text-[var(--color-text)]" : "text-[var(--color-text-secondary)]",
                           )}
                         >
-                          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-[#6b6459]" />
+                          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-tertiary)]" />
                           <span className="truncate">{p.name}</span>
                         </button>
                       );
@@ -262,17 +262,17 @@ export function ChatPanel() {
         <div className="mx-auto max-w-3xl px-4 py-6">
           {messages.length === 0 && !sending && (
             <div className="flex flex-col items-center justify-center py-24 text-center">
-              <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#232019] ring-1 ring-[#2a2520]">
+              <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--color-card-alt)] ring-1 ring-[var(--color-border)]">
                 {thread === "web:dashboard" ? (
                   <Globe className="h-6 w-6 text-amber-400/40" strokeWidth={1.5} />
                 ) : (
-                  <FolderOpen className="h-6 w-6 text-[#6b6459]" strokeWidth={1.5} />
+                  <FolderOpen className="h-6 w-6 text-[var(--color-text-tertiary)]" strokeWidth={1.5} />
                 )}
               </div>
-              <p className="text-[15px] font-medium text-[#9c9486]">
+              <p className="text-[15px] font-medium text-[var(--color-text-secondary)]">
                 {thread === "web:dashboard" ? "Global Chat" : threadLabel(thread, projects)}
               </p>
-              <p className="mt-1.5 text-[13px] text-[#6b6459]">
+              <p className="mt-1.5 text-[13px] text-[var(--color-text-tertiary)]">
                 {thread === "web:dashboard"
                   ? "Chat with access to the global knowledge base"
                   : "Chat scoped to this workspace's documents"}
@@ -301,9 +301,9 @@ export function ChatPanel() {
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-[#2a2520] bg-[#0f0e0c]/80 backdrop-blur-sm" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-sm" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="mx-auto max-w-3xl px-3 md:px-4 py-3 md:py-4">
-          <div className="relative flex items-end gap-2 rounded-2xl border border-[#2a2520] bg-[#1c1a17] px-3 md:px-4 py-2.5 md:py-3 transition-colors focus-within:border-amber-500/20 focus-within:bg-[#232019]">
+          <div className="relative flex items-end gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 md:px-4 py-2.5 md:py-3 transition-colors focus-within:border-amber-500/20 focus-within:bg-[var(--color-card-alt)]">
             <textarea
               ref={inputRef}
               value={input}
@@ -322,7 +322,7 @@ export function ChatPanel() {
                     "rounded-lg p-2 min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors",
                     dictation.listening
                       ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                      : "text-[#6b6459] hover:text-[#9c9486] hover:bg-[#232019]",
+                      : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-card-alt)]",
                   )}
                 >
                   {dictation.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
@@ -335,7 +335,7 @@ export function ChatPanel() {
                   "rounded-lg p-2 min-h-[44px] min-w-[44px] flex items-center justify-center transition-all",
                   input.trim() && !sending
                     ? "bg-amber-500 text-white hover:bg-amber-400 shadow-lg shadow-amber-500/25"
-                    : "text-[#6b6459] cursor-not-allowed",
+                    : "text-[var(--color-text-tertiary)] cursor-not-allowed",
                 )}
               >
                 <Send className="h-4 w-4" />
@@ -374,8 +374,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           className={cn(
             "rounded-2xl px-4 py-3.5 text-[14px] leading-relaxed shadow-[0_12px_28px_rgba(0,0,0,0.14)]",
             isUser
-              ? "bg-amber-500/15 text-[#e8e0d4] rounded-br-md"
-              : "rounded-bl-md border border-[#2b241d] bg-[#171411] text-[#e8e0d4]",
+              ? "bg-amber-500/15 text-[var(--color-text)] rounded-br-md"
+              : "rounded-bl-md border border-[#2b241d] bg-[#171411] text-[var(--color-text)]",
           )}
         >
           {isUser ? (

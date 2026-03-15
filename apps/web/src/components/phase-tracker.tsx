@@ -13,7 +13,7 @@ export function PhaseTracker({ status, mode }: { status: string; mode?: string }
         const isCurrent = i === currentIdx;
         return (
           <div key={phase} className="flex shrink-0 items-center">
-            {i > 0 && <div className={cn("h-px w-6", isDone ? "bg-[#6b6459]" : "bg-white/[0.06]")} />}
+            {i > 0 && <div className={cn("h-px w-6", isDone ? "bg-[var(--color-text-tertiary)]" : "bg-white/[0.06]")} />}
             <div className="flex flex-col items-center gap-1.5">
               <div
                 className={cn(
@@ -23,7 +23,7 @@ export function PhaseTracker({ status, mode }: { status: string; mode?: string }
                     !isFailed &&
                     "bg-amber-500 text-white shadow-[0_0_10px_rgba(200,160,60,0.4)] animate-pulse",
                   isCurrent && isFailed && "bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.4)]",
-                  !isDone && !isCurrent && "border border-[#2a2520] bg-transparent",
+                  !isDone && !isCurrent && "border border-[var(--color-border)] bg-transparent",
                 )}
               >
                 {isDone && (

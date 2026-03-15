@@ -7,6 +7,7 @@ import {
   ListTodo,
   Menu,
   MessageSquare,
+  Paintbrush,
   Plug,
   Settings,
   Terminal,
@@ -33,6 +34,7 @@ import { SettingsPanel } from "@/components/settings-panel";
 import { StatusPanel } from "@/components/status-panel";
 import { TaskDetail } from "@/components/task-detail";
 import { TaskList } from "@/components/task-list";
+import { ThemePanel } from "@/components/theme-panel";
 import type { LinkedCredential, LinkedCredentialConnectSession } from "@/lib/api";
 import {
   fetchLinkedCredentialConnectSession,
@@ -62,18 +64,18 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   render() {
     if (this.state.error) {
       return (
-        <div className="flex h-screen items-center justify-center bg-[#0f0e0c] text-[#9c9486]">
+        <div className="flex h-screen items-center justify-center bg-[var(--color-bg)] text-[var(--color-text-secondary)]">
           <div className="max-w-lg text-center space-y-3">
             <p className="text-lg font-semibold text-amber-400">Oh, Borg!</p>
-            <pre className="text-xs text-[#6b6459] whitespace-pre-wrap">{(this.state.error as Error).message}</pre>
+            <pre className="text-xs text-[var(--color-text-tertiary)] whitespace-pre-wrap">{(this.state.error as Error).message}</pre>
             {this.state.stack && (
-              <pre className="mt-2 max-h-48 overflow-auto text-left text-[10px] text-[#4a443d] whitespace-pre-wrap">
+              <pre className="mt-2 max-h-48 overflow-auto text-left text-[10px] text-[var(--color-text-muted)] whitespace-pre-wrap">
                 {this.state.stack}
               </pre>
             )}
             <button
               onClick={() => this.setState({ error: null, stack: null })}
-              className="text-xs text-[#6b6459] hover:text-[#e8e0d4] underline"
+              className="text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] underline"
             >
               Try again
             </button>
@@ -95,7 +97,8 @@ type View =
   | "logs"
   | "queue"
   | "status"
-  | "settings";
+  | "settings"
+  | "theme";
 type MobileTab = "tasks" | "projects" | "queue" | "chat";
 type DashboardNavigateDetail = { view: View };
 const SHOW_SETTINGS_NAV = import.meta.env.VITE_SHOW_SETTINGS !== "false";
@@ -121,6 +124,7 @@ const ALL_NAV_ITEMS = [
   { key: "status" as const, label: "Status", Icon: Activity, minimalVisible: true },
   { key: "logs" as const, label: "Logs", Icon: Terminal, minimalVisible: false },
   { key: "queue" as const, label: "Queue", Icon: GitMerge, minimalVisible: false },
+  { key: "theme" as const, label: "Theme", Icon: Paintbrush, minimalVisible: true },
   { key: "settings" as const, label: "Settings", Icon: Settings, minimalVisible: true },
 ] as const;
 
@@ -268,12 +272,12 @@ function OnboardingModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="mx-4 w-full max-w-md rounded-2xl border border-[#2a2520] bg-[#151412] p-6 shadow-2xl space-y-5">
+      <div className="mx-4 w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6 shadow-2xl space-y-5">
         <div>
-          <div className="text-[18px] font-semibold text-[#e8e0d4]">
+          <div className="text-[18px] font-semibold text-[var(--color-text)]">
             {isReconnect ? "Reconnect your AI subscription" : "Connect your AI subscription"}
           </div>
-          <p className="mt-1 text-[13px] text-[#6b6459]">
+          <p className="mt-1 text-[13px] text-[var(--color-text-tertiary)]">
             {isReconnect
               ? "Your session has expired. Please reconnect to continue using Borg agents."
               : "Borg uses your Claude or ChatGPT subscription to run agents. Connect one to get started."}
@@ -301,11 +305,11 @@ function OnboardingModal() {
             const isClaudePending = isPending && provider === "claude";
             const isOpenAIPending = isPending && provider !== "claude";
             return (
-              <div key={provider} className="rounded-xl border border-[#2a2520] bg-[#0e0c0a] p-4 space-y-2">
+              <div key={provider} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-4 space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[14px] font-medium text-[#e8e0d4]">{label}</div>
-                    <div className="text-[12px] text-[#6b6459]">{hint}</div>
+                    <div className="text-[14px] font-medium text-[var(--color-text)]">{label}</div>
+                    <div className="text-[12px] text-[var(--color-text-tertiary)]">{hint}</div>
                   </div>
                   {isConnected ? (
                     <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] text-emerald-400">
@@ -328,13 +332,13 @@ function OnboardingModal() {
                         href={authUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block truncate rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-amber-400 hover:text-amber-300 transition-colors"
+                        className="block truncate rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[12px] text-amber-400 hover:text-amber-300 transition-colors"
                         title={authUrl}
                       >
                         1. Click here to open Claude authorization
                       </a>
                     )}
-                    <p className="text-[11px] text-[#9c9486]">
+                    <p className="text-[11px] text-[var(--color-text-secondary)]">
                       2. Authorize in the browser, then copy the code shown on the page and paste it below.
                     </p>
                     <div className="flex items-center gap-2">
@@ -344,7 +348,7 @@ function OnboardingModal() {
                         onChange={(e) => setCodes((prev) => ({ ...prev, [provider]: e.target.value }))}
                         onKeyDown={(e) => e.key === "Enter" && handleSubmitCode(provider)}
                         placeholder="Paste authorization code"
-                        className="flex-1 min-w-0 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/30 placeholder:text-[#4a4540]"
+                        className="flex-1 min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
                         autoFocus
                       />
                       <button
@@ -356,7 +360,7 @@ function OnboardingModal() {
                       </button>
                     </div>
                     {session.message && session.message !== "Open the link to authorize your Claude account" && (
-                      <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] text-[#9c9486] break-all overflow-hidden max-w-full">
+                      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[11px] text-[var(--color-text-secondary)] break-all overflow-hidden max-w-full">
                         {session.message}
                       </div>
                     )}
@@ -370,34 +374,34 @@ function OnboardingModal() {
                           href={authUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="block truncate rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-amber-400 hover:text-amber-300 transition-colors"
+                          className="block truncate rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[12px] text-amber-400 hover:text-amber-300 transition-colors"
                           title={authUrl}
                         >
                           1. Click here to open OpenAI authorization
                         </a>
                         {session.device_code ? (
                           <>
-                            <p className="text-[11px] text-[#9c9486]">2. Enter this code on the page:</p>
+                            <p className="text-[11px] text-[var(--color-text-secondary)]">2. Enter this code on the page:</p>
                             <div
-                              className="flex items-center justify-center gap-2 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-4 py-3 cursor-pointer hover:border-amber-500/30 transition-colors"
+                              className="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-3 cursor-pointer hover:border-amber-500/30 transition-colors"
                               onClick={() => navigator.clipboard.writeText(session.device_code)}
                               title="Click to copy"
                             >
-                              <span className="font-mono text-[18px] font-bold tracking-widest text-[#e8e0d4]">
+                              <span className="font-mono text-[18px] font-bold tracking-widest text-[var(--color-text)]">
                                 {session.device_code}
                               </span>
-                              <span className="text-[11px] text-[#4a4540]">(click to copy)</span>
+                              <span className="text-[11px] text-[var(--color-text-faint)]">(click to copy)</span>
                             </div>
-                            <p className="text-[11px] text-[#6b6459]">
+                            <p className="text-[11px] text-[var(--color-text-tertiary)]">
                               3. After authorizing, this dialog will update automatically.
                             </p>
                           </>
                         ) : (
-                          <p className="text-[11px] text-[#9c9486]">Waiting for device code...</p>
+                          <p className="text-[11px] text-[var(--color-text-secondary)]">Waiting for device code...</p>
                         )}
                       </>
                     ) : (
-                      <p className="text-[11px] text-[#9c9486]">Waiting for login instructions...</p>
+                      <p className="text-[11px] text-[var(--color-text-secondary)]">Waiting for login instructions...</p>
                     )}
                   </div>
                 )}
@@ -412,7 +416,7 @@ function OnboardingModal() {
                           return next;
                         });
                       }}
-                      className="text-[11px] text-[#6b6459] hover:text-[#9c9486] underline"
+                      className="text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] underline"
                     >
                       Try again
                     </button>
@@ -424,7 +428,7 @@ function OnboardingModal() {
         </div>
         <button
           onClick={() => setDismissed(true)}
-          className="w-full rounded-lg py-2 text-[12px] text-[#4a443d] transition-colors hover:text-[#6b6459]"
+          className="w-full rounded-lg py-2 text-[12px] text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-tertiary)]"
         >
           Skip for now
         </button>
@@ -438,9 +442,9 @@ function AuthGate() {
 
   if (!ready) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#0f0e0c]">
+      <div className="flex h-screen items-center justify-center bg-[var(--color-bg)]">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#2a2520] border-t-amber-400" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-amber-400" />
         </div>
       </div>
     );
@@ -538,7 +542,7 @@ function AppInner() {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col bg-[#0f0e0c] text-foreground antialiased text-[16px] overflow-x-hidden" style={{ height: "100dvh" }}>
+      <div className="flex flex-col bg-[var(--color-bg)] text-foreground antialiased text-[16px] overflow-x-hidden" style={{ height: "100dvh" }}>
         {/* Mobile sidebar overlay */}
         {sidebarOpen && (
           <div
@@ -553,7 +557,7 @@ function AppInner() {
             sidebarOpen ? "translate-x-0" : "-translate-x-full",
             sidebarAlert
               ? "border-red-500/30 bg-red-950/95"
-              : "border-[#2a2520] bg-[#151412]",
+              : "border-[var(--color-border)] bg-[var(--color-bg-secondary)]",
           )}
         >
           <div className="flex h-14 items-center justify-between px-4 shrink-0">
@@ -562,7 +566,7 @@ function AppInner() {
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors"
+              className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] transition-colors"
               aria-label="Close sidebar"
             >
               <X className="h-5 w-5" />
@@ -581,10 +585,10 @@ function AppInner() {
                     view === key
                       ? sidebarAlert
                         ? "bg-red-400/20 text-red-50"
-                        : "bg-amber-500/[0.08] text-[#e8e0d4]"
+                        : "bg-amber-500/[0.08] text-[var(--color-text)]"
                       : sidebarAlert
                         ? "text-red-200/80 hover:bg-red-400/15 hover:text-red-50"
-                        : "text-[#6b6459] hover:bg-amber-500/[0.05] hover:text-[#9c9486]",
+                        : "text-[var(--color-text-tertiary)] hover:bg-amber-500/[0.05] hover:text-[var(--color-text-secondary)]",
                   )}
                 >
                   <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={view === key ? 2 : 1.5} />
@@ -611,12 +615,12 @@ function AppInner() {
 
           {mobileTab === "queue" && (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="flex shrink-0 border-b border-[#2a2520]">
+              <div className="flex shrink-0 border-b border-[var(--color-border)]">
                 <button
                   onClick={() => setMobileBottomTab("proposals")}
                   className={cn(
                     "flex-1 min-h-[44px] text-[14px] font-medium transition-colors",
-                    mobileBottomTab === "proposals" ? "text-[#e8e0d4] border-b-2 border-amber-400" : "text-[#6b6459]",
+                    mobileBottomTab === "proposals" ? "text-[var(--color-text)] border-b-2 border-amber-400" : "text-[var(--color-text-tertiary)]",
                   )}
                 >
                   Proposals
@@ -625,7 +629,7 @@ function AppInner() {
                   onClick={() => setMobileBottomTab("queue")}
                   className={cn(
                     "flex-1 min-h-[44px] text-[14px] font-medium transition-colors",
-                    mobileBottomTab === "queue" ? "text-[#e8e0d4] border-b-2 border-amber-400" : "text-[#6b6459]",
+                    mobileBottomTab === "queue" ? "text-[var(--color-text)] border-b-2 border-amber-400" : "text-[var(--color-text-tertiary)]",
                   )}
                 >
                   Queue
@@ -645,7 +649,7 @@ function AppInner() {
         </div>
 
         <nav
-          className="flex shrink-0 border-t border-[#2a2520] bg-[#0f0e0c]"
+          className="flex shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg)]"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
           {MOBILE_TABS.filter((t) => isSWE || t.key !== "queue").map(({ key, label: defaultLabel, Icon }) => {
@@ -656,7 +660,7 @@ function AppInner() {
                 onClick={() => setMobileTab(key)}
                 className={cn(
                   "flex flex-1 flex-col items-center gap-0.5 min-h-[44px] min-w-[44px] pt-2 pb-1.5 active:opacity-70 transition-colors",
-                  mobileTab === key ? "text-amber-400" : "text-[#6b6459]",
+                  mobileTab === key ? "text-amber-400" : "text-[var(--color-text-tertiary)]",
                 )}
               >
                 <Icon className="h-5 w-5" strokeWidth={mobileTab === key ? 2 : 1.5} />
@@ -671,7 +675,7 @@ function AppInner() {
 
   // Desktop layout
   return (
-    <div className="flex h-screen bg-[#0f0e0c] text-foreground antialiased overflow-x-hidden">
+    <div className="flex h-screen bg-[var(--color-bg)] text-foreground antialiased overflow-x-hidden">
       {/* Sidebar backdrop overlay for md screens */}
       {sidebarOpen && (
         <div
@@ -687,7 +691,7 @@ function AppInner() {
             "group/nav absolute inset-y-0 left-0 z-40 flex w-[52px] hover:w-[160px] flex-col items-start border-r pb-4 overflow-hidden transition-[width] duration-100 ease-out",
             sidebarAlert
               ? "border-red-500/30 bg-red-950/35"
-              : "border-[#2a2520] bg-gradient-to-b from-[#1c1a17] to-[#151412]",
+              : "border-[var(--color-border)] bg-gradient-to-b from-[var(--color-card)] to-[var(--color-bg-secondary)]",
           )}
         >
           <div className="flex mb-2 w-full shrink-0 items-center justify-center py-1.5">
@@ -720,10 +724,10 @@ function AppInner() {
                     view === key
                       ? sidebarAlert
                         ? "bg-red-400/20 text-red-50"
-                        : "bg-amber-500/[0.08] text-[#e8e0d4]"
+                        : "bg-amber-500/[0.08] text-[var(--color-text)]"
                       : sidebarAlert
                         ? "text-red-200/80 hover:bg-red-400/15 hover:text-red-50"
-                        : "text-[#6b6459] hover:bg-amber-500/[0.05] hover:text-[#9c9486]",
+                        : "text-[var(--color-text-tertiary)] hover:bg-amber-500/[0.05] hover:text-[var(--color-text-secondary)]",
                   )}
                 >
                   <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={view === key ? 2 : 1.5} />
@@ -767,7 +771,7 @@ function AppInner() {
                   )}
                 />
               </div>
-              <span className="truncate text-[11px] text-[#6b6459] opacity-0 group-hover/nav:opacity-100 transition-opacity duration-200">
+              <span className="truncate text-[11px] text-[var(--color-text-tertiary)] opacity-0 group-hover/nav:opacity-100 transition-opacity duration-200">
                 {connected ? "Connected" : "Offline"}
               </span>
             </div>
@@ -782,7 +786,7 @@ function AppInner() {
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
           sidebarAlert
             ? "border-red-500/30 bg-red-950/95"
-            : "border-[#2a2520] bg-[#151412]",
+            : "border-[var(--color-border)] bg-[var(--color-bg-secondary)]",
         )}
       >
         <div className="flex h-14 items-center justify-between px-4 shrink-0">
@@ -791,7 +795,7 @@ function AppInner() {
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors"
+            className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] transition-colors"
             aria-label="Close sidebar"
           >
             <X className="h-5 w-5" />
@@ -811,10 +815,10 @@ function AppInner() {
                   view === key
                     ? sidebarAlert
                       ? "bg-red-400/20 text-red-50"
-                      : "bg-amber-500/[0.08] text-[#e8e0d4]"
+                      : "bg-amber-500/[0.08] text-[var(--color-text)]"
                     : sidebarAlert
                       ? "text-red-200/80 hover:bg-red-400/15 hover:text-red-50"
-                      : "text-[#6b6459] hover:bg-amber-500/[0.05] hover:text-[#9c9486]",
+                      : "text-[var(--color-text-tertiary)] hover:bg-amber-500/[0.05] hover:text-[var(--color-text-secondary)]",
                 )}
               >
                 <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={view === key ? 2 : 1.5} />
@@ -838,7 +842,7 @@ function AppInner() {
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/15 ring-1 ring-amber-500/20">
                 <span className="text-[11px] font-bold tabular-nums text-amber-400">{status?.dispatched_agents}</span>
               </div>
-              <span className="text-[12px] text-[#9c9486]">active agent(s)</span>
+              <span className="text-[12px] text-[var(--color-text-secondary)]">active agent(s)</span>
             </div>
           )}
           <div className="flex items-center gap-2" title={connected ? "Server connected" : "Server disconnected"}>
@@ -850,7 +854,7 @@ function AppInner() {
                   : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]",
               )}
             />
-            <span className="text-[12px] text-[#6b6459]">{connected ? "Connected" : "Offline"}</span>
+            <span className="text-[12px] text-[var(--color-text-tertiary)]">{connected ? "Connected" : "Offline"}</span>
           </div>
         </div>
       </nav>
@@ -867,10 +871,10 @@ function AppInner() {
           />
         )}
         {!isSWE && (
-          <div className="flex h-14 shrink-0 items-center gap-3 border-b border-[#2a2520] px-4 lg:hidden">
+          <div className="flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] px-4 lg:hidden">
             <button
               onClick={() => setSidebarOpen((v) => !v)}
-              className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors"
+              className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] transition-colors"
               aria-label="Toggle sidebar"
             >
               <Menu className="h-5 w-5" />
@@ -878,7 +882,7 @@ function AppInner() {
             <div className={cn("borg-logo h-7 w-7", domain.accentBg)}>
               <BorgLogo expanded />
             </div>
-            <span className="text-[15px] font-semibold text-[#e8e0d4]">{PRODUCT_WORD}</span>
+            <span className="text-[15px] font-semibold text-[var(--color-text)]">{PRODUCT_WORD}</span>
           </div>
         )}
 
@@ -886,7 +890,7 @@ function AppInner() {
           <div className="min-w-0 flex-1 overflow-hidden" style={{ contain: "strict" }}>
             {view === "tasks" && (
               <div className="flex h-full flex-col lg:flex-row">
-                <div className="lg:w-[320px] shrink-0 overflow-hidden border-b lg:border-b-0 lg:border-r border-[#2a2520] max-h-[40vh] lg:max-h-none">
+                <div className="lg:w-[320px] shrink-0 overflow-hidden border-b lg:border-b-0 lg:border-r border-[var(--color-border)] max-h-[40vh] lg:max-h-none">
                   <TaskList selectedId={selectedTaskId} onSelect={handleSelectTask} repoFilter={repoFilter} />
                 </div>
                 <div className="min-w-0 flex-1 overflow-hidden">
@@ -907,6 +911,7 @@ function AppInner() {
             {view === "status" && <StatusPanel />}
             {view === "logs" && <LogViewer logs={logs} />}
             {view === "queue" && <QueuePanel repoFilter={repoFilter} />}
+            {view === "theme" && <ThemePanel />}
             {view === "settings" && SHOW_SETTINGS_NAV && <SettingsPanel />}
           </div>
 
@@ -933,11 +938,11 @@ function EmptyState({
   return (
     <div className="flex h-full flex-col items-center justify-center gap-8 text-center">
       <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-amber-500/[0.04] to-amber-500/[0.02] ring-1 ring-amber-900/15">
-        <ListTodo className="h-8 w-8 text-[#6b6459]" strokeWidth={1.5} />
+        <ListTodo className="h-8 w-8 text-[var(--color-text-tertiary)]" strokeWidth={1.5} />
       </div>
       <div>
-        <p className="text-[15px] font-medium text-[#9c9486]">Select a task to view details</p>
-        <p className="mt-2 text-[13px] text-[#6b6459]">or create a new one from the header</p>
+        <p className="text-[15px] font-medium text-[var(--color-text-secondary)]">Select a task to view details</p>
+        <p className="mt-2 text-[13px] text-[var(--color-text-tertiary)]">or create a new one from the header</p>
       </div>
       {status && isSWE && (
         <div className="flex flex-wrap justify-center gap-4 md:gap-8 mt-2 px-4">
@@ -956,7 +961,7 @@ function StatPill({ value, label, color }: { value: number; label: string; color
   return (
     <div className="flex flex-col items-center gap-1">
       <span className={cn("text-2xl font-semibold tabular-nums", color)}>{value}</span>
-      <span className="text-[11px] font-medium text-[#6b6459]">{label}</span>
+      <span className="text-[11px] font-medium text-[var(--color-text-tertiary)]">{label}</span>
     </div>
   );
 }

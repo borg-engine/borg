@@ -53,7 +53,7 @@ export function TaskChat({ taskId }: TaskChatProps) {
   const pendingCount = messages.filter((m) => m.role === "user" && !m.delivered_phase).length;
 
   return (
-    <div className="border-t border-[#2a2520]">
+    <div className="border-t border-[var(--color-border)]">
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2.5 px-6 py-3 text-left transition-colors hover:bg-white/[0.02]"
@@ -89,8 +89,8 @@ export function TaskChat({ taskId }: TaskChatProps) {
             <div ref={bottomRef} />
           </div>
 
-          <div className="shrink-0 border-t border-[#2a2520] px-5 py-3">
-            <div className="flex items-end gap-2 rounded-xl border border-[#2a2520] bg-[#1c1a17] px-3 py-2 transition-colors focus-within:border-amber-500/20">
+          <div className="shrink-0 border-t border-[var(--color-border)] px-5 py-3">
+            <div className="flex items-end gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 transition-colors focus-within:border-amber-500/20">
               <textarea
                 ref={inputRef}
                 value={input}
@@ -122,7 +122,7 @@ export function TaskChat({ taskId }: TaskChatProps) {
                     "shrink-0 rounded-lg p-1.5 transition-all",
                     input.trim() && !sending
                       ? "bg-amber-500 text-white hover:bg-amber-400 shadow-lg shadow-amber-500/25"
-                      : "cursor-not-allowed text-[#6b6459]",
+                      : "cursor-not-allowed text-[var(--color-text-tertiary)]",
                   )}
                 >
                   <Send className="h-3.5 w-3.5" />
@@ -165,10 +165,10 @@ function MessageBubble({ msg }: { msg: TaskMessage }) {
         className={cn(
           "max-w-[80%] rounded-2xl px-4 py-3 text-[13px] leading-relaxed shadow-[0_12px_28px_rgba(0,0,0,0.14)]",
           isUser
-            ? "bg-amber-500/15 text-[#e8e0d4] rounded-br-md"
+            ? "bg-amber-500/15 text-[var(--color-text)] rounded-br-md"
             : msg.role === "system"
               ? "bg-white/[0.03] text-zinc-500 ring-1 ring-inset ring-white/[0.06] rounded-bl-md"
-              : "rounded-bl-md border border-[#2b241d] bg-[#171411] text-[#e8e0d4]",
+              : "rounded-bl-md border border-[#2b241d] bg-[#171411] text-[var(--color-text)]",
         )}
       >
         {!isUser && (

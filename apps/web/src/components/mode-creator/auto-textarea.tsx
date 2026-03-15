@@ -34,7 +34,7 @@ export function AutoTextarea({
       placeholder={placeholder}
       disabled={disabled}
       className={cn(
-        "w-full resize-none rounded-lg border border-[#2a2520] bg-[#0f0e0c] px-3 py-2.5 font-mono text-[12px] leading-[1.6] text-[#e8e0d4] outline-none placeholder:text-[#6b6459] focus:border-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
+        "w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2.5 font-mono text-[12px] leading-[1.6] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
         className,
       )}
     />

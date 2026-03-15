@@ -43,17 +43,17 @@ export function TimelineItem({
     >
       {/* Vertical connecting line */}
       <div className="relative flex flex-col items-center w-5 shrink-0">
-        {!isFirst && <div className="absolute bottom-1/2 w-px h-full bg-[#2a2520]" />}
-        {!isLast && <div className="absolute top-1/2 w-px h-full bg-[#2a2520]" />}
+        {!isFirst && <div className="absolute bottom-1/2 w-px h-full bg-[var(--color-border)]" />}
+        {!isLast && <div className="absolute top-1/2 w-px h-full bg-[var(--color-border)]" />}
         <div className="relative z-10 flex items-center justify-center w-5 h-5">
-          {icon || <div className="w-2 h-2 rounded-full bg-[#6b6459]" />}
+          {icon || <div className="w-2 h-2 rounded-full bg-[var(--color-text-tertiary)]" />}
         </div>
       </div>
 
       {/* Content */}
       <div className="min-w-0 flex-1 py-0.5">
-        <div className="text-[13px] text-[#e8e0d4] leading-snug truncate">{label}</div>
-        {detail && <div className="text-[11px] text-[#6b6459] mt-0.5 truncate">{detail}</div>}
+        <div className="text-[13px] text-[var(--color-text)] leading-snug truncate">{label}</div>
+        {detail && <div className="text-[11px] text-[var(--color-text-tertiary)] mt-0.5 truncate">{detail}</div>}
       </div>
     </div>
   );

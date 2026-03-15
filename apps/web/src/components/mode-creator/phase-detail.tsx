@@ -200,7 +200,7 @@ export function PhaseDetail({
               })}
             </div>
             {phase.commits && (
-              <div className="mt-3 flex gap-3 border-t border-[#2a2520] pt-3">
+              <div className="mt-3 flex gap-3 border-t border-[var(--color-border)] pt-3">
                 <Field label="Commit Message" className="flex-1">
                   <input
                     value={phase.commit_message}
@@ -227,22 +227,22 @@ export function PhaseDetail({
 
       {/* Advanced */}
       {isAgent && (
-        <div className="rounded-xl border border-[#2a2520]">
+        <div className="rounded-xl border border-[var(--color-border)]">
           <button
             type="button"
             onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex w-full items-center gap-2.5 px-4 py-3 text-[12px] text-[#6b6459] transition-colors hover:text-[#9c9486]"
+            className="flex w-full items-center gap-2.5 px-4 py-3 text-[12px] text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-secondary)]"
           >
             <span className="text-[10px]">{showAdvanced ? "\u25BC" : "\u25B6"}</span>
             <span className="font-medium">Advanced</span>
             {!showAdvanced && advancedCount > 0 && (
-              <span className="rounded-lg bg-[#1c1a17] px-2 py-0.5 text-[11px] text-[#6b6459]">
+              <span className="rounded-lg bg-[var(--color-card)] px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)]">
                 {advancedCount} configured
               </span>
             )}
           </button>
           {showAdvanced && (
-            <div className="space-y-4 border-t border-[#2a2520] px-4 pb-4 pt-3">
+            <div className="space-y-4 border-t border-[var(--color-border)] px-4 pb-4 pt-3">
               <Field label="System Prompt">
                 <AutoTextarea
                   value={phase.system_prompt}
@@ -281,12 +281,12 @@ export function PhaseDetail({
 }
 
 const inputCls =
-  "w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed";
+  "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-[#2a2520] bg-[#151412] p-4">
-      <div className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-[#6b6459]">{title}</div>
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <div className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">{title}</div>
       {children}
     </div>
   );
@@ -295,7 +295,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
   return (
     <div className={className}>
-      <div className="mb-1.5 text-[12px] font-medium text-[#9c9486]">{label}</div>
+      <div className="mb-1.5 text-[12px] font-medium text-[var(--color-text-secondary)]">{label}</div>
       {children}
     </div>
   );
@@ -319,14 +319,14 @@ function FlagToggle({
       onClick={() => onChange(!checked)}
       className={cn(
         "flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[12px] transition-colors",
-        checked ? "text-[#e8e0d4]" : "text-[#6b6459]",
+        checked ? "text-[var(--color-text)]" : "text-[var(--color-text-tertiary)]",
         disabled && "cursor-not-allowed opacity-50",
       )}
     >
       <span
         className={cn(
           "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-          checked ? "border-amber-500/40 bg-amber-500/20 text-amber-400" : "border-[#2a2520] bg-[#1c1a17]",
+          checked ? "border-amber-500/40 bg-amber-500/20 text-amber-400" : "border-[var(--color-border)] bg-[var(--color-card)]",
         )}
       >
         {checked && <span className="text-[9px]">&#10003;</span>}

@@ -15,10 +15,10 @@ export function UploadSessionsSection({
   if (!uploadSessionsLoading && uploadSessions.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-[#2a2520] bg-[#151412] p-4">
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[12px] font-semibold text-[#e8e0d4]">Upload Sessions</span>
-        <span className="text-[11px] text-[#6b6459] tabular-nums">
+        <span className="text-[12px] font-semibold text-[var(--color-text)]">Upload Sessions</span>
+        <span className="text-[11px] text-[var(--color-text-tertiary)] tabular-nums">
           {uploadSessionCounts.uploading ?? 0} uploading &middot; {uploadSessionCounts.processing ?? 0}{" "}
           processing &middot; {uploadSessionCounts.done ?? 0} done
         </span>
@@ -27,13 +27,13 @@ export function UploadSessionsSection({
         {uploadSessions.slice(0, 8).map((s) => (
           <div
             key={s.id}
-            className="flex items-center justify-between rounded-lg border border-[#2a2520] px-3 py-2 text-[12px]"
+            className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-[12px]"
           >
-            <span className="truncate pr-2 text-[#e8e0d4]">
+            <span className="truncate pr-2 text-[var(--color-text)]">
               #{s.id} {s.file_name}
             </span>
             <div className="flex items-center gap-2">
-              <span className="text-[#6b6459]">{s.status}</span>
+              <span className="text-[var(--color-text-tertiary)]">{s.status}</span>
               {s.status === "failed" && (
                 <button
                   onClick={() => onRetrySession(s.id)}

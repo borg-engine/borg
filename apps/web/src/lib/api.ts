@@ -258,6 +258,7 @@ export interface UserSettings {
   discord_bot_username: string;
   slack_bot_connected: boolean;
   slack_bot_name: string;
+  theme?: string;
 }
 
 export function useUserSettings() {
@@ -618,7 +619,7 @@ const HTTP_STATUS_TEXT: Record<number, string> = {
   504: "Gateway Timeout",
 };
 
-async function fetchJson<T>(path: string): Promise<T> {
+export async function fetchJson<T>(path: string): Promise<T> {
   await tokenReady;
   const res = await fetch(`${apiBase()}${path}`, { headers: authHeaders() });
   if (!res.ok) {
@@ -633,7 +634,7 @@ async function fetchJson<T>(path: string): Promise<T> {
   return res.json();
 }
 
-async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   await tokenReady;
   const { headers: extraHeaders, ...rest } = init ?? {};
   return fetch(`${apiBase()}${path}`, {

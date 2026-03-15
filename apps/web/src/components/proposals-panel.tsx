@@ -37,20 +37,20 @@ function TriageTooltip({ proposal }: { proposal: Proposal }) {
   ];
 
   return (
-    <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 w-64 rounded-lg border border-[#2a2520] bg-[#1c1a17] p-3 shadow-xl">
+    <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 w-64 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3 shadow-xl">
       <div className="space-y-2">
         {dims.map((d) => (
           <div key={d.key} className="flex items-center gap-2">
-            <span className="w-20 text-[10px] text-[#6b6459]">{d.label}</span>
+            <span className="w-20 text-[10px] text-[var(--color-text-tertiary)]">{d.label}</span>
             <div className="flex-1 h-1.5 rounded-full bg-white/[0.06]">
               <div className={`h-full rounded-full ${barColor(d.key, d.value)}`} style={{ width: barWidth(d.value) }} />
             </div>
-            <span className="w-4 text-right text-[10px] tabular-nums text-[#9c9486]">{d.value}</span>
+            <span className="w-4 text-right text-[10px] tabular-nums text-[var(--color-text-secondary)]">{d.value}</span>
           </div>
         ))}
       </div>
       {proposal.triage_reasoning && (
-        <p className="mt-2 border-t border-[#2a2520] pt-2 text-[10px] leading-relaxed text-[#6b6459]">
+        <p className="mt-2 border-t border-[var(--color-border)] pt-2 text-[10px] leading-relaxed text-[var(--color-text-tertiary)]">
           {proposal.triage_reasoning}
         </p>
       )}
@@ -127,8 +127,8 @@ export function ProposalsPanel({ repoFilter }: ProposalsPanelProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-[#2a2520] px-5">
-        <span className="text-[14px] font-semibold text-[#e8e0d4]">Proposals</span>
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-5">
+        <span className="text-[14px] font-semibold text-[var(--color-text)]">Proposals</span>
         <div className="flex items-center gap-2.5">
           {pending.length > 0 && (
             <button
@@ -139,7 +139,7 @@ export function ProposalsPanel({ repoFilter }: ProposalsPanelProps) {
               {triaging ? "Scoring..." : "Triage"}
             </button>
           )}
-          <span className="rounded-full bg-amber-500/[0.06] px-2.5 py-0.5 text-[11px] tabular-nums text-[#9c9486]">
+          <span className="rounded-full bg-amber-500/[0.06] px-2.5 py-0.5 text-[11px] tabular-nums text-[var(--color-text-secondary)]">
             {pending.length}
           </span>
         </div>
@@ -147,12 +147,12 @@ export function ProposalsPanel({ repoFilter }: ProposalsPanelProps) {
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <div className="p-2 space-y-1">
           {sorted.map((p) => (
-            <div key={p.id} className="rounded-lg border border-[#2a2520] bg-[#1c1a17]/50">
+            <div key={p.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]/50">
               <button
                 onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
                 className="flex w-full items-center gap-2.5 px-3 py-2.5 md:py-2 text-left active:bg-white/[0.03]"
               >
-                <span className="font-mono text-[10px] text-[#6b6459]">#{p.id}</span>
+                <span className="font-mono text-[10px] text-[var(--color-text-tertiary)]">#{p.id}</span>
                 {p.triage_score > 0 ? (
                   <span
                     className={`relative inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ring-1 ring-inset ${scoreColor(p.triage_score)}`}
@@ -168,18 +168,18 @@ export function ProposalsPanel({ repoFilter }: ProposalsPanelProps) {
                   </span>
                 )}
                 {p.repo_path && (
-                  <span className="shrink-0 rounded-md bg-amber-500/[0.06] px-1.5 py-0.5 text-[9px] font-medium text-[#9c9486]">
+                  <span className="shrink-0 rounded-md bg-amber-500/[0.06] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-text-secondary)]">
                     {repoName(p.repo_path)}
                   </span>
                 )}
-                <span className="flex-1 truncate text-[13px] md:text-[12px] text-[#e8e0d4]">{p.title}</span>
+                <span className="flex-1 truncate text-[13px] md:text-[12px] text-[var(--color-text)]">{p.title}</span>
               </button>
 
               {expandedId === p.id && (
-                <div className="border-t border-[#2a2520]/50 px-3 py-3 md:py-2.5 space-y-2.5 md:space-y-2">
-                  <p className="text-[13px] md:text-[11px] text-[#9c9486] leading-relaxed">{p.description}</p>
+                <div className="border-t border-[var(--color-border)]/50 px-3 py-3 md:py-2.5 space-y-2.5 md:space-y-2">
+                  <p className="text-[13px] md:text-[11px] text-[var(--color-text-secondary)] leading-relaxed">{p.description}</p>
                   {p.rationale && (
-                    <p className="text-[12px] md:text-[11px] text-[#6b6459] italic leading-relaxed">{p.rationale}</p>
+                    <p className="text-[12px] md:text-[11px] text-[var(--color-text-tertiary)] italic leading-relaxed">{p.rationale}</p>
                   )}
                   {p.triage_score > 0 && (
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-1">
@@ -190,18 +190,18 @@ export function ProposalsPanel({ repoFilter }: ProposalsPanelProps) {
                         { label: "Effort", value: p.triage_effort, key: "effort" },
                       ].map((d) => (
                         <div key={d.key} className="flex items-center gap-2">
-                          <span className="w-16 text-[10px] text-[#6b6459]">{d.label}</span>
+                          <span className="w-16 text-[10px] text-[var(--color-text-tertiary)]">{d.label}</span>
                           <div className="flex-1 h-1 rounded-full bg-white/[0.06]">
                             <div
                               className={`h-full rounded-full ${barColor(d.key, d.value)}`}
                               style={{ width: barWidth(d.value) }}
                             />
                           </div>
-                          <span className="w-3 text-right text-[10px] tabular-nums text-[#9c9486]">{d.value}</span>
+                          <span className="w-3 text-right text-[10px] tabular-nums text-[var(--color-text-secondary)]">{d.value}</span>
                         </div>
                       ))}
                       {p.triage_reasoning && (
-                        <p className="col-span-2 pt-1 text-[10px] text-[#6b6459] italic">{p.triage_reasoning}</p>
+                        <p className="col-span-2 pt-1 text-[10px] text-[var(--color-text-tertiary)] italic">{p.triage_reasoning}</p>
                       )}
                     </div>
                   )}
@@ -226,14 +226,14 @@ export function ProposalsPanel({ repoFilter }: ProposalsPanelProps) {
             </div>
           ))}
 
-          {handled.length > 0 && pending.length > 0 && <div className="mx-3 my-1.5 h-px bg-[#2a2520]/50" />}
+          {handled.length > 0 && pending.length > 0 && <div className="mx-3 my-1.5 h-px bg-[var(--color-border)]/50" />}
 
           {handled.slice(0, 10).map((p) => (
             <div
               key={p.id}
               className="flex items-center gap-2.5 rounded-lg px-3 py-2 md:py-1.5 text-[13px] md:text-[12px] opacity-50"
             >
-              <span className="font-mono text-[10px] text-[#6b6459]">#{p.id}</span>
+              <span className="font-mono text-[10px] text-[var(--color-text-tertiary)]">#{p.id}</span>
               <span
                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
                   p.status === "approved"
@@ -245,7 +245,7 @@ export function ProposalsPanel({ repoFilter }: ProposalsPanelProps) {
               >
                 {p.status === "auto_dismissed" ? "auto-closed" : p.status}
               </span>
-              <span className="flex-1 truncate text-[#6b6459]">{p.title}</span>
+              <span className="flex-1 truncate text-[var(--color-text-tertiary)]">{p.title}</span>
               {p.status === "auto_dismissed" && (
                 <button
                   onClick={() => handleReopen(p.id)}
@@ -259,7 +259,7 @@ export function ProposalsPanel({ repoFilter }: ProposalsPanelProps) {
           ))}
 
           {!pending.length && !handled.length && (
-            <p className="py-8 text-center text-[13px] md:text-xs text-[#6b6459]">No proposals yet</p>
+            <p className="py-8 text-center text-[13px] md:text-xs text-[var(--color-text-tertiary)]">No proposals yet</p>
           )}
         </div>
       </div>

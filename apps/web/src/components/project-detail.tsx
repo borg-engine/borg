@@ -190,7 +190,7 @@ function ProjectHeader({ project, onDelete }: { project: Project; onDelete?: () 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-[15px] font-semibold text-zinc-100 flex items-center gap-1">
-              <span className="text-[12px] text-[#6b6459] tabular-nums mr-1.5">#{project.id}</span>
+              <span className="text-[12px] text-[var(--color-text-tertiary)] tabular-nums mr-1.5">#{project.id}</span>
               {editing ? (
                 <input
                   ref={renameInput}
@@ -499,22 +499,22 @@ function DocumentsTab({
         {/* Agent work — above upload so it's the first thing visible */}
         {hasAgentWork && (
           <div>
-            <div className="mb-2 text-[13px] font-medium text-[#e8e0d4]">
+            <div className="mb-2 text-[13px] font-medium text-[var(--color-text)]">
               Agent Work
-              {hasDocs && <span className="ml-1.5 text-[12px] text-[#6b6459]">({docs.length})</span>}
+              {hasDocs && <span className="ml-1.5 text-[12px] text-[var(--color-text-tertiary)]">({docs.length})</span>}
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {activeTasksWithoutDocs.map((task) => (
                 <div
                   key={`active-${task.id}`}
-                  className="flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-[#1a1814] p-4"
+                  className="flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-[var(--color-surface)] p-4"
                 >
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400 animate-pulse" />
-                    <span className="text-[13px] font-medium text-[#e8e0d4] truncate">{task.title}</span>
+                    <span className="text-[13px] font-medium text-[var(--color-text)] truncate">{task.title}</span>
                     <StatusBadge status={task.status} />
                   </div>
-                  <div className="text-[12px] text-[#6b6459] truncate">#{task.id} · working...</div>
+                  <div className="text-[12px] text-[var(--color-text-tertiary)] truncate">#{task.id} · working...</div>
                 </div>
               ))}
               {docs.map((doc) => {
@@ -534,8 +534,8 @@ function DocumentsTab({
                     key={`${doc.task_id}-${doc.file_name}`}
                     onClick={handleClick}
                     className={cn(
-                      "flex flex-col gap-2 rounded-xl border p-4 text-left transition-colors hover:border-amber-900/30 hover:bg-[#1c1a17]",
-                      isActive ? "border-amber-500/30 bg-[#1a1814]" : "border-[#2a2520] bg-[#151412]",
+                      "flex flex-col gap-2 rounded-xl border p-4 text-left transition-colors hover:border-amber-900/30 hover:bg-[var(--color-card)]",
+                      isActive ? "border-amber-500/30 bg-[var(--color-surface)]" : "border-[var(--color-border)] bg-[var(--color-bg-secondary)]",
                     )}
                   >
                     <div className="flex items-center gap-2">
@@ -544,7 +544,7 @@ function DocumentsTab({
                       ) : (
                         <FileText className="h-4 w-4 shrink-0 text-blue-400/60" />
                       )}
-                      <span className="text-[13px] font-medium text-[#e8e0d4] truncate">{doc.file_name}</span>
+                      <span className="text-[13px] font-medium text-[var(--color-text)] truncate">{doc.file_name}</span>
                       {isActive && (
                         <span className="flex items-center gap-1 shrink-0">
                           <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
@@ -553,7 +553,7 @@ function DocumentsTab({
                       )}
                       <StatusBadge status={doc.task_status} />
                     </div>
-                    <div className="text-[12px] text-[#6b6459] truncate">
+                    <div className="text-[12px] text-[var(--color-text-tertiary)] truncate">
                       {isChatArtifact ? doc.task_title : `#${doc.task_id} · ${doc.task_title}`}
                     </div>
                   </button>
@@ -671,7 +671,7 @@ function DocumentsTab({
               );
             })}
             {fl.files.length === 0 && (
-              <div className="rounded-xl border border-dashed border-[#2a2520] px-4 py-4 text-[12px] text-[#6b6459] text-center">
+              <div className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-4 text-[12px] text-[var(--color-text-tertiary)] text-center">
                 No files match the current filter.
               </div>
             )}
@@ -680,11 +680,11 @@ function DocumentsTab({
 
         {!hasFiles && !hasAgentWork && (
           <div className="flex flex-col items-center py-12 text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1c1a17] ring-1 ring-amber-900/20">
-              <FileText className="h-6 w-6 text-[#6b6459]" />
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--color-card)] ring-1 ring-amber-900/20">
+              <FileText className="h-6 w-6 text-[var(--color-text-tertiary)]" />
             </div>
-            <p className="text-[14px] text-[#9c9486]">No documents yet</p>
-            <p className="mt-1 text-[12px] text-[#6b6459]">Upload sources or run a task to generate drafts</p>
+            <p className="text-[14px] text-[var(--color-text-secondary)]">No documents yet</p>
+            <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">Upload sources or run a task to generate drafts</p>
           </div>
         )}
       </div>

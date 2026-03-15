@@ -45,7 +45,7 @@ function PublicProjectHeader({ project }: { project: Project }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-[15px] font-semibold text-zinc-100 flex items-center gap-1">
-              <span className="text-[12px] text-[#6b6459] tabular-nums mr-1.5">#{project.id}</span>
+              <span className="text-[12px] text-[var(--color-text-tertiary)] tabular-nums mr-1.5">#{project.id}</span>
               <span>{project.name}</span>
             </h2>
             {project.jurisdiction && (
@@ -91,22 +91,22 @@ function PublicDocumentsTab({ docs }: { docs: ProjectDocument[] }) {
 
   return (
     <div className="space-y-3 p-5">
-      <div className="mb-2 text-[13px] font-medium text-[#e8e0d4]">
+      <div className="mb-2 text-[13px] font-medium text-[var(--color-text)]">
         Agent Work
-        <span className="ml-1.5 text-[12px] text-[#6b6459]">({docs.length})</span>
+        <span className="ml-1.5 text-[12px] text-[var(--color-text-tertiary)]">({docs.length})</span>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {docs.map((doc) => (
           <div
             key={`${doc.task_id}-${doc.file_name}`}
-            className="flex flex-col gap-2 rounded-xl border border-[#2a2520] bg-[#151412] p-4"
+            className="flex flex-col gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4"
           >
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 shrink-0 text-blue-400/60" />
-              <span className="text-[13px] font-medium text-[#e8e0d4] truncate">{doc.file_name}</span>
+              <span className="text-[13px] font-medium text-[var(--color-text)] truncate">{doc.file_name}</span>
               <StatusBadge status={doc.task_status} />
             </div>
-            <div className="text-[12px] text-[#6b6459] truncate">
+            <div className="text-[12px] text-[var(--color-text-tertiary)] truncate">
               #{doc.task_id} · {doc.task_title}
             </div>
           </div>

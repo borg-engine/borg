@@ -35,12 +35,12 @@ export function LoginPage() {
   ].filter((provider): provider is { id: "google" | "microsoft"; label: string } => provider !== null);
 
   return (
-    <div className="flex h-screen items-center justify-center bg-[#0f0e0c]">
+    <div className="flex h-screen items-center justify-center bg-[var(--color-bg)]">
       <div className="w-full max-w-[400px] space-y-8 px-6">
         <div className="flex flex-col items-center gap-4">
           <div className="relative h-16 w-16">
             <div className="absolute inset-0 rounded-full bg-amber-500/20 blur-xl" />
-            <div className="borg-logo relative h-16 w-16 bg-[#1c1a17] rounded-2xl">
+            <div className="borg-logo relative h-16 w-16 bg-[var(--color-card)] rounded-2xl">
               <BorgLogo expanded />
               <div className="borg-logo-ghost grid grid-cols-2 grid-rows-2" aria-hidden>
                 {Array.from(PRODUCT_WORD).map((c, i) => (
@@ -51,7 +51,7 @@ export function LoginPage() {
               </div>
             </div>
           </div>
-          <h1 className="text-xl font-semibold text-[#e8e0d4]">{needsSetup ? "Create Admin Account" : "Sign In"}</h1>
+          <h1 className="text-xl font-semibold text-[var(--color-text)]">{needsSetup ? "Create Admin Account" : "Sign In"}</h1>
           {needsSetup && (
             <p className="text-center text-[13px] text-zinc-500">
               No users exist yet. Create the first admin account to get started.
@@ -66,7 +66,7 @@ export function LoginPage() {
                 key={provider.id}
                 type="button"
                 onClick={() => loginWithSso(provider.id)}
-                className="w-full rounded-xl border border-[#2a2520] bg-[#161412] py-2.5 text-[14px] font-medium text-[#e8e0d4] transition-colors hover:border-amber-500/30 hover:bg-[#1c1a17]"
+                className="w-full rounded-xl border border-[var(--color-border)] bg-[#161412] py-2.5 text-[14px] font-medium text-[var(--color-text)] transition-colors hover:border-amber-500/30 hover:bg-[var(--color-card)]"
               >
                 {provider.label}
               </button>
@@ -104,7 +104,7 @@ export function LoginPage() {
                   <input
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="w-full rounded-xl border border-[#2a2520] bg-[#1c1a17] px-4 py-2.5 text-[14px] text-[#e8e0d4] outline-none focus:border-amber-500/30"
+                    className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-2.5 text-[14px] text-[var(--color-text)] outline-none focus:border-amber-500/30"
                     placeholder="admin"
                   />
                 </div>
@@ -114,7 +114,7 @@ export function LoginPage() {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-xl border border-[#2a2520] bg-[#1c1a17] px-4 py-2.5 text-[14px] text-[#e8e0d4] outline-none focus:border-amber-500/30"
+                    className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-2.5 text-[14px] text-[var(--color-text)] outline-none focus:border-amber-500/30"
                     placeholder="••••••"
                   />
                 </div>
@@ -136,7 +136,7 @@ export function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoFocus
-                className="w-full rounded-xl border border-[#2a2520] bg-[#1c1a17] px-4 py-2.5 text-[14px] text-[#e8e0d4] outline-none focus:border-amber-500/30"
+                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-2.5 text-[14px] text-[var(--color-text)] outline-none focus:border-amber-500/30"
                 placeholder="admin"
               />
             </div>
@@ -146,7 +146,7 @@ export function LoginPage() {
                 <input
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full rounded-xl border border-[#2a2520] bg-[#1c1a17] px-4 py-2.5 text-[14px] text-[#e8e0d4] outline-none focus:border-amber-500/30"
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-2.5 text-[14px] text-[var(--color-text)] outline-none focus:border-amber-500/30"
                   placeholder="Your Name"
                 />
               </div>
@@ -157,7 +157,7 @@ export function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-[#2a2520] bg-[#1c1a17] px-4 py-2.5 text-[14px] text-[#e8e0d4] outline-none focus:border-amber-500/30"
+                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-2.5 text-[14px] text-[var(--color-text)] outline-none focus:border-amber-500/30"
                 placeholder={needsSetup ? "Min 4 characters" : "••••••"}
               />
             </div>

@@ -163,15 +163,15 @@ export function ModeCreatorPanel() {
         )}
 
         {/* Header */}
-        <div className="shrink-0 border-b border-[#2a2520] p-5">
+        <div className="shrink-0 border-b border-[var(--color-border)] p-5">
           {!mode.name && !isReadOnly ? (
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1c1a17] ring-1 ring-amber-900/20">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-card)] ring-1 ring-amber-900/20">
                 <Layers className="h-6 w-6 text-amber-400/60" />
               </div>
               <div>
-                <h2 className="text-[20px] font-semibold text-[#e8e0d4]">Pipelines</h2>
-                <p className="text-[13px] text-[#6b6459]">View and configure pipeline definitions for your agents.</p>
+                <h2 className="text-[20px] font-semibold text-[var(--color-text)]">Pipelines</h2>
+                <p className="text-[13px] text-[var(--color-text-tertiary)]">View and configure pipeline definitions for your agents.</p>
               </div>
             </div>
           ) : (
@@ -209,9 +209,9 @@ export function ModeCreatorPanel() {
               />
             )}
             {!selectedPhase && mode.phases.length > 0 && (
-              <div className="flex flex-col items-center rounded-xl border-2 border-dashed border-[#2a2520] py-10 text-center">
-                <p className="text-[14px] text-[#9c9486]">Select a phase above to edit</p>
-                <p className="mt-1 text-[12px] text-[#6b6459]">Click on any phase node to view its configuration</p>
+              <div className="flex flex-col items-center rounded-xl border-2 border-dashed border-[var(--color-border)] py-10 text-center">
+                <p className="text-[14px] text-[var(--color-text-secondary)]">Select a phase above to edit</p>
+                <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">Click on any phase node to view its configuration</p>
               </div>
             )}
           </div>
@@ -219,13 +219,13 @@ export function ModeCreatorPanel() {
 
         {/* Sticky save bar */}
         {(isDirty || msg) && (
-          <div className="sticky bottom-0 flex shrink-0 items-center gap-3 border-t border-[#2a2520] bg-[#0f0e0c]/95 px-5 py-3 backdrop-blur">
+          <div className="sticky bottom-0 flex shrink-0 items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-bg)]/95 px-5 py-3 backdrop-blur">
             {isDirty && !isReadOnly && (
               <>
                 <button
                   onClick={handleDiscard}
                   disabled={busy}
-                  className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-4 py-2 text-[13px] text-[#9c9486] transition-colors hover:text-[#e8e0d4] disabled:opacity-50"
+                  className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-2 text-[13px] text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text)] disabled:opacity-50"
                 >
                   Discard
                 </button>
@@ -238,7 +238,7 @@ export function ModeCreatorPanel() {
                 </button>
               </>
             )}
-            {msg && <span className="ml-auto text-[12px] text-[#6b6459]">{msg}</span>}
+            {msg && <span className="ml-auto text-[12px] text-[var(--color-text-tertiary)]">{msg}</span>}
           </div>
         )}
       </div>

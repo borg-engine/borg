@@ -49,13 +49,13 @@ function formatCheckedAt(value: string) {
 function StatusRow({ item }: { item: McpStatusItem }) {
   const style = STATUS_STYLES[item.status];
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-[#2a2520] bg-[#151310]/70 p-4">
+    <div className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[#151310]/70 p-4">
       <div className={cn("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", style.dot)} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[13px] font-medium text-[#e8e0d4]">{item.label}</div>
-            <div className="mt-1 text-[11px] leading-5 text-[#9c9486]">{item.detail}</div>
+            <div className="text-[13px] font-medium text-[var(--color-text)]">{item.label}</div>
+            <div className="mt-1 text-[11px] leading-5 text-[var(--color-text-secondary)]">{item.detail}</div>
           </div>
           <span
             className={cn(
@@ -67,7 +67,7 @@ function StatusRow({ item }: { item: McpStatusItem }) {
           </span>
         </div>
         {(item.source || item.checked_at) && (
-          <div className="mt-2 flex flex-wrap gap-3 text-[10px] uppercase tracking-[0.12em] text-[#6b6459]">
+          <div className="mt-2 flex flex-wrap gap-3 text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
             {item.source && <span>Source: {item.source}</span>}
             {item.checked_at && <span>Checked: {formatCheckedAt(item.checked_at)}</span>}
           </div>
@@ -89,9 +89,9 @@ function SummaryCard({
   Icon: typeof CheckCircle2;
 }) {
   return (
-    <div className="rounded-2xl border border-[#2a2520] bg-[#151310]/80 p-4">
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[#151310]/80 p-4">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] uppercase tracking-[0.14em] text-[#6b6459]">{label}</span>
+        <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">{label}</span>
         <Icon className={cn("h-4 w-4", STATUS_STYLES[tone].summary)} strokeWidth={1.8} />
       </div>
       <div className={cn("mt-3 text-3xl font-semibold tabular-nums", STATUS_STYLES[tone].summary)}>{value}</div>
@@ -103,7 +103,7 @@ function StatusSection({ title, desc, items }: { title: string; desc: string; it
   return (
     <section className="space-y-3">
       <div>
-        <h2 className="text-[15px] font-semibold text-[#e8e0d4]">{title}</h2>
+        <h2 className="text-[15px] font-semibold text-[var(--color-text)]">{title}</h2>
         <p className="mt-1 text-[12px] text-[#7e7568]">{desc}</p>
       </div>
       <div className="grid gap-3 xl:grid-cols-2">
@@ -135,7 +135,7 @@ export function StatusPanel() {
   }, [data, isLegal]);
 
   if (isLoading && !data) {
-    return <div className="flex h-full items-center justify-center text-xs text-[#6b6459]">Loading MCP status...</div>;
+    return <div className="flex h-full items-center justify-center text-xs text-[var(--color-text-tertiary)]">Loading MCP status...</div>;
   }
 
   if (error) {
@@ -160,7 +160,7 @@ export function StatusPanel() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#2a2520] bg-[#161310] text-amber-300">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[#161310] text-amber-300">
                 <Activity className="h-5 w-5" strokeWidth={1.8} />
               </div>
               <div>
@@ -172,9 +172,9 @@ export function StatusPanel() {
               </div>
             </div>
           </div>
-          <div className="rounded-xl border border-[#2a2520] bg-[#151310]/80 px-4 py-3 text-right">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-[#6b6459]">Workspace</div>
-            <div className="mt-1 text-[13px] font-medium text-[#e8e0d4]">{filtered.workspace.name}</div>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[#151310]/80 px-4 py-3 text-right">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Workspace</div>
+            <div className="mt-1 text-[13px] font-medium text-[var(--color-text)]">{filtered.workspace.name}</div>
             <div className="mt-1 text-[11px] text-[#7e7568]">Updated {formatCheckedAt(filtered.generated_at)}</div>
           </div>
         </div>

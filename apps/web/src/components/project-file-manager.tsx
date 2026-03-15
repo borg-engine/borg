@@ -354,15 +354,15 @@ export function ProjectFileManager({ project }: { project: Project }) {
         <div className="shrink-0 mx-auto w-full max-w-3xl px-6 pt-8 pb-4 space-y-4">
           {/* Header */}
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1c1a17] ring-1 ring-amber-900/20">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-card)] ring-1 ring-amber-900/20">
               <Folder className="h-6 w-6 text-amber-400/60" />
             </div>
             <div>
-              <h2 className="text-[20px] font-semibold text-[#e8e0d4]">
-                <span className="text-[14px] text-[#6b6459] tabular-nums mr-2">#{project.id}</span>
+              <h2 className="text-[20px] font-semibold text-[var(--color-text)]">
+                <span className="text-[14px] text-[var(--color-text-tertiary)] tabular-nums mr-2">#{project.id}</span>
                 {project.name}
               </h2>
-              <p className="text-[13px] text-[#6b6459]">{vocab.projectDocsDescription}</p>
+              <p className="text-[13px] text-[var(--color-text-tertiary)]">{vocab.projectDocsDescription}</p>
             </div>
           </div>
 
@@ -396,18 +396,18 @@ export function ProjectFileManager({ project }: { project: Project }) {
               "rounded-xl border-2 border-dashed p-4 transition-colors cursor-pointer",
               dragOver
                 ? "border-amber-500/40 bg-amber-500/[0.04]"
-                : "border-[#2a2520] bg-[#151412] hover:border-amber-500/20",
+                : "border-[var(--color-border)] bg-[var(--color-bg-secondary)] hover:border-amber-500/20",
             )}
           >
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#1c1a17]">
-                <Upload className="h-4 w-4 text-[#6b6459]" />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-card)]">
+                <Upload className="h-4 w-4 text-[var(--color-text-tertiary)]" />
               </div>
               <div>
-                <p className="text-[13px] font-medium text-[#e8e0d4]">
+                <p className="text-[13px] font-medium text-[var(--color-text)]">
                   Drop files here or <span className="text-amber-400">browse</span>
                 </p>
-                <p className="mt-0.5 text-[11px] text-[#6b6459]">Supports any file type. Multiple files allowed.</p>
+                <p className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">Supports any file type. Multiple files allowed.</p>
               </div>
               <input
                 ref={fileInputRef}
@@ -424,18 +424,18 @@ export function ProjectFileManager({ project }: { project: Project }) {
 
           {/* Upload progress */}
           {uploadProgress.length > 0 && (
-            <div className="space-y-2 rounded-xl border border-[#2a2520] bg-[#151412] p-4">
+            <div className="space-y-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
               {uploadProgress.map((entry) => {
                 const pct = entry.totalBytes > 0 ? Math.round((entry.uploadedBytes / entry.totalBytes) * 100) : 0;
                 return (
                   <div key={entry.id} className="text-[12px]">
-                    <div className="flex items-center justify-between gap-2 text-[#e8e0d4]">
+                    <div className="flex items-center justify-between gap-2 text-[var(--color-text)]">
                       <span className="truncate">{entry.fileName}</span>
-                      <span className="shrink-0 text-[#6b6459]">
+                      <span className="shrink-0 text-[var(--color-text-tertiary)]">
                         {entry.status} {["uploading", "processing", "done"].includes(entry.status) ? `${pct}%` : ""}
                       </span>
                     </div>
-                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-[#1c1a17]">
+                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-[var(--color-card)]">
                       <div
                         className={cn(
                           "h-full transition-all",
@@ -459,18 +459,18 @@ export function ProjectFileManager({ project }: { project: Project }) {
             <div className="space-y-3">
               {filesLoading && files.length === 0 && (
                 <div className="flex items-center justify-center py-12">
-                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#2a2520] border-t-amber-400" />
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-amber-400" />
                 </div>
               )}
               {!filesLoading && files.length === 0 && (
                 <div className="flex flex-col items-center py-12 text-center">
-                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1c1a17] ring-1 ring-amber-900/20">
-                    <FileText className="h-6 w-6 text-[#6b6459]" />
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--color-card)] ring-1 ring-amber-900/20">
+                    <FileText className="h-6 w-6 text-[var(--color-text-tertiary)]" />
                   </div>
-                  <p className="text-[14px] text-[#9c9486]">
+                  <p className="text-[14px] text-[var(--color-text-secondary)]">
                     {filePage && filePage.total > 0 ? "No files match your search" : "No files uploaded yet"}
                   </p>
-                  <p className="mt-1 text-[12px] text-[#6b6459]">
+                  <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">
                     {filePage && filePage.total > 0
                       ? "Try a different search term"
                       : `Upload files to make them available for this ${vocab.projectSingular}`}
@@ -484,18 +484,18 @@ export function ProjectFileManager({ project }: { project: Project }) {
                     key={f.id}
                     onClick={() => canPreview && setPreviewFile(f)}
                     className={cn(
-                      "group rounded-xl border border-[#2a2520] bg-[#151412] p-4 transition-colors hover:border-amber-900/30",
+                      "group rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 transition-colors hover:border-amber-900/30",
                       canPreview && "cursor-pointer",
                     )}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3 min-w-0">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#1c1a17] ring-1 ring-amber-900/20">
-                          <FileText className="h-4 w-4 text-[#6b6459]" />
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-card)] ring-1 ring-amber-900/20">
+                          <FileText className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[13px] font-medium text-[#e8e0d4] truncate">{f.file_name}</div>
-                          <div className="mt-0.5 text-[12px] text-[#6b6459]">
+                          <div className="text-[13px] font-medium text-[var(--color-text)] truncate">{f.file_name}</div>
+                          <div className="mt-0.5 text-[12px] text-[var(--color-text-tertiary)]">
                             {formatFileSize(f.size_bytes)}
                             {f.source_path && f.source_path !== f.file_name && (
                               <span className="ml-1.5">&middot; {f.source_path}</span>
@@ -512,7 +512,7 @@ export function ProjectFileManager({ project }: { project: Project }) {
                               const data = await fetchProjectFileText(activeProjectId, f.id);
                               setTextViewFile({ id: f.id, name: data.file_name, text: data.extracted_text });
                             }}
-                            className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-[#232019] hover:text-emerald-400"
+                            className="rounded-lg p-2 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-card-alt)] hover:text-emerald-400"
                             title={`View extracted text (${(f.text_chars / 1000).toFixed(1)}k chars)`}
                           >
                             <FileText className="h-3.5 w-3.5" />
@@ -532,7 +532,7 @@ export function ProjectFileManager({ project }: { project: Project }) {
                               }
                             }}
                             disabled={extracting === f.id}
-                            className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4] disabled:animate-spin"
+                            className="rounded-lg p-2 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-card-alt)] hover:text-[var(--color-text)] disabled:animate-spin"
                             title="Extract text"
                           >
                             <RotateCw className="h-3.5 w-3.5" />
@@ -546,7 +546,7 @@ export function ProjectFileManager({ project }: { project: Project }) {
                             await deleteProjectFile(activeProjectId, f.id);
                             refetchFiles();
                           }}
-                          className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-[#232019] hover:text-red-400"
+                          className="rounded-lg p-2 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-card-alt)] hover:text-red-400"
                           title="Delete file"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -558,7 +558,7 @@ export function ProjectFileManager({ project }: { project: Project }) {
                         <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
                           Extracted
                         </span>
-                        <span className="text-[11px] text-[#6b6459]">
+                        <span className="text-[11px] text-[var(--color-text-tertiary)]">
                           {(f.text_chars / 1000).toFixed(1)}k chars
                         </span>
                       </div>

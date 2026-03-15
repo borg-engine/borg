@@ -36,8 +36,8 @@ export function ConnectionsPanel() {
             <Plug className="h-6 w-6 text-amber-400" />
           </div>
           <div>
-            <div className="text-[16px] font-semibold text-[#e8e0d4]">Connections</div>
-            <div className="text-[13px] text-[#6b6459]">Connect external services to extend your workflow</div>
+            <div className="text-[16px] font-semibold text-[var(--color-text)]">Connections</div>
+            <div className="text-[13px] text-[var(--color-text-tertiary)]">Connect external services to extend your workflow</div>
           </div>
         </div>
       </div>
@@ -90,14 +90,14 @@ function CollapsibleSection({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-2xl border border-[#2a2520] bg-[#181614]">
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[#181614]">
       <button
         onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2.5 px-4 py-3 text-left"
       >
-        <span className="text-[#6b6459]">{icon}</span>
-        <span className="flex-1 text-[13px] font-semibold text-[#e8e0d4]">{title}</span>
-        <ChevronDown className={cn("h-4 w-4 text-[#6b6459] transition-transform", open && "rotate-180")} />
+        <span className="text-[var(--color-text-tertiary)]">{icon}</span>
+        <span className="flex-1 text-[13px] font-semibold text-[var(--color-text)]">{title}</span>
+        <ChevronDown className={cn("h-4 w-4 text-[var(--color-text-tertiary)] transition-transform", open && "rotate-180")} />
       </button>
       {open && <div className="px-4 pb-4">{children}</div>}
     </div>
@@ -123,11 +123,11 @@ function DiscordCard() {
       setupInstructions={
         <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
           <li>
-            Go to the <span className="font-medium text-[#e8e0d4]">Discord Developer Portal</span>
+            Go to the <span className="font-medium text-[var(--color-text)]">Discord Developer Portal</span>
           </li>
           <li>Create a new Application, then add a Bot</li>
           <li>
-            Enable <span className="font-medium text-[#e8e0d4]">Message Content Intent</span> under Privileged Gateway
+            Enable <span className="font-medium text-[var(--color-text)]">Message Content Intent</span> under Privileged Gateway
             Intents
           </li>
           <li>Copy the bot token and paste it below</li>
@@ -157,10 +157,10 @@ function TelegramCard() {
       setupInstructions={
         <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
           <li>
-            Open <span className="font-medium text-[#e8e0d4]">@BotFather</span> in Telegram
+            Open <span className="font-medium text-[var(--color-text)]">@BotFather</span> in Telegram
           </li>
           <li>
-            Send <code className="rounded bg-[#2a2520] px-1.5 py-0.5 text-[11px] text-amber-300">/newbot</code> and
+            Send <code className="rounded bg-[var(--color-border)] px-1.5 py-0.5 text-[11px] text-amber-300">/newbot</code> and
             follow the prompts
           </li>
           <li>Copy the bot token and paste it below</li>
@@ -205,7 +205,7 @@ function WhatsAppCard() {
 
       {waStatus.connected ? (
         <div className="space-y-3">
-          <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/[0.04] px-4 py-3 text-[12px] text-[#9c9486]">
+          <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/[0.04] px-4 py-3 text-[12px] text-[var(--color-text-secondary)]">
             Connected and receiving messages
           </div>
           <div className="flex items-center gap-2">
@@ -220,26 +220,26 @@ function WhatsAppCard() {
         </div>
       ) : waStatus.qr ? (
         <div className="space-y-3 pt-1">
-          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
-            <p className="font-medium text-[#e8e0d4]">Scan to connect</p>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]/60 px-4 py-3 text-[12px] text-[var(--color-text-secondary)] space-y-2">
+            <p className="font-medium text-[var(--color-text)]">Scan to connect</p>
             <p>
-              Open WhatsApp on your phone, go to <span className="text-[#e8e0d4]">Linked Devices</span>, and scan this
+              Open WhatsApp on your phone, go to <span className="text-[var(--color-text)]">Linked Devices</span>, and scan this
               QR code.
             </p>
           </div>
-          <div className="flex justify-center rounded-xl border border-[#2a2520] bg-white p-4">
+          <div className="flex justify-center rounded-xl border border-[var(--color-border)] bg-white p-4">
             <QRCodeSVG value={waStatus.qr} size={200} />
           </div>
         </div>
       ) : (
         <div className="space-y-3 pt-1">
-          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
-            <p className="font-medium text-[#e8e0d4]">Connecting...</p>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]/60 px-4 py-3 text-[12px] text-[var(--color-text-secondary)] space-y-2">
+            <p className="font-medium text-[var(--color-text)]">Connecting...</p>
             <p>The WhatsApp bridge is starting up. A QR code will appear here shortly for you to scan.</p>
           </div>
-          <div className="flex items-center gap-3 rounded-xl border border-dashed border-[#2a2520] px-4 py-4">
-            <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#4a4540] border-t-amber-400" />
-            <span className="text-[12px] text-[#6b6459]">Waiting for QR code...</span>
+          <div className="flex items-center gap-3 rounded-xl border border-dashed border-[var(--color-border)] px-4 py-4">
+            <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[var(--color-text-faint)] border-t-amber-400" />
+            <span className="text-[12px] text-[var(--color-text-tertiary)]">Waiting for QR code...</span>
           </div>
         </div>
       )}
@@ -254,8 +254,8 @@ function GitHubCard() {
   if (!userSettings) return null;
   return (
     <PatCard
-      icon={<Github className="h-4.5 w-4.5 text-[#e8e0d4]" />}
-      iconBg="bg-[#e8e0d4]/8 ring-[#e8e0d4]/15"
+      icon={<Github className="h-4.5 w-4.5 text-[var(--color-text)]" />}
+      iconBg="bg-[var(--color-text)]/8 ring-[var(--color-text)]/15"
       title="GitHub"
       subtitle="Personal access token for pushing branches, creating PRs, and cloning private repos"
       isSet={userSettings.github_token_set}
@@ -377,7 +377,7 @@ function PatCard({
         <div className="flex items-center gap-2 pt-1">
           <button
             onClick={() => setEditing(true)}
-            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-card-alt)] hover:text-[var(--color-text)]"
           >
             Update Token
           </button>
@@ -399,7 +399,7 @@ function PatCard({
               onKeyDown={(e) => e.key === "Enter" && handleSave()}
               placeholder={placeholder}
               autoFocus={editing}
-              className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+              className="flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
             />
             <button
               onClick={handleSave}
@@ -417,7 +417,7 @@ function PatCard({
                   setEditing(false);
                   setToken("");
                 }}
-                className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
+                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text)]"
               >
                 Cancel
               </button>
@@ -452,14 +452,14 @@ function SlackCard() {
       setupInstructions={
         <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
           <li>
-            Go to <span className="font-medium text-[#e8e0d4]">api.slack.com/apps</span> and create a new app
+            Go to <span className="font-medium text-[var(--color-text)]">api.slack.com/apps</span> and create a new app
           </li>
           <li>
-            Enable <span className="font-medium text-[#e8e0d4]">Socket Mode</span> and generate an App-Level Token{" "}
-            <code className="rounded bg-[#2a2520] px-1.5 py-0.5 text-[11px] text-amber-300">xapp-...</code>
+            Enable <span className="font-medium text-[var(--color-text)]">Socket Mode</span> and generate an App-Level Token{" "}
+            <code className="rounded bg-[var(--color-border)] px-1.5 py-0.5 text-[11px] text-amber-300">xapp-...</code>
           </li>
           <li>
-            Add <span className="font-medium text-[#e8e0d4]">Bot Token Scopes</span>: chat:write, app_mentions:read,
+            Add <span className="font-medium text-[var(--color-text)]">Bot Token Scopes</span>: chat:write, app_mentions:read,
             im:history, channels:history
           </li>
           <li>Install to your workspace and copy the Bot Token</li>
@@ -520,7 +520,7 @@ function Microsoft365Card() {
         <div className="flex items-center gap-2 pt-1">
           <button
             onClick={handleConnect}
-            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-card-alt)] hover:text-[var(--color-text)]"
           >
             Reconnect
           </button>
@@ -534,8 +534,8 @@ function Microsoft365Card() {
         </div>
       ) : (
         <div className="space-y-3 pt-1">
-          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
-            <p className="font-medium text-[#e8e0d4]">What you get</p>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]/60 px-4 py-3 text-[12px] text-[var(--color-text-secondary)] space-y-2">
+            <p className="font-medium text-[var(--color-text)]">What you get</p>
             <ul className="list-disc list-inside space-y-1 text-[12px]">
               <li>Agents can read and send emails via Outlook</li>
               <li>Manage calendar events and meetings</li>
@@ -598,7 +598,7 @@ function GoogleWorkspaceCard() {
         <div className="flex items-center gap-2 pt-1">
           <button
             onClick={() => { window.location.href = `${apiBase()}/api/user/google/auth`; }}
-            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-card-alt)] hover:text-[var(--color-text)]"
           >
             Reconnect
           </button>
@@ -612,8 +612,8 @@ function GoogleWorkspaceCard() {
         </div>
       ) : (
         <div className="space-y-3 pt-1">
-          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
-            <p className="font-medium text-[#e8e0d4]">What you get</p>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]/60 px-4 py-3 text-[12px] text-[var(--color-text-secondary)] space-y-2">
+            <p className="font-medium text-[var(--color-text)]">What you get</p>
             <ul className="list-disc list-inside space-y-1 text-[12px]">
               <li>Agents can read and send emails via Gmail</li>
               <li>Manage calendar events</li>
@@ -715,7 +715,7 @@ function BotConnectionCard({
         <div className="flex items-center gap-2 pt-1">
           <button
             onClick={() => setEditing(true)}
-            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-card-alt)] hover:text-[var(--color-text)]"
           >
             Change Bot
           </button>
@@ -729,8 +729,8 @@ function BotConnectionCard({
         </div>
       ) : (
         <div className="space-y-3 pt-1">
-          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
-            <p className="font-medium text-[#e8e0d4]">Setup</p>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]/60 px-4 py-3 text-[12px] text-[var(--color-text-secondary)] space-y-2">
+            <p className="font-medium text-[var(--color-text)]">Setup</p>
             {setupInstructions}
           </div>
           {tokenFields.length === 1 ? (
@@ -740,7 +740,7 @@ function BotConnectionCard({
                 value={tokens[0]}
                 onChange={(e) => setTokens([e.target.value])}
                 placeholder={tokenFields[0].placeholder}
-                className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+                className="flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
                 autoFocus
               />
               <ConnectButton saving={saving} disabled={!allFilled} onClick={handleConnect} />
@@ -759,7 +759,7 @@ function BotConnectionCard({
                     setTokens(next);
                   }}
                   placeholder={field.placeholder}
-                  className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+                  className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
                   autoFocus={i === 0}
                 />
               ))}
@@ -795,7 +795,7 @@ function CancelButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
+      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text)]"
     >
       Cancel
     </button>
@@ -900,7 +900,7 @@ const MCP_TEMPLATES: McpTemplate[] = [
     args: ["-y", "@modelcontextprotocol/server-github"],
     credentials: [{ envVar: "GITHUB_PERSONAL_ACCESS_TOKEN", label: "Personal Access Token", placeholder: "ghp_..." }],
     color: "#e8e0d4",
-    icon: <Github className="h-4 w-4 text-[#e8e0d4]" />,
+    icon: <Github className="h-4 w-4 text-[var(--color-text)]" />,
   },
   {
     name: "playwright",
@@ -1028,7 +1028,7 @@ function McpServersSection() {
       <div className="space-y-3">
         <button
           onClick={() => setView("catalog")}
-          className="inline-flex items-center gap-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+          className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
           Back
@@ -1051,14 +1051,14 @@ function McpServersSection() {
         <div className="flex items-center justify-between">
           <button
             onClick={() => setView("list")}
-            className="inline-flex items-center gap-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+            className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
             Back
           </button>
           <button
             onClick={() => setView("custom")}
-            className="inline-flex items-center gap-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+            className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
           >
             <Settings2 className="h-3.5 w-3.5" />
             Custom Server
@@ -1069,7 +1069,7 @@ function McpServersSection() {
             <button
               key={template.name}
               onClick={() => setSelectedTemplate(template)}
-              className="flex items-center gap-3 rounded-xl border border-[#2a2520] bg-[#151412] p-3.5 text-left transition-colors hover:border-[#3a3530] hover:bg-[#1a1815]"
+              className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3.5 text-left transition-colors hover:border-[#3a3530] hover:bg-[#1a1815]"
             >
               <div
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1"
@@ -1078,13 +1078,13 @@ function McpServersSection() {
                 {template.icon}
               </div>
               <div className="min-w-0">
-                <div className="text-[13px] font-medium text-[#e8e0d4]">{template.label}</div>
-                <div className="text-[11px] text-[#6b6459] leading-tight truncate">{template.description}</div>
+                <div className="text-[13px] font-medium text-[var(--color-text)]">{template.label}</div>
+                <div className="text-[11px] text-[var(--color-text-tertiary)] leading-tight truncate">{template.description}</div>
               </div>
             </button>
           ))}
           {availableTemplates.length === 0 && (
-            <div className="col-span-2 py-6 text-center text-[13px] text-[#6b6459]">
+            <div className="col-span-2 py-6 text-center text-[13px] text-[var(--color-text-tertiary)]">
               All available integrations are already configured.
             </div>
           )}
@@ -1097,8 +1097,8 @@ function McpServersSection() {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-[14px] font-semibold text-[#e8e0d4]">Integrations</div>
-          <div className="text-[12px] text-[#6b6459]">Tools your agents can use during tasks and chat</div>
+          <div className="text-[14px] font-semibold text-[var(--color-text)]">Integrations</div>
+          <div className="text-[12px] text-[var(--color-text-tertiary)]">Tools your agents can use during tasks and chat</div>
         </div>
         <button
           onClick={() => setView("catalog")}
@@ -1116,8 +1116,8 @@ function McpServersSection() {
           ))}
         </div>
       ) : (
-        <div className="rounded-2xl border border-dashed border-[#2a2520] px-5 py-8 text-center">
-          <div className="text-[13px] text-[#6b6459]">
+        <div className="rounded-2xl border border-dashed border-[var(--color-border)] px-5 py-8 text-center">
+          <div className="text-[13px] text-[var(--color-text-tertiary)]">
             No integrations configured yet.
           </div>
           <button
@@ -1173,7 +1173,7 @@ function TemplateSetupCard({
     <div className="space-y-3">
       <button
         onClick={onBack}
-        className="inline-flex items-center gap-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+        className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
       >
         <ChevronLeft className="h-3.5 w-3.5" />
         Back
@@ -1187,16 +1187,16 @@ function TemplateSetupCard({
           customIconStyle={{ background: `${template.color}10`, boxShadow: `inset 0 0 0 1px ${template.color}30` }}
         />
         <div className="space-y-3 pt-1">
-          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
-            <p className="font-medium text-[#e8e0d4]">Setup</p>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]/60 px-4 py-3 text-[12px] text-[var(--color-text-secondary)] space-y-2">
+            <p className="font-medium text-[var(--color-text)]">Setup</p>
             <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
               {template.setupUrl ? (
                 <li>
                   Go to{" "}
-                  <span className="font-medium text-[#e8e0d4]">{template.label}</span> and create an API token
+                  <span className="font-medium text-[var(--color-text)]">{template.label}</span> and create an API token
                 </li>
               ) : (
-                <li>Create an API token in your <span className="font-medium text-[#e8e0d4]">{template.label}</span> settings</li>
+                <li>Create an API token in your <span className="font-medium text-[var(--color-text)]">{template.label}</span> settings</li>
               )}
               <li>Paste your credentials below</li>
             </ol>
@@ -1204,13 +1204,13 @@ function TemplateSetupCard({
           <div className="space-y-2">
             {template.credentials.map((cred) => (
               <div key={cred.envVar} className="space-y-1">
-                <label className="text-[11px] font-medium text-[#9c9486]">{cred.label}</label>
+                <label className="text-[11px] font-medium text-[var(--color-text-secondary)]">{cred.label}</label>
                 <input
                   type={cred.envVar.toLowerCase().includes("url") || cred.envVar.toLowerCase().includes("email") ? "text" : "password"}
                   value={values[cred.envVar] ?? ""}
                   onChange={(e) => setValues({ ...values, [cred.envVar]: e.target.value })}
                   placeholder={cred.placeholder}
-                  className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+                  className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
                 />
               </div>
             ))}
@@ -1262,7 +1262,7 @@ function McpServerCard({ server }: { server: CustomMcpServer }) {
   }
 
   return (
-    <div className="flex items-center justify-between rounded-xl border border-[#2a2520] bg-[#151412] px-4 py-3">
+    <div className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3">
       <div className="flex items-center gap-3">
         <div
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1"
@@ -1275,19 +1275,19 @@ function McpServerCard({ server }: { server: CustomMcpServer }) {
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[13px] font-medium text-[#e8e0d4]">{server.label || server.name}</span>
+            <span className="text-[13px] font-medium text-[var(--color-text)]">{server.label || server.name}</span>
             {server.enabled ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-2 py-0.5 text-[10px] font-medium text-emerald-400">
                 <span className="h-1 w-1 rounded-full bg-emerald-400" />
                 Connected
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full border border-[#2a2520] bg-[#1c1a17] px-2 py-0.5 text-[10px] font-medium text-[#6b6459]">
+              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-tertiary)]">
                 Disabled
               </span>
             )}
           </div>
-          <div className="text-[11px] text-[#6b6459]">
+          <div className="text-[11px] text-[var(--color-text-tertiary)]">
             {template?.description ?? `${server.command} ${JSON.parse(server.args_json || "[]").join(" ")}`}
           </div>
         </div>
@@ -1296,7 +1296,7 @@ function McpServerCard({ server }: { server: CustomMcpServer }) {
         <button
           onClick={handleToggle}
           disabled={toggling}
-          className="rounded-lg border border-[#2a2520] bg-[#1c1a17] p-1.5 text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-1.5 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-card-alt)] hover:text-[var(--color-text)]"
           title={server.enabled ? "Disable" : "Enable"}
         >
           <Power className="h-3.5 w-3.5" />
@@ -1365,51 +1365,51 @@ function CustomMcpForm({
   const isValid = name.trim() && command.trim() && /^[a-zA-Z0-9_-]+$/.test(name.trim());
 
   return (
-    <div className="rounded-2xl border border-amber-500/20 bg-[#151412] p-5 space-y-4">
-      <div className="text-[13px] font-medium text-[#e8e0d4]">Custom MCP Server</div>
+    <div className="rounded-2xl border border-amber-500/20 bg-[var(--color-bg-secondary)] p-5 space-y-4">
+      <div className="text-[13px] font-medium text-[var(--color-text)]">Custom MCP Server</div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-[#9c9486]">Name</label>
+          <label className="text-[11px] font-medium text-[var(--color-text-secondary)]">Name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="my-server"
-            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
           />
         </div>
         <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-[#9c9486]">Display Name</label>
+          <label className="text-[11px] font-medium text-[var(--color-text-secondary)]">Display Name</label>
           <input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="My Server"
-            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
           />
         </div>
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-[#9c9486]">Command</label>
+          <label className="text-[11px] font-medium text-[var(--color-text-secondary)]">Command</label>
           <input
             value={command}
             onChange={(e) => setCommand(e.target.value)}
             placeholder="npx"
-            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
           />
         </div>
         <div className="col-span-2 space-y-1.5">
-          <label className="text-[11px] font-medium text-[#9c9486]">Arguments</label>
+          <label className="text-[11px] font-medium text-[var(--color-text-secondary)]">Arguments</label>
           <input
             value={argsStr}
             onChange={(e) => setArgsStr(e.target.value)}
             placeholder="-y @some/mcp-server"
-            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
           />
         </div>
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-[11px] font-medium text-[#9c9486]">Environment Variables</label>
+          <label className="text-[11px] font-medium text-[var(--color-text-secondary)]">Environment Variables</label>
           <button
             onClick={() => setEnvPairs([...envPairs, { key: "", value: "" }])}
             className="text-[11px] text-amber-400/70 hover:text-amber-300 transition-colors"
@@ -1423,19 +1423,19 @@ function CustomMcpForm({
               value={pair.key}
               onChange={(e) => setEnvPairs(envPairs.map((p, j) => (j === i ? { ...p, key: e.target.value } : p)))}
               placeholder="KEY"
-              className="w-2/5 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+              className="w-2/5 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text)] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
             />
             <input
               type="password"
               value={pair.value}
               onChange={(e) => setEnvPairs(envPairs.map((p, j) => (j === i ? { ...p, value: e.target.value } : p)))}
               placeholder="value"
-              className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+              className="flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text)] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[var(--color-text-faint)]"
             />
             {envPairs.length > 1 && (
               <button
                 onClick={() => setEnvPairs(envPairs.filter((_, j) => j !== i))}
-                className="shrink-0 rounded-lg p-1.5 text-[#6b6459] hover:text-red-400 transition-colors"
+                className="shrink-0 rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-red-400 transition-colors"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -1456,7 +1456,7 @@ function CustomMcpForm({
         </button>
         <button
           onClick={onCancel}
-          className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text)]"
         >
           Cancel
         </button>
@@ -1546,7 +1546,7 @@ function FirebaseIcon() {
 // ── Shared UI ─────────────────────────────────────────────────────────────
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-2xl border border-[#2a2520] bg-[#151412] p-5 space-y-3">{children}</div>;
+  return <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5 space-y-3">{children}</div>;
 }
 
 function CardHeader({
@@ -1571,7 +1571,7 @@ function CardHeader({
       <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1", iconBg)} style={customIconStyle}>{icon}</div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2.5">
-          <span className="text-[14px] font-semibold text-[#e8e0d4]">{title}</span>
+          <span className="text-[14px] font-semibold text-[var(--color-text)]">{title}</span>
           {status && (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
@@ -1579,7 +1579,7 @@ function CardHeader({
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-[12px] leading-relaxed text-[#6b6459]">{subtitle}</p>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--color-text-tertiary)]">{subtitle}</p>
       </div>
     </div>
   );

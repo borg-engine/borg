@@ -338,8 +338,8 @@ function ToolActionCard({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-[#1c1a17] transition-all duration-200 animate-[action-fade-in_0.2s_ease-out]",
-        expanded ? "border-amber-500/20" : "border-[#2a2520]",
+        "rounded-xl border bg-[var(--color-card)] transition-all duration-200 animate-[action-fade-in_0.2s_ease-out]",
+        expanded ? "border-amber-500/20" : "border-[var(--color-border)]",
         isLatest && !expanded && "border-amber-500/10",
         compact && "rounded-lg",
       )}
@@ -358,22 +358,22 @@ function ToolActionCard({
           {icon}
         </span>
         <div className="min-w-0 flex-1">
-          <span className={cn("font-medium text-[#e8e0d4]", compact ? "text-[12px]" : "text-[13px]")}>
+          <span className={cn("font-medium text-[var(--color-text)]", compact ? "text-[12px]" : "text-[13px]")}>
             {group.label}
           </span>
           {group.detail && (
-            <span className={cn("ml-2 truncate text-[#6b6459]", compact ? "text-[11px]" : "text-[12px]")}>
+            <span className={cn("ml-2 truncate text-[var(--color-text-tertiary)]", compact ? "text-[11px]" : "text-[12px]")}>
               {group.detail}
             </span>
           )}
           {resultHint && (
-            <span className={cn("ml-2 text-[#6b6459]", compact ? "text-[10px]" : "text-[11px]")}>→ {resultHint}</span>
+            <span className={cn("ml-2 text-[var(--color-text-tertiary)]", compact ? "text-[10px]" : "text-[11px]")}>→ {resultHint}</span>
           )}
         </div>
         {canExpand && (
           <ChevronDown
             className={cn(
-              "h-3.5 w-3.5 shrink-0 text-[#6b6459] transition-transform duration-200",
+              "h-3.5 w-3.5 shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200",
               expanded && "rotate-180",
             )}
           />
@@ -390,11 +390,11 @@ function ToolActionCard({
         <div className="overflow-hidden">
           {/* Show individual tool calls if grouped */}
           {expanded && toolCalls.length > 1 && (
-            <div className="border-t border-[#2a2520] px-3.5 py-2 space-y-1">
+            <div className="border-t border-[var(--color-border)] px-3.5 py-2 space-y-1">
               {toolCalls.map((call, i) => (
                 <div key={i} className="flex items-center gap-2 text-[12px]">
                   <span className="h-1 w-1 rounded-full bg-amber-400/40 shrink-0" />
-                  <span className="truncate text-[#9c9486]">{call.label || call.content}</span>
+                  <span className="truncate text-[var(--color-text-secondary)]">{call.label || call.content}</span>
                 </div>
               ))}
             </div>
@@ -402,12 +402,12 @@ function ToolActionCard({
 
           {/* Result output */}
           {expanded && hasResults && (
-            <div className="border-t border-[#2a2520]">
-              <pre className="max-h-[300px] overflow-y-auto px-3.5 py-2.5 font-mono text-[11px] leading-relaxed text-[#9c9486] whitespace-pre-wrap break-words">
+            <div className="border-t border-[var(--color-border)]">
+              <pre className="max-h-[300px] overflow-y-auto px-3.5 py-2.5 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)] whitespace-pre-wrap break-words">
                 {resultText}
               </pre>
               {lineCount > 5 && (
-                <div className="border-t border-[#2a2520] px-3.5 py-1.5 text-right text-[10px] text-[#6b6459]">
+                <div className="border-t border-[var(--color-border)] px-3.5 py-1.5 text-right text-[10px] text-[var(--color-text-tertiary)]">
                   {lineCount} lines
                 </div>
               )}
@@ -424,7 +424,7 @@ function ThinkingCard({ compact }: { compact?: boolean }) {
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-xl border border-[#2a2520] bg-[#1c1a17] animate-[action-fade-in_0.2s_ease-out]",
+        "relative overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] animate-[action-fade-in_0.2s_ease-out]",
         compact ? "rounded-lg px-2.5 py-2" : "px-3.5 py-3",
       )}
     >
@@ -448,7 +448,7 @@ function TextCard({ lines, compact }: { lines: TermLine[]; compact?: boolean }) 
 
   return (
     <div className={cn("animate-[action-fade-in_0.2s_ease-out]", compact ? "py-1" : "py-1.5")}>
-      <div className={cn("text-[#e8e0d4] leading-relaxed", compact ? "text-[12px]" : "text-[13px]")}>
+      <div className={cn("text-[var(--color-text)] leading-relaxed", compact ? "text-[12px]" : "text-[13px]")}>
         <ChatMarkdown text={text} variant="panel" />
       </div>
     </div>
@@ -506,7 +506,7 @@ function FinalOutputCard({ lines }: { lines: TermLine[] }) {
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             }}
-            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] text-[#9c9486] hover:bg-[#1c1a17] hover:text-[#e8e0d4] transition-colors"
+            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-card)] hover:text-[var(--color-text)] transition-colors"
           >
             <Copy className="h-3 w-3" />
             {copied ? "Copied" : "Copy"}
@@ -521,7 +521,7 @@ function FinalOutputCard({ lines }: { lines: TermLine[] }) {
               a.click();
               URL.revokeObjectURL(url);
             }}
-            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] text-[#9c9486] hover:bg-[#1c1a17] hover:text-[#e8e0d4] transition-colors"
+            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-card)] hover:text-[var(--color-text)] transition-colors"
           >
             <Download className="h-3 w-3" />
             Download
@@ -529,7 +529,7 @@ function FinalOutputCard({ lines }: { lines: TermLine[] }) {
         </div>
       </div>
       <div className="border-t border-emerald-500/10 px-4 py-3">
-        <div className="text-[13px] leading-relaxed text-[#e8e0d4]">
+        <div className="text-[13px] leading-relaxed text-[var(--color-text)]">
           <ChatMarkdown text={text} variant="panel" />
         </div>
       </div>
@@ -568,7 +568,7 @@ export function ProgressHeader({
   const dotColor = status === "active" ? "bg-amber-400" : status === "done" ? "bg-emerald-500" : "bg-red-500";
 
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-3 rounded-xl border border-[#2a2520] bg-[#151412]/95 px-4 py-2.5 backdrop-blur">
+    <div className="sticky top-0 z-10 flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/95 px-4 py-2.5 backdrop-blur">
       <span className="relative flex h-2.5 w-2.5">
         {streaming && (
           <span className={cn("absolute inline-flex h-full w-full animate-ping rounded-full opacity-75", dotColor)} />
@@ -577,17 +577,17 @@ export function ProgressHeader({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-[13px] font-medium text-[#e8e0d4]">
+          <span className="text-[13px] font-medium text-[var(--color-text)]">
             {streaming ? "Working" : status === "error" ? "Failed" : "Complete"}
           </span>
           {title && (
             <>
-              <span className="text-[#6b6459]">&middot;</span>
-              <span className="truncate text-[13px] text-[#9c9486]">{title}</span>
+              <span className="text-[var(--color-text-tertiary)]">&middot;</span>
+              <span className="truncate text-[13px] text-[var(--color-text-secondary)]">{title}</span>
             </>
           )}
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-[#6b6459]">
+        <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-tertiary)]">
           {phase && (
             <span>
               Phase: {phase}

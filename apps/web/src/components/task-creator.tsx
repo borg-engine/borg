@@ -127,7 +127,7 @@ export function TaskCreator({
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
-        className="w-full max-w-lg rounded-2xl border border-[#2a2520] bg-[#1c1a17] p-4 md:p-6 mx-3 md:mx-0 shadow-2xl mb-[5vh]"
+        className="w-full max-w-lg rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 md:p-6 mx-3 md:mx-0 shadow-2xl mb-[5vh]"
       >
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-[16px] font-semibold text-zinc-100">Create Task</h2>
@@ -148,7 +148,7 @@ export function TaskCreator({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="What needs to be done?"
-              className="w-full rounded-xl border border-[#2a2520] bg-[#232019] px-4 py-2.5 text-[14px] text-zinc-100 placeholder-zinc-600 outline-none transition-colors focus:border-amber-500/30"
+              className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card-alt)] px-4 py-2.5 text-[14px] text-zinc-100 placeholder-zinc-600 outline-none transition-colors focus:border-amber-500/30"
             />
           </div>
 
@@ -161,7 +161,7 @@ export function TaskCreator({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Additional context or instructions..."
               rows={3}
-              className="w-full rounded-xl border border-[#2a2520] bg-[#232019] px-4 py-2.5 text-[14px] text-zinc-100 placeholder-zinc-600 outline-none transition-colors focus:border-amber-500/30 resize-none"
+              className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card-alt)] px-4 py-2.5 text-[14px] text-zinc-100 placeholder-zinc-600 outline-none transition-colors focus:border-amber-500/30 resize-none"
             />
           </div>
 
@@ -172,7 +172,7 @@ export function TaskCreator({
                 <select
                   value={mode}
                   onChange={(e) => setMode(e.target.value)}
-                  className="w-full rounded-xl border border-[#2a2520] bg-[#232019] px-4 py-2.5 text-[13px] text-zinc-200 outline-none transition-colors focus:border-amber-500/30"
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card-alt)] px-4 py-2.5 text-[13px] text-zinc-200 outline-none transition-colors focus:border-amber-500/30"
                 >
                   {groupedModes.length > 0 ? (
                     groupedModes.map((g) => (
@@ -193,7 +193,7 @@ export function TaskCreator({
             {effectiveHideModePicker && (
               <div className="flex-1">
                 <label className="mb-1.5 block text-[12px] font-medium text-zinc-400">Workflow</label>
-                <div className="rounded-xl border border-[#2a2520] bg-[#232019] px-4 py-3 text-[13px] text-zinc-200">
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card-alt)] px-4 py-3 text-[13px] text-zinc-200">
                   <div className="font-medium text-zinc-100">{selectedMode?.label ?? mode}</div>
                   <div className="mt-1 text-[11px] text-zinc-500">
                     {inheritedProjectWorkflow
@@ -212,7 +212,7 @@ export function TaskCreator({
                 <select
                   value={repoPath}
                   onChange={(e) => setRepoPath(e.target.value)}
-                  className="w-full rounded-xl border border-[#2a2520] bg-[#232019] px-4 py-2.5 text-[13px] text-zinc-200 outline-none transition-colors focus:border-amber-500/30"
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card-alt)] px-4 py-2.5 text-[13px] text-zinc-200 outline-none transition-colors focus:border-amber-500/30"
                 >
                   <option value="">Default</option>
                   {repos.map((r) => (
@@ -233,7 +233,7 @@ export function TaskCreator({
               <div className="flex flex-wrap items-center gap-1.5">
                 {phases.map((p, i) => (
                   <span key={p.name} className="flex items-center">
-                    <span className="rounded-lg bg-[#232019] px-2.5 py-1 text-[12px] text-[#9c9486] ring-1 ring-inset ring-[#2a2520]">
+                    <span className="rounded-lg bg-[var(--color-card-alt)] px-2.5 py-1 text-[12px] text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-border)]">
                       {p.label}
                     </span>
                     {i < phases.length - 1 && <ChevronRight className="mx-1 h-3 w-3 text-zinc-700" />}
@@ -249,7 +249,7 @@ export function TaskCreator({
               <select
                 value={taskType}
                 onChange={(e) => setTaskType(e.target.value)}
-                className="w-full rounded-xl border border-[#2a2520] bg-[#232019] px-4 py-2.5 text-[13px] text-zinc-200 outline-none transition-colors focus:border-amber-500/30"
+                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card-alt)] px-4 py-2.5 text-[13px] text-zinc-200 outline-none transition-colors focus:border-amber-500/30"
               >
                 {LEGAL_TASK_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -261,13 +261,13 @@ export function TaskCreator({
           )}
 
           {legalWorkflow && !!projectId && (
-            <label className="block rounded-xl border border-[#2a2520] bg-[#151412] px-4 py-3">
+            <label className="block rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3">
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
                   checked={requiresExhaustiveCorpusReview}
                   onChange={(e) => setRequiresExhaustiveCorpusReview(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-[#3a342d] bg-[#232019] text-amber-500 focus:ring-amber-500/30"
+                  className="mt-0.5 h-4 w-4 rounded border-[#3a342d] bg-[var(--color-card-alt)] text-amber-500 focus:ring-amber-500/30"
                 />
                 <div>
                   <div className="text-[13px] font-medium text-zinc-100">Exhaustive corpus review</div>

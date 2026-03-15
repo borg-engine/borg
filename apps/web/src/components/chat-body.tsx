@@ -327,15 +327,15 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
         {!hideEmptyState && isEmpty && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="flex flex-col items-center text-center">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1c1a17] ring-1 ring-[#2a2520]">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--color-card)] ring-1 ring-[var(--color-border)]">
                 {thread === "web:dashboard" ? (
                   <Globe className="h-5 w-5 text-amber-400/40" strokeWidth={1.5} />
                 ) : (
-                  <FolderOpen className="h-5 w-5 text-[#6b6459]" strokeWidth={1.5} />
+                  <FolderOpen className="h-5 w-5 text-[var(--color-text-tertiary)]" strokeWidth={1.5} />
                 )}
               </div>
-              <p className="text-[13px] font-medium text-[#9c9486]">{scopeLabel}</p>
-              <p className="mt-1 text-[11px] text-[#6b6459]">
+              <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">{scopeLabel}</p>
+              <p className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">
                 {thread === "web:dashboard" ? "Chat with global knowledge" : "Scoped to this workspace"}
               </p>
             </div>
@@ -392,21 +392,21 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-[#2a2520] bg-[#0f0e0c]/90 px-3 py-2.5" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.625rem)" }}>
+      <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg)]/90 px-3 py-2.5" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.625rem)" }}>
         {availableModels.length > 1 && (
           <div className="mb-1.5 flex items-center" ref={modelDropdownRef}>
             <div className="relative">
               <button
                 onClick={() => setShowModelPicker(!showModelPicker)}
-                className="flex items-center gap-1.5 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 min-h-[44px] md:min-h-0 text-[12px] text-[#9c9486] transition-colors hover:border-[#2a2520]/80 hover:text-[#e8e0d4]"
+                className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 min-h-[44px] md:min-h-0 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border)]/80 hover:text-[var(--color-text)]"
               >
                 <Sparkles className="h-3 w-3 text-amber-400/60" />
                 <span>{(availableModels.find((m) => m.model === selectedModel) ?? availableModels[0])?.label}</span>
                 <ChevronDown className="h-3 w-3" />
               </button>
               {showModelPicker && (
-                <div className="absolute bottom-full left-0 z-50 mb-2 min-w-[180px] overflow-hidden rounded-xl border border-[#2a2520] bg-[#1c1a17] shadow-2xl">
-                  <div className="px-3 pt-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#6b6459]">
+                <div className="absolute bottom-full left-0 z-50 mb-2 min-w-[180px] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl">
+                  <div className="px-3 pt-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
                     Model
                   </div>
                   <div className="p-1.5 pt-0">
@@ -421,12 +421,12 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
                             setShowModelPicker(false);
                           }}
                           className={cn(
-                            "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 min-h-[44px] md:min-h-0 text-left text-[13px] transition-colors hover:bg-[#232019]",
-                            isActive ? "bg-[#232019] text-[#e8e0d4]" : "text-[#9c9486]",
+                            "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 min-h-[44px] md:min-h-0 text-left text-[13px] transition-colors hover:bg-[var(--color-card-alt)]",
+                            isActive ? "bg-[var(--color-card-alt)] text-[var(--color-text)]" : "text-[var(--color-text-secondary)]",
                           )}
                         >
                           <Sparkles
-                            className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-amber-400/70" : "text-[#6b6459]")}
+                            className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-amber-400/70" : "text-[var(--color-text-tertiary)]")}
                           />
                           <span>{m.label}</span>
                         </button>
@@ -438,7 +438,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
             </div>
           </div>
         )}
-        <div className="relative flex items-end gap-1.5 rounded-xl border border-[#2a2520] bg-[#1c1a17] px-3 py-2 transition-colors focus-within:border-amber-500/20 focus-within:bg-[#232019]">
+        <div className="relative flex items-end gap-1.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 transition-colors focus-within:border-amber-500/20 focus-within:bg-[var(--color-card-alt)]">
           <textarea
             ref={inputRef}
             value={input}
@@ -446,7 +446,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
             onKeyDown={handleKeyDown}
             placeholder="Message Borg..."
             rows={1}
-            className="max-h-[120px] min-h-[20px] flex-1 resize-none bg-transparent text-[16px] md:text-[13px] leading-relaxed text-[#e8e0d4] placeholder:text-[#6b6459] focus:outline-none"
+            className="max-h-[120px] min-h-[20px] flex-1 resize-none bg-transparent text-[16px] md:text-[13px] leading-relaxed text-[var(--color-text)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none"
           />
           <div className="flex shrink-0 items-center gap-0.5">
             {dictation.supported && (
@@ -454,7 +454,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
                 onClick={dictation.toggle}
                 className={cn(
                   "rounded-lg p-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center transition-colors",
-                  dictation.listening ? "bg-red-500/20 text-red-400" : "text-[#6b6459] hover:text-[#9c9486]",
+                  dictation.listening ? "bg-red-500/20 text-red-400" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]",
                 )}
               >
                 {dictation.listening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
@@ -467,7 +467,7 @@ export function ChatBody({ thread, className, hideEmptyState }: ChatBodyProps) {
                 "rounded-lg p-1.5 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center transition-all",
                 input.trim() && !sending
                   ? "bg-amber-500 text-white hover:bg-amber-400 shadow-lg shadow-amber-500/25"
-                  : "text-[#6b6459] cursor-not-allowed",
+                  : "text-[var(--color-text-tertiary)] cursor-not-allowed",
               )}
             >
               <Send className="h-3.5 w-3.5" />
@@ -522,8 +522,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           className={cn(
             "rounded-2xl px-4 py-3 text-[13px] leading-relaxed shadow-[0_12px_28px_rgba(0,0,0,0.14)]",
             isUser
-              ? "bg-amber-500/15 text-[#e8e0d4] rounded-br-md"
-              : "rounded-bl-md border border-[#2b241d] bg-[#171411] text-[#e8e0d4]",
+              ? "bg-amber-500/15 text-[var(--color-text)] rounded-br-md"
+              : "rounded-bl-md border border-[#2b241d] bg-[#171411] text-[var(--color-text)]",
           )}
         >
           {isUser ? (
@@ -534,7 +534,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         </div>
         <button
           onClick={handleCopy}
-          className="mt-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-[#4a443d] opacity-0 transition-opacity hover:text-[#9c9486] group-hover:opacity-100"
+          className="mt-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)] opacity-0 transition-opacity hover:text-[var(--color-text-secondary)] group-hover:opacity-100"
         >
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           {copied ? "Copied" : "Copy"}
@@ -575,7 +575,7 @@ function WorkItemControls({ thread }: { thread: string }) {
     <div className="space-y-2">
       {reviewTasks.map((task) => (
         <div key={task.id} className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] px-3 py-2.5">
-          <div className="text-[12px] text-[#e8e0d4] font-medium mb-1.5">
+          <div className="text-[12px] text-[var(--color-text)] font-medium mb-1.5">
             #{task.id} {task.title}
           </div>
           <div className="text-[11px] text-emerald-400/70 mb-2">Awaiting review</div>
@@ -613,7 +613,7 @@ function WorkItemControls({ thread }: { thread: string }) {
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
                 rows={2}
-                className="w-full rounded-lg border border-amber-500/20 bg-black/30 px-2.5 py-1.5 text-[11px] text-[#e8e0d4] outline-none placeholder:text-[#6b6459] focus:border-amber-500/40 resize-y"
+                className="w-full rounded-lg border border-amber-500/20 bg-black/30 px-2.5 py-1.5 text-[11px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-amber-500/40 resize-y"
                 placeholder="What needs to change..."
               />
               <button
@@ -635,7 +635,7 @@ function WorkItemControls({ thread }: { thread: string }) {
       ))}
       {failedTasks.map((task) => (
         <div key={task.id} className="rounded-xl border border-red-500/20 bg-red-500/[0.04] px-3 py-2.5">
-          <div className="text-[12px] text-[#e8e0d4] font-medium mb-1">
+          <div className="text-[12px] text-[var(--color-text)] font-medium mb-1">
             #{task.id} {task.title}
           </div>
           <div className="text-[11px] text-red-400/70 mb-2">Failed</div>
@@ -693,7 +693,7 @@ function CollapsedTimeline({ events }: { events: StreamEvent[] }) {
         </div>
       )}
       {toolCount > 0 && (
-        <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]">
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
           <button
             onClick={() => setExpanded(!expanded)}
             className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left transition-colors hover:bg-amber-500/[0.03]"
@@ -701,18 +701,18 @@ function CollapsedTimeline({ events }: { events: StreamEvent[] }) {
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400/80">
               <Sparkles className="h-3.5 w-3.5" />
             </span>
-            <span className="min-w-0 flex-1 text-[13px] font-medium text-[#9c9486]">
+            <span className="min-w-0 flex-1 text-[13px] font-medium text-[var(--color-text-secondary)]">
               Borg performed {toolCount} action{toolCount !== 1 ? "s" : ""}
             </span>
             <ChevronDown
               className={cn(
-                "h-3.5 w-3.5 shrink-0 text-[#6b6459] transition-transform duration-200",
+                "h-3.5 w-3.5 shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200",
                 expanded && "rotate-180",
               )}
             />
           </button>
           {expanded && (
-            <div className="border-t border-[#2a2520] p-2.5">
+            <div className="border-t border-[var(--color-border)] p-2.5">
               <AgentTimeline lines={lines} streaming={false} hideFinalOutput />
             </div>
           )}

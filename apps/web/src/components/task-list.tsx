@@ -30,7 +30,7 @@ export function TaskList({ selectedId, onSelect, repoFilter }: TaskListProps) {
   return (
     <div className="flex h-full flex-col">
       {/* Stats row */}
-      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-[#2a2520] px-4">
+      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] px-4">
         {!vocab.hideRetryAll && (status?.failed_tasks ?? 0) > 0 && (
           <button
             onClick={async () => {
@@ -44,12 +44,12 @@ export function TaskList({ selectedId, onSelect, repoFilter }: TaskListProps) {
               }
             }}
             disabled={retryingAll}
-            className="rounded-lg border border-[#2a2520] px-2.5 py-1 text-[12px] text-[#9c9486] hover:border-amber-500/40 hover:text-amber-400 disabled:opacity-50 transition-colors"
+            className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-[12px] text-[var(--color-text-secondary)] hover:border-amber-500/40 hover:text-amber-400 disabled:opacity-50 transition-colors"
           >
             {retryingAll ? "..." : "Retry all failed"}
           </button>
         )}
-        <span className="ml-auto rounded-full bg-amber-500/[0.06] px-2.5 py-0.5 text-[11px] tabular-nums text-[#9c9486]">
+        <span className="ml-auto rounded-full bg-amber-500/[0.06] px-2.5 py-0.5 text-[11px] tabular-nums text-[var(--color-text-secondary)]">
           {filtered?.length ?? 0} {vocab.taskPlural}
         </span>
       </div>
@@ -66,9 +66,9 @@ export function TaskList({ selectedId, onSelect, repoFilter }: TaskListProps) {
               onClick={() => onSelect(t.id)}
             />
           ))}
-          {pending.length > 0 && active.length > 0 && <div className="mx-3.5 my-3 h-px bg-[#2a2520]/50" />}
+          {pending.length > 0 && active.length > 0 && <div className="mx-3.5 my-3 h-px bg-[var(--color-border)]/50" />}
           {pending.length > 0 && (
-            <div className="px-3.5 pt-1.5 pb-1 text-[10px] font-medium uppercase tracking-widest text-[#6b6459]">
+            <div className="px-3.5 pt-1.5 pb-1 text-[10px] font-medium uppercase tracking-widest text-[var(--color-text-tertiary)]">
               Pending
             </div>
           )}
@@ -82,7 +82,7 @@ export function TaskList({ selectedId, onSelect, repoFilter }: TaskListProps) {
             />
           ))}
           {terminal.length > 0 && (active.length > 0 || pending.length > 0) && (
-            <div className="mx-3.5 my-3 h-px bg-[#2a2520]/50" />
+            <div className="mx-3.5 my-3 h-px bg-[var(--color-border)]/50" />
           )}
           {terminal.slice(0, 30).map((t) => (
             <TaskRow
@@ -93,7 +93,7 @@ export function TaskList({ selectedId, onSelect, repoFilter }: TaskListProps) {
               onClick={() => onSelect(t.id)}
             />
           ))}
-          {!filtered?.length && <p className="py-12 text-center text-xs text-[#6b6459]">No tasks yet</p>}
+          {!filtered?.length && <p className="py-12 text-center text-xs text-[var(--color-text-tertiary)]">No tasks yet</p>}
         </div>
       </div>
     </div>
@@ -132,17 +132,17 @@ function TaskRow({
       onClick={onClick}
       className={cn(
         "flex w-full flex-col gap-1 rounded-xl px-3.5 py-2.5 min-h-[44px] text-left transition-all",
-        "hover:bg-[#1c1a17]",
+        "hover:bg-[var(--color-card)]",
         isActive && !isStuck && "bg-amber-500/[0.03]",
         isStuck && "bg-red-500/[0.04]",
         selected && "bg-amber-500/[0.06] ring-1 ring-amber-500/20",
       )}
     >
       <div className="flex w-full items-center gap-2">
-        <span className="min-w-[24px] font-mono text-[11px] text-[#6b6459]">#{task.id}</span>
+        <span className="min-w-[24px] font-mono text-[11px] text-[var(--color-text-tertiary)]">#{task.id}</span>
         <StatusBadge status={task.status} />
         {showRepo && task.repo_path && (
-          <span className="shrink-0 rounded bg-amber-500/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-[#9c9486]">
+          <span className="shrink-0 rounded bg-amber-500/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)]">
             {repoName(task.repo_path)}
           </span>
         )}
@@ -153,9 +153,9 @@ function TaskRow({
         )}
       </div>
       <div className="flex items-center gap-2 pl-[32px]">
-        <span className="flex-1 truncate text-[13px] text-[#e8e0d4]">{task.title}</span>
+        <span className="flex-1 truncate text-[13px] text-[var(--color-text)]">{task.title}</span>
         {!isMinimal && !vocab.hideAttemptCount && task.attempt > 0 && (
-          <span className={cn("shrink-0 font-mono text-[11px]", isStuck ? "text-red-400/80" : "text-[#6b6459]")}>
+          <span className={cn("shrink-0 font-mono text-[11px]", isStuck ? "text-red-400/80" : "text-[var(--color-text-tertiary)]")}>
             {task.attempt}/{task.max_attempts}
           </span>
         )}

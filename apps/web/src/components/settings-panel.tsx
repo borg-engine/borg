@@ -102,7 +102,7 @@ export function SettingsPanel() {
   }
 
   if (isLoading || !effective) {
-    return <div className="flex h-full items-center justify-center text-xs text-[#6b6459]">Loading settings...</div>;
+    return <div className="flex h-full items-center justify-center text-xs text-[var(--color-text-tertiary)]">Loading settings...</div>;
   }
 
   return (
@@ -139,8 +139,8 @@ export function SettingsPanel() {
                     {(user.username[0] ?? "?").toUpperCase()}
                   </div>
                   <div>
-                    <div className="text-[12px] font-medium text-[#e8e0d4]">{user.username}</div>
-                    <div className="text-[11px] text-[#6b6459]">{isAdmin ? "Admin" : "User"}</div>
+                    <div className="text-[12px] font-medium text-[var(--color-text)]">{user.username}</div>
+                    <div className="text-[11px] text-[var(--color-text-tertiary)]">{isAdmin ? "Admin" : "User"}</div>
                   </div>
                 </div>
                 <ChangeOwnPassword userId={user.id} />
@@ -154,7 +154,7 @@ export function SettingsPanel() {
         {isAdmin && !showAdmin && (
           <button
             onClick={() => setShowAdmin(true)}
-            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17]/50 py-3 text-[12px] font-medium text-[#9c9486] transition-colors hover:bg-[#1c1a17] hover:text-[#e8e0d4]"
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]/50 py-3 text-[12px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-card)] hover:text-[var(--color-text)]"
           >
             Show Admin Settings
           </button>
@@ -249,7 +249,7 @@ export function SettingsPanel() {
                   <select
                     value={effective.model_override}
                     onChange={(e) => update("model_override", e.target.value)}
-                    className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[13px] text-[#e8e0d4] outline-none focus:border-amber-500/40 transition-colors"
+                    className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[13px] text-[var(--color-text)] outline-none focus:border-amber-500/40 transition-colors"
                   >
                     <option value="">Disabled (users choose)</option>
                     {MODEL_OPTIONS.map((o) => (
@@ -546,13 +546,13 @@ export function SettingsPanel() {
 
         {/* Save bar */}
         {(hasDraft || saved) && (
-          <div className="sticky bottom-4 flex items-center justify-end gap-3 rounded-lg border border-[#2a2520] bg-[#151412]/95 px-4 py-3 backdrop-blur">
+          <div className="sticky bottom-4 flex items-center justify-end gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/95 px-4 py-3 backdrop-blur">
             {saved && <span className="text-[11px] text-emerald-400">Settings saved</span>}
             {hasDraft && (
               <>
                 <button
                   onClick={() => setDraft({})}
-                  className="rounded-md px-3 py-1.5 text-[11px] text-[#9c9486] hover:text-[#e8e0d4]"
+                  className="rounded-md px-3 py-1.5 text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
                 >
                   Discard
                 </button>
@@ -654,7 +654,7 @@ function UserModelPicker() {
           <Label>Model</Label>
           <Desc>Set by admin — cannot be changed.</Desc>
         </div>
-        <span className="rounded-md border border-[#2a2520] bg-[#1c1a17]/50 px-2.5 py-1.5 text-[12px] text-[#6b6459]">
+        <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-card)]/50 px-2.5 py-1.5 text-[12px] text-[var(--color-text-tertiary)]">
           {label}
         </span>
       </div>
@@ -672,7 +672,7 @@ function UserModelPicker() {
         onChange={(e) => handleChange(e.target.value)}
         disabled={saving}
         className={cn(
-          "rounded-md border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/40",
+          "rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-2.5 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-amber-500/40",
           saving && "opacity-50 cursor-not-allowed",
         )}
       >
@@ -697,7 +697,7 @@ function ChangeOwnPassword({ userId }: { userId: number }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="rounded-md border border-[#2a2520] bg-[#1c1a17]/50 px-3 py-1.5 text-[11px] text-[#9c9486] transition-colors hover:bg-[#1c1a17] hover:text-[#e8e0d4]"
+        className="rounded-md border border-[var(--color-border)] bg-[var(--color-card)]/50 px-3 py-1.5 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-card)] hover:text-[var(--color-text)]"
       >
         Change Password
       </button>
@@ -711,7 +711,7 @@ function ChangeOwnPassword({ userId }: { userId: number }) {
         value={pw}
         onChange={(e) => setPw(e.target.value)}
         placeholder="New password (min 4)"
-        className="w-40 rounded-md border border-[#2a2520] bg-[#1c1a17] px-2 py-1.5 text-[11px] text-[#e8e0d4] outline-none focus:border-amber-500/40"
+        className="w-40 rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-1.5 text-[11px] text-[var(--color-text)] outline-none focus:border-amber-500/40"
       />
       <button
         disabled={busy || pw.length < 4}
@@ -732,7 +732,7 @@ function ChangeOwnPassword({ userId }: { userId: number }) {
           setPw("");
           setMsg("");
         }}
-        className="text-[11px] text-[#6b6459] hover:text-[#9c9486]"
+        className="text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
       >
         Cancel
       </button>
@@ -776,7 +776,7 @@ function credentialBadge(credential: LinkedCredential | undefined) {
   if (status === "expired") {
     return "border-amber-500/20 bg-amber-500/10 text-amber-300";
   }
-  return "border-[#2a2520] bg-[#1c1a17]/60 text-[#9c9486]";
+  return "border-[var(--color-border)] bg-[var(--color-card)]/60 text-[var(--color-text-secondary)]";
 }
 
 function LinkedAccountsPanel() {
@@ -854,7 +854,7 @@ function LinkedAccountsPanel() {
   );
 
   return (
-    <div className="space-y-3 rounded-xl border border-[#2a2520] bg-[#120f0d]/60 p-3">
+    <div className="space-y-3 rounded-xl border border-[var(--color-border)] bg-[#120f0d]/60 p-3">
       <div>
         <Label>Linked AI Accounts</Label>
         <Desc>
@@ -868,11 +868,11 @@ function LinkedAccountsPanel() {
         const isPending = pendingSession?.status === "pending";
         const detail = credential?.account_email || credential?.account_label || "";
         return (
-          <div key={meta.provider} className="space-y-2 rounded-lg border border-[#2a2520] bg-[#1a1714]/70 p-3">
+          <div key={meta.provider} className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[#1a1714]/70 p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-[12px] font-medium text-[#e8e0d4]">{meta.label}</span>
+                  <span className="text-[12px] font-medium text-[var(--color-text)]">{meta.label}</span>
                   <span
                     className={cn(
                       "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]",
@@ -882,10 +882,10 @@ function LinkedAccountsPanel() {
                     {isPending ? "Connecting" : (credential?.status ?? "Disconnected")}
                   </span>
                 </div>
-                <div className="mt-1 text-[11px] text-[#6b6459]">{meta.desc}</div>
+                <div className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">{meta.desc}</div>
                 {detail && <div className="mt-2 text-[11px] text-[#b8ad9d]">{detail}</div>}
                 {credential?.last_validated_at && (
-                  <div className="mt-1 text-[10px] text-[#6b6459]">
+                  <div className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">
                     Last checked {formatCredentialTime(credential.last_validated_at)}
                   </div>
                 )}
@@ -909,7 +909,7 @@ function LinkedAccountsPanel() {
               )}
             </div>
             {pendingSession && (
-              <div className="rounded-md border border-[#2a2520] bg-[#141210] px-3 py-2 text-[11px] text-[#b8ad9d]">
+              <div className="rounded-md border border-[var(--color-border)] bg-[#141210] px-3 py-2 text-[11px] text-[#b8ad9d]">
                 {pendingSession.message || "Waiting for provider login completion."}
                 {pendingSession.auth_url && (
                   <div className="mt-2">
@@ -954,12 +954,12 @@ function UserManagement() {
       {users?.map((u) => (
         <div key={u.id} className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="text-[12px] font-medium text-[#e8e0d4]">
+            <div className="text-[12px] font-medium text-[var(--color-text)]">
               {u.username}
               {u.is_admin && <span className="ml-1.5 text-[10px] text-amber-400/70">admin</span>}
             </div>
             {u.display_name && u.display_name !== u.username && (
-              <div className="text-[11px] text-[#6b6459]">{u.display_name}</div>
+              <div className="text-[11px] text-[var(--color-text-tertiary)]">{u.display_name}</div>
             )}
           </div>
           {u.id !== currentUser?.id && (
@@ -987,33 +987,33 @@ function UserManagement() {
           </button>
           <button
             onClick={logout}
-            className="ml-auto text-[11px] text-[#6b6459] hover:text-[#9c9486] transition-colors"
+            className="ml-auto text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
           >
             Sign Out
           </button>
         </div>
       ) : (
-        <div className="space-y-2 rounded-md border border-[#2a2520] bg-[#1c1a17]/50 p-3">
+        <div className="space-y-2 rounded-md border border-[var(--color-border)] bg-[var(--color-card)]/50 p-3">
           <input
             value={newUser.username}
             onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
             placeholder="Username"
-            className="w-full rounded-md border border-[#2a2520] bg-[#1c1a17] px-2 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/40"
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-amber-500/40"
           />
           <input
             value={newUser.display_name}
             onChange={(e) => setNewUser({ ...newUser, display_name: e.target.value })}
             placeholder="Display Name (optional)"
-            className="w-full rounded-md border border-[#2a2520] bg-[#1c1a17] px-2 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/40"
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-amber-500/40"
           />
           <input
             type="password"
             value={newUser.password}
             onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
             placeholder="Password (min 4)"
-            className="w-full rounded-md border border-[#2a2520] bg-[#1c1a17] px-2 py-1.5 text-[12px] text-[#e8e0d4] outline-none focus:border-amber-500/40"
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-amber-500/40"
           />
-          <label className="flex items-center gap-2 text-[11px] text-[#9c9486]">
+          <label className="flex items-center gap-2 text-[11px] text-[var(--color-text-secondary)]">
             <input
               type="checkbox"
               checked={newUser.is_admin}
@@ -1042,7 +1042,7 @@ function UserManagement() {
             >
               Create
             </button>
-            <button onClick={() => setShowCreate(false)} className="text-[11px] text-[#6b6459] hover:text-[#9c9486]">
+            <button onClick={() => setShowCreate(false)} className="text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
               Cancel
             </button>
             {msg && <span className="text-[10px] text-red-400">{msg}</span>}
@@ -1076,7 +1076,7 @@ function ReposSection() {
               await setRepoBackend(repo.id, e.target.value);
               queryClient.invalidateQueries({ queryKey: ["repos"] });
             }}
-            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[13px] text-[#e8e0d4] outline-none focus:border-amber-500/40 transition-colors"
+            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[13px] text-[var(--color-text)] outline-none focus:border-amber-500/40 transition-colors"
           >
             <option value="">default</option>
             <option value="claude">claude</option>
@@ -1131,7 +1131,7 @@ function CacheSection() {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b6459]">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
           Docker Cache Volumes
           <span className="ml-2 font-normal normal-case text-[#5a5349]">
             {volumes.length} volumes · {formatBytes(totalSize)}
@@ -1145,12 +1145,12 @@ function CacheSection() {
           {deleting === "__all__" ? "Deleting..." : "Delete All"}
         </button>
       </div>
-      <div className="max-h-[240px] space-y-3 overflow-y-auto rounded-lg border border-[#2a2520] bg-[#1c1a17]/50 p-4">
+      <div className="max-h-[240px] space-y-3 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]/50 p-4">
         {volumes.map((vol) => (
           <div key={vol.name} className="flex items-center justify-between gap-4">
             <div className="min-w-0 flex-1">
-              <div className="text-[12px] font-mono text-[#e8e0d4] truncate">{vol.name}</div>
-              <div className="text-[11px] text-[#6b6459]">{formatBytes(vol.size)}</div>
+              <div className="text-[12px] font-mono text-[var(--color-text)] truncate">{vol.name}</div>
+              <div className="text-[11px] text-[var(--color-text-tertiary)]">{formatBytes(vol.size)}</div>
             </div>
             <button
               onClick={() => handleDelete(vol.name)}
@@ -1169,18 +1169,18 @@ function CacheSection() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-[#6b6459]">{title}</h3>
-      <div className="space-y-4 rounded-xl border border-[#2a2520] bg-[#1c1a17]/50 p-5">{children}</div>
+      <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">{title}</h3>
+      <div className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]/50 p-5">{children}</div>
     </div>
   );
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <div className="text-[13px] font-medium text-[#e8e0d4]">{children}</div>;
+  return <div className="text-[13px] font-medium text-[var(--color-text)]">{children}</div>;
 }
 
 function Desc({ children }: { children: React.ReactNode }) {
-  return <div className="mt-0.5 text-[11px] text-[#6b6459]">{children}</div>;
+  return <div className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">{children}</div>;
 }
 
 function ToggleField({
@@ -1237,11 +1237,11 @@ function NumberField({
         <Label>{label}</Label>
         <Desc>{desc}</Desc>
       </div>
-      <div className="flex items-center gap-0 rounded-lg border border-[#2a2520] bg-[#1c1a17]">
+      <div className="flex items-center gap-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]">
         <button
           type="button"
           onClick={() => onChange(clamp(value - 1))}
-          className="flex h-7 w-7 items-center justify-center text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+          className="flex h-7 w-7 items-center justify-center text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
         >
           −
         </button>
@@ -1254,12 +1254,12 @@ function NumberField({
             const v = parseInt(e.target.value, 10);
             if (!Number.isNaN(v)) onChange(clamp(v));
           }}
-          className="w-14 bg-transparent px-1 py-1 text-center text-[12px] tabular-nums text-[#e8e0d4] outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
+          className="w-14 bg-transparent px-1 py-1 text-center text-[12px] tabular-nums text-[var(--color-text)] outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
         />
         <button
           type="button"
           onClick={() => onChange(clamp(value + 1))}
-          className="flex h-7 w-7 items-center justify-center text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+          className="flex h-7 w-7 items-center justify-center text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
         >
           +
         </button>
@@ -1289,7 +1289,7 @@ function TextField({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-56 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[13px] text-[#e8e0d4] outline-none focus:border-amber-500/40 transition-colors"
+        className="w-56 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[13px] text-[var(--color-text)] outline-none focus:border-amber-500/40 transition-colors"
       />
     </div>
   );
@@ -1317,7 +1317,7 @@ function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[13px] text-[#e8e0d4] outline-none focus:border-amber-500/40 transition-colors"
+        className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[13px] text-[var(--color-text)] outline-none focus:border-amber-500/40 transition-colors"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -1339,15 +1339,15 @@ function ToggleGroup({
   options: { value: string; label: string }[];
 }) {
   return (
-    <div className="flex rounded-md border border-[#2a2520]">
+    <div className="flex rounded-md border border-[var(--color-border)]">
       {options.map((opt, i) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
           className={cn(
             "px-3 py-1.5 text-[11px] font-medium transition-colors",
-            i > 0 && "border-l border-[#2a2520]",
-            value === opt.value ? "bg-amber-500/[0.08] text-[#e8e0d4]" : "text-[#6b6459] hover:text-[#9c9486]",
+            i > 0 && "border-l border-[var(--color-border)]",
+            value === opt.value ? "bg-amber-500/[0.08] text-[var(--color-text)]" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]",
           )}
         >
           {opt.label}
@@ -1360,8 +1360,8 @@ function ToggleGroup({
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-[12px] text-[#6b6459]">{label}</span>
-      <span className="text-[12px] font-medium tabular-nums text-[#e8e0d4]">{value}</span>
+      <span className="text-[12px] text-[var(--color-text-tertiary)]">{label}</span>
+      <span className="text-[12px] font-medium tabular-nums text-[var(--color-text)]">{value}</span>
     </div>
   );
 }
@@ -1397,7 +1397,7 @@ function ModelPicker({
             const opt = MODEL_OPTIONS.find((o) => o.model === e.target.value);
             if (opt) onChange(opt.model, opt.backend);
           }}
-          className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[13px] text-[#e8e0d4] outline-none focus:border-amber-500/40 transition-colors"
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[13px] text-[var(--color-text)] outline-none focus:border-amber-500/40 transition-colors"
         >
           {MODEL_OPTIONS.map((o) => (
             <option key={o.model} value={o.model}>
@@ -1460,7 +1460,7 @@ function CategoryPicker({ value, onChange }: { value: string; onChange: (v: stri
                 "rounded-md px-2.5 py-1 text-[11px] transition-colors",
                 on
                   ? "bg-amber-500/15 text-amber-400 ring-1 ring-inset ring-amber-500/20"
-                  : "bg-[#1c1a17] text-[#6b6459] hover:bg-[#2a2520] hover:text-[#9c9486]",
+                  : "bg-[var(--color-card)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-secondary)]",
               )}
             >
               {cat.label}

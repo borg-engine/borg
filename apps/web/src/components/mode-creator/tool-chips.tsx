@@ -47,7 +47,7 @@ export function ToolChips({
             "rounded-lg px-2.5 py-1 text-[12px] transition-colors",
             active.has(tool)
               ? "bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-500/20"
-              : "bg-[#1c1a17] text-[#6b6459] hover:bg-[#232019] hover:text-[#9c9486]",
+              : "bg-[var(--color-card)] text-[var(--color-text-tertiary)] hover:bg-[var(--color-card-alt)] hover:text-[var(--color-text-secondary)]",
             disabled && "cursor-not-allowed opacity-50",
           )}
         >

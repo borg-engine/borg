@@ -64,28 +64,28 @@ export function ChatDrawer({ defaultThread = "web:dashboard", view }: ChatDrawer
   if (view === "projects" && !isSWE) return null;
 
   return (
-    <div className="hidden md:flex h-full md:w-[40vw] lg:w-[30vw] min-w-[300px] max-w-[500px] shrink-0 flex-col border-l border-[#2a2520] bg-[#0f0e0c] overflow-hidden">
+    <div className="hidden md:flex h-full md:w-[40vw] lg:w-[30vw] min-w-[300px] max-w-[500px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden">
       <div className="min-h-0 flex-1">
         <ChatBody thread={thread} />
       </div>
 
       {/* Thread picker */}
-      <div className="shrink-0 border-t border-[#2a2520] bg-[#0f0e0c]/90 px-3 py-1.5">
+      <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg)]/90 px-3 py-1.5">
         <div className="relative flex items-center" ref={pickerRef}>
           <button
             onClick={() => setThreadPickerOpen((v) => !v)}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-[#9c9486] hover:bg-[#1c1a17] hover:text-[#e8e0d4] transition-colors"
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-card)] hover:text-[var(--color-text)] transition-colors"
           >
             {thread === "web:dashboard" ? (
               <Globe className="h-3.5 w-3.5 text-amber-400/60" />
             ) : (
-              <FolderOpen className="h-3.5 w-3.5 text-[#6b6459]" />
+              <FolderOpen className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" />
             )}
             <span className="truncate">{scopeLabel} Chat</span>
             <ChevronDown className={cn("h-3 w-3 transition-transform", threadPickerOpen && "rotate-180")} />
           </button>
           {threadPickerOpen && (
-            <div className="absolute bottom-full left-0 mb-1 w-56 max-h-[320px] overflow-y-auto rounded-lg border border-[#2a2520] bg-[#1c1a17] py-1 shadow-xl z-50">
+            <div className="absolute bottom-full left-0 mb-1 w-56 max-h-[320px] overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] py-1 shadow-xl z-50">
               {threadOptions.map((opt) => (
                 <button
                   key={opt.id}
@@ -94,8 +94,8 @@ export function ChatDrawer({ defaultThread = "web:dashboard", view }: ChatDrawer
                     setThreadPickerOpen(false);
                   }}
                   className={cn(
-                    "flex w-full items-center gap-2 px-3 py-1.5 text-[12px] transition-colors hover:bg-[#232019]",
-                    thread === opt.id ? "text-amber-400" : "text-[#9c9486]",
+                    "flex w-full items-center gap-2 px-3 py-1.5 text-[12px] transition-colors hover:bg-[var(--color-card-alt)]",
+                    thread === opt.id ? "text-amber-400" : "text-[var(--color-text-secondary)]",
                   )}
                 >
                   {opt.icon === "globe" ? <Globe className="h-3.5 w-3.5" /> : <FolderOpen className="h-3.5 w-3.5" />}

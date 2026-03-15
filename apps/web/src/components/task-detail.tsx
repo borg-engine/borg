@@ -79,7 +79,7 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
   });
 
   if (isLoading || !task) {
-    return <div className="flex h-full items-center justify-center text-xs text-[#6b6459]">Loading...</div>;
+    return <div className="flex h-full items-center justify-center text-xs text-[var(--color-text-tertiary)]">Loading...</div>;
   }
 
   const compliance = complianceData(task);
@@ -87,18 +87,18 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
   return (
     <div className="flex h-full flex-col">
       {/* Task header */}
-      <div className="space-y-3 border-b border-[#2a2520] px-6 py-5">
+      <div className="space-y-3 border-b border-[var(--color-border)] px-6 py-5">
         <div className="flex items-start gap-3">
           <button
             onClick={onBack}
             aria-label="Back"
-            className="mt-0.5 rounded-lg p-1 text-[#6b6459] transition-colors hover:bg-[#1c1a17] hover:text-[#e8e0d4] md:hidden"
+            className="mt-0.5 rounded-lg p-1 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-card)] hover:text-[var(--color-text)] md:hidden"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2.5">
-              <span className="font-mono text-[12px] text-[#6b6459]">#{task.id}</span>
+              <span className="font-mono text-[12px] text-[var(--color-text-tertiary)]">#{task.id}</span>
               <StatusBadge status={task.status} />
               {task.mode && task.mode !== "sweborg" && task.mode !== "swe" && (
                 <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-medium text-violet-400">
@@ -118,14 +118,14 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
                     }
                   }}
                   disabled={retrying}
-                  className="ml-auto flex items-center gap-1.5 rounded-md border border-[#2a2520] px-2.5 py-1 text-[11px] font-medium text-[#9c9486] hover:border-amber-500/40 hover:text-amber-400 disabled:opacity-50 transition-colors"
+                  className="ml-auto flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] hover:border-amber-500/40 hover:text-amber-400 disabled:opacity-50 transition-colors"
                 >
                   <RotateCcw className="h-3 w-3" />
                   {retrying ? "Retrying\u2026" : "Retry"}
                 </button>
               )}
             </div>
-            <h2 className="mt-1 text-[15px] font-medium leading-snug text-[#e8e0d4]">{task.title}</h2>
+            <h2 className="mt-1 text-[15px] font-medium leading-snug text-[var(--color-text)]">{task.title}</h2>
           </div>
         </div>
 
@@ -183,7 +183,7 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
                       value={revisionFeedback}
                       onChange={(e) => setRevisionFeedback(e.target.value)}
                       rows={3}
-                      className="w-full rounded-md border border-amber-500/20 bg-black/30 px-2.5 py-1.5 text-[11px] text-[#e8e0d4] outline-none focus:border-amber-500/40 resize-y placeholder:text-[#6b6459]"
+                      className="w-full rounded-md border border-amber-500/20 bg-black/30 px-2.5 py-1.5 text-[11px] text-[var(--color-text)] outline-none focus:border-amber-500/40 resize-y placeholder:text-[var(--color-text-tertiary)]"
                       placeholder="Describe what needs to change..."
                     />
                     <div className="flex items-center gap-2">
@@ -205,7 +205,7 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
                           setShowRevision(false);
                           setRevisionFeedback("");
                         }}
-                        className="text-[11px] text-[#6b6459] hover:text-[#9c9486]"
+                        className="text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
                       >
                         Cancel
                       </button>
@@ -227,8 +227,8 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
                   key={`${f.check_id}-${idx}`}
                   className="rounded border border-fuchsia-500/10 bg-black/20 px-2 py-1.5"
                 >
-                  <div className="text-[11px] text-[#e8e0d4]">{f.issue}</div>
-                  <div className="mt-0.5 flex items-center gap-2 text-[10px] text-[#6b6459]">
+                  <div className="text-[11px] text-[var(--color-text)]">{f.issue}</div>
+                  <div className="mt-0.5 flex items-center gap-2 text-[10px] text-[var(--color-text-tertiary)]">
                     <span className="uppercase">{f.severity}</span>
                     {f.as_of && <span>as of {f.as_of}</span>}
                     {f.source_url && (
@@ -279,43 +279,43 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
           </div>
         )}
 
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-[#9c9486]">
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-[var(--color-text-secondary)]">
           {task.repo_path && (
             <span title={task.repo_path}>
-              <span className="text-[#6b6459]">repo</span> {repoName(task.repo_path)}
+              <span className="text-[var(--color-text-tertiary)]">repo</span> {repoName(task.repo_path)}
             </span>
           )}
           {!isMinimal && task.branch && (
             <span>
-              <span className="text-[#6b6459]">branch</span> <span className="font-mono">{task.branch}</span>
+              <span className="text-[var(--color-text-tertiary)]">branch</span> <span className="font-mono">{task.branch}</span>
             </span>
           )}
           {!isMinimal && task.attempt > 0 && (
             <span>
-              <span className="text-[#6b6459]">attempt</span> {task.attempt}/{task.max_attempts}
+              <span className="text-[var(--color-text-tertiary)]">attempt</span> {task.attempt}/{task.max_attempts}
             </span>
           )}
           <span>
-            <span className="text-[#6b6459]">by</span> {task.created_by || "pipeline"}
+            <span className="text-[var(--color-text-tertiary)]">by</span> {task.created_by || "pipeline"}
           </span>
           <span>
-            <span className="text-[#6b6459]">at</span> {task.created_at}
+            <span className="text-[var(--color-text-tertiary)]">at</span> {task.created_at}
           </span>
           <button
             onClick={() => setShowDiagnostics((v) => !v)}
-            className="rounded border border-[#2a2520] px-1.5 py-0.5 text-[10px] text-[#6b6459] hover:border-amber-500/30 hover:text-[#e8e0d4] transition-colors"
+            className="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-tertiary)] hover:border-amber-500/30 hover:text-[var(--color-text)] transition-colors"
           >
             {showDiagnostics ? "Hide diagnostics" : "Show diagnostics"}
           </button>
           <span className="flex items-center gap-1">
-            <span className="text-[#6b6459]">backend</span>
+            <span className="text-[var(--color-text-tertiary)]">backend</span>
             <select
               value={task.backend || ""}
               onChange={async (e) => {
                 await setTaskBackend(task.id, e.target.value);
                 queryClient.invalidateQueries({ queryKey: ["task", task.id] });
               }}
-              className="rounded border border-[#2a2520] bg-transparent py-0 text-[11px] text-[#9c9486] outline-none hover:border-amber-500/30 focus:border-amber-500/40"
+              className="rounded border border-[var(--color-border)] bg-transparent py-0 text-[11px] text-[var(--color-text-secondary)] outline-none hover:border-amber-500/30 focus:border-amber-500/40"
             >
               <option value="">default</option>
               <option value="claude">claude</option>
@@ -338,7 +338,7 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
       </div>
 
       {task.description && (
-        <div className="max-h-16 overflow-y-auto border-b border-[#2a2520] px-6 py-3 text-[12px] leading-relaxed text-[#9c9486]">
+        <div className="max-h-16 overflow-y-auto border-b border-[var(--color-border)] px-6 py-3 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
           {task.description}
         </div>
       )}
@@ -366,13 +366,13 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
             <div className="mt-2 space-y-2 border-l-2 border-amber-500/20 pl-3">
               {revHistory.rounds.map((round) => (
                 <div key={round.round} className="space-y-1">
-                  <div className="text-[10px] font-medium text-[#e8e0d4]">
+                  <div className="text-[10px] font-medium text-[var(--color-text)]">
                     {round.round === 0 ? "Initial Draft" : `Draft ${round.round + 1}`}
                   </div>
                   {round.feedback && (
                     <div className="rounded border border-amber-500/10 bg-amber-500/[0.03] px-2 py-1.5 text-[11px]">
                       <div className="text-[9px] text-amber-500/60 mb-0.5">Reviewer feedback</div>
-                      <div className="text-[#e8e0d4] whitespace-pre-wrap">{round.feedback}</div>
+                      <div className="text-[var(--color-text)] whitespace-pre-wrap">{round.feedback}</div>
                     </div>
                   )}
                   {round.phases.length > 0 && (
@@ -406,15 +406,15 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
       )}
 
       {showDiagnostics && (
-        <div className="mx-4 mt-3 rounded-lg border border-[#2a2520] bg-[#1c1a17]/50 p-3 text-[11px]">
+        <div className="mx-4 mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]/50 p-3 text-[11px]">
           {diagnosticsLoading && !diagnostics ? (
-            <div className="text-[#6b6459]">Loading diagnostics\u2026</div>
+            <div className="text-[var(--color-text-tertiary)]">Loading diagnostics\u2026</div>
           ) : diagnostics ? (
             <div className="space-y-2">
-              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[#9c9486]">
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[var(--color-text-secondary)]">
                 <span>
                   stuck_suspected:{" "}
-                  <span className={diagnostics.summary.stuck_suspected ? "text-amber-400" : "text-[#6b6459]"}>
+                  <span className={diagnostics.summary.stuck_suspected ? "text-amber-400" : "text-[var(--color-text-tertiary)]"}>
                     {String(diagnostics.summary.stuck_suspected)}
                   </span>
                 </span>
@@ -425,10 +425,10 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
                 </span>
               </div>
               <div>
-                <div className="mb-1 text-[#6b6459]">Recent events</div>
+                <div className="mb-1 text-[var(--color-text-tertiary)]">Recent events</div>
                 <div className="max-h-24 overflow-y-auto space-y-1">
                   {diagnostics.recent_events.slice(0, 8).map((e) => (
-                    <div key={e.id} className="font-mono text-[10px] text-[#6b6459]">
+                    <div key={e.id} className="font-mono text-[10px] text-[var(--color-text-tertiary)]">
                       [{e.created_at}] {e.kind}
                     </div>
                   ))}
@@ -436,13 +436,13 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
               </div>
             </div>
           ) : (
-            <div className="text-[#6b6459]">Diagnostics unavailable</div>
+            <div className="text-[var(--color-text-tertiary)]">Diagnostics unavailable</div>
           )}
         </div>
       )}
 
       {/* Tab bar */}
-      <div className="shrink-0 flex gap-0 border-b border-[#2a2520] px-5">
+      <div className="shrink-0 flex gap-0 border-b border-[var(--color-border)] px-5">
         {([
           { key: "output" as const, label: "Output" },
           { key: "tool-calls" as const, label: "Tool Calls" },
@@ -453,8 +453,8 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
             className={cn(
               "border-b-2 px-4 py-2.5 text-[12px] font-medium transition-colors",
               activeTab === tab.key
-                ? "border-amber-500 text-[#e8e0d4]"
-                : "border-transparent text-[#6b6459] hover:text-[#e8e0d4]",
+                ? "border-amber-500 text-[var(--color-text)]"
+                : "border-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]",
             )}
           >
             {tab.label}
@@ -477,7 +477,7 @@ export function TaskDetail({ taskId, onBack }: TaskDetailProps) {
             {!isActive && !streaming && task.outputs && task.outputs.length > 0 ? (
               <OutputSelector outputs={task.outputs} />
             ) : !isActive && !streaming ? (
-              <div className="flex flex-1 items-center justify-center text-xs text-[#6b6459]">No agent outputs yet</div>
+              <div className="flex flex-1 items-center justify-center text-xs text-[var(--color-text-tertiary)]">No agent outputs yet</div>
             ) : null}
           </>
         )}
@@ -499,7 +499,7 @@ function StreamView({ raw }: { raw: string }) {
   const events = useMemo(() => parseRawStream(raw), [raw]);
 
   if (events.length === 0) {
-    return <div className="p-4 text-[12px] text-[#6b6459]">No stream data</div>;
+    return <div className="p-4 text-[12px] text-[var(--color-text-tertiary)]">No stream data</div>;
   }
 
   return (
@@ -521,7 +521,7 @@ function StreamEventBlock({ event: ev }: { event: ParsedStreamEvent }) {
   if (ev.type === "assistant") {
     return (
       <div className="rounded bg-white/[0.02] px-3 py-2">
-        <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[#e8e0d4]">{ev.content}</pre>
+        <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[var(--color-text)]">{ev.content}</pre>
       </div>
     );
   }
@@ -533,13 +533,13 @@ function StreamEventBlock({ event: ev }: { event: ParsedStreamEvent }) {
           <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-400">
             {ev.tool}
           </span>
-          <span className="truncate text-[11px] text-[#9c9486]">
+          <span className="truncate text-[11px] text-[var(--color-text-secondary)]">
             {ev.label || (ev.input && ev.input.length > 80 ? `${ev.input.slice(0, 80)}...` : ev.input)}
           </span>
-          <span className="ml-auto shrink-0 text-[9px] text-[#6b6459]">{expanded ? "^" : "v"}</span>
+          <span className="ml-auto shrink-0 text-[9px] text-[var(--color-text-tertiary)]">{expanded ? "^" : "v"}</span>
         </button>
         {expanded && ev.input && (
-          <pre className="max-h-60 overflow-y-auto border-t border-amber-500/15 px-3 py-2 font-mono text-[10px] leading-relaxed text-[#9c9486]">
+          <pre className="max-h-60 overflow-y-auto border-t border-amber-500/15 px-3 py-2 font-mono text-[10px] leading-relaxed text-[var(--color-text-secondary)]">
             {ev.input}
           </pre>
         )}
@@ -550,16 +550,16 @@ function StreamEventBlock({ event: ev }: { event: ParsedStreamEvent }) {
   if (ev.type === "tool_result") {
     const preview = ev.output && ev.output.length > 200 ? `${ev.output.slice(0, 200)}...` : ev.output;
     return (
-      <div className="rounded border border-[#2a2520] bg-[#1c1a17]/30">
+      <div className="rounded border border-[var(--color-border)] bg-[var(--color-card)]/30">
         <button onClick={() => setExpanded(!expanded)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left">
-          <span className="shrink-0 rounded bg-[#2a2520] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#9c9486]">
+          <span className="shrink-0 rounded bg-[var(--color-border)] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[var(--color-text-secondary)]">
             result{ev.tool ? `: ${ev.tool}` : ""}
           </span>
-          {!expanded && <span className="truncate font-mono text-[10px] text-[#6b6459]">{preview}</span>}
-          <span className="ml-auto shrink-0 text-[9px] text-[#6b6459]">{expanded ? "^" : "v"}</span>
+          {!expanded && <span className="truncate font-mono text-[10px] text-[var(--color-text-tertiary)]">{preview}</span>}
+          <span className="ml-auto shrink-0 text-[9px] text-[var(--color-text-tertiary)]">{expanded ? "^" : "v"}</span>
         </button>
         {expanded && ev.output && (
-          <pre className="max-h-60 overflow-y-auto border-t border-[#2a2520] px-3 py-2 font-mono text-[10px] leading-relaxed text-[#6b6459]">
+          <pre className="max-h-60 overflow-y-auto border-t border-[var(--color-border)] px-3 py-2 font-mono text-[10px] leading-relaxed text-[var(--color-text-tertiary)]">
             {ev.output}
           </pre>
         )}
@@ -629,11 +629,11 @@ function OutputSelector({ outputs }: { outputs: TaskOutput[] }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[#2a2520] px-6 py-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-6 py-3">
         <select
           value={selectedKey}
           onChange={(e) => setSelectedKey(e.target.value)}
-          className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] font-medium uppercase tracking-wide text-[#e8e0d4] outline-none focus:border-amber-500/40"
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 text-[12px] font-medium uppercase tracking-wide text-[var(--color-text)] outline-none focus:border-amber-500/40"
         >
           {labeled.map((o) => {
             const key = `${o.phase}-${o.id}`;
@@ -659,12 +659,12 @@ function OutputSelector({ outputs }: { outputs: TaskOutput[] }) {
         </span>
         {!isDiff && (
           <div className="ml-auto flex items-center gap-2">
-            <div className="flex rounded-lg border border-[#2a2520]">
+            <div className="flex rounded-lg border border-[var(--color-border)]">
               <button
                 onClick={() => setViewMode("summary")}
                 className={cn(
                   "px-2.5 py-1 text-[12px] font-medium transition-colors",
-                  viewMode === "summary" ? "bg-amber-500/[0.08] text-[#e8e0d4]" : "text-[#6b6459] hover:text-[#e8e0d4]",
+                  viewMode === "summary" ? "bg-amber-500/[0.08] text-[var(--color-text)]" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]",
                 )}
               >
                 Summary
@@ -673,8 +673,8 @@ function OutputSelector({ outputs }: { outputs: TaskOutput[] }) {
                 <button
                   onClick={() => setViewMode("trace")}
                   className={cn(
-                    "border-l border-[#2a2520] px-2.5 py-1 text-[12px] font-medium transition-colors",
-                    viewMode === "trace" ? "bg-amber-500/[0.08] text-[#e8e0d4]" : "text-[#6b6459] hover:text-[#e8e0d4]",
+                    "border-l border-[var(--color-border)] px-2.5 py-1 text-[12px] font-medium transition-colors",
+                    viewMode === "trace" ? "bg-amber-500/[0.08] text-[var(--color-text)]" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]",
                   )}
                 >
                   Full Trace
@@ -690,7 +690,7 @@ function OutputSelector({ outputs }: { outputs: TaskOutput[] }) {
                   copiedTimerRef.current = setTimeout(() => setCopied(false), 1500);
                 });
               }}
-              className="rounded-lg px-2.5 py-1 text-[12px] font-medium text-[#6b6459] hover:text-[#e8e0d4] hover:bg-[#1c1a17] transition-colors"
+              className="rounded-lg px-2.5 py-1 text-[12px] font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] hover:bg-[var(--color-card)] transition-colors"
             >
               {copied ? "Copied" : "Copy"}
             </button>
@@ -700,7 +700,7 @@ function OutputSelector({ outputs }: { outputs: TaskOutput[] }) {
                 const ext = viewMode === "trace" && hasStream ? "ndjson" : "txt";
                 downloadText(text || "", `task-${selected.id}-${selected.phase}.${ext}`);
               }}
-              className="rounded-lg px-2.5 py-1 text-[12px] font-medium text-[#6b6459] hover:text-[#e8e0d4] hover:bg-[#1c1a17] transition-colors"
+              className="rounded-lg px-2.5 py-1 text-[12px] font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] hover:bg-[var(--color-card)] transition-colors"
             >
               Download
             </button>
@@ -713,7 +713,7 @@ function OutputSelector({ outputs }: { outputs: TaskOutput[] }) {
         ) : viewMode === "trace" && hasStream ? (
           <StreamView raw={selected.raw_stream} />
         ) : (
-          <pre className="p-4 font-mono text-[12px] leading-relaxed text-[#9c9486] whitespace-pre-wrap break-words">
+          <pre className="p-4 font-mono text-[12px] leading-relaxed text-[var(--color-text-secondary)] whitespace-pre-wrap break-words">
             {selected.output || "(empty)"}
           </pre>
         )}
@@ -723,11 +723,11 @@ function OutputSelector({ outputs }: { outputs: TaskOutput[] }) {
 }
 
 function DiffView({ diff }: { diff: string }) {
-  if (!diff) return <div className="p-4 text-[12px] text-[#6b6459]">No diff data</div>;
+  if (!diff) return <div className="p-4 text-[12px] text-[var(--color-text-tertiary)]">No diff data</div>;
   return (
     <pre className="p-4 font-mono text-[12px] leading-relaxed overflow-x-auto">
       {diff.split("\n").map((line, i) => {
-        let color = "text-[#6b6459]";
+        let color = "text-[var(--color-text-tertiary)]";
         if (line.startsWith("+") && !line.startsWith("+++")) color = "text-emerald-400/80";
         else if (line.startsWith("-") && !line.startsWith("---")) color = "text-red-400/80";
         else if (line.startsWith("@@")) color = "text-blue-400/60";

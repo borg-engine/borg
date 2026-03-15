@@ -252,7 +252,7 @@ export function ProjectShareDialog({ project, onClose }: { project: Project; onC
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="flex max-h-[70vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0e0e10] shadow-2xl mx-4">
+      <div className="flex max-h-[70vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[var(--color-bg)] shadow-2xl mx-4">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/[0.07] px-5 py-4">
           <h3 className="text-[14px] font-semibold text-zinc-100">Share "{project.name}"</h3>

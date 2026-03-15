@@ -26,7 +26,8 @@ type View =
   | "status"
   | "chat"
   | "knowledge"
-  | "settings";
+  | "settings"
+  | "theme";
 
 const VIEW_TITLES: Record<View, string> = {
   tasks: "Pipeline Tasks",
@@ -41,6 +42,7 @@ const VIEW_TITLES: Record<View, string> = {
   chat: "Chat",
   knowledge: "Knowledge Base",
   settings: "Settings",
+  theme: "Theme",
 };
 
 export function Header({
@@ -69,11 +71,11 @@ export function Header({
 
   if (mobile) {
     return (
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[#2a2520] bg-[#0f0e0c] px-2">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-2">
         {onMenuToggle && (
           <button
             onClick={onMenuToggle}
-            className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors"
+            className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] transition-colors"
             aria-label="Toggle sidebar"
           >
             <Menu className="h-5 w-5" />
@@ -90,18 +92,18 @@ export function Header({
               ))}
             </div>
           </div>
-          <span className="text-[14px] font-semibold tracking-tight text-[#e8e0d4]">Borg</span>
+          <span className="text-[14px] font-semibold tracking-tight text-[var(--color-text)]">Borg</span>
         </div>
 
         <div className="ml-auto flex items-center gap-3">
           <TaskCreator />
           {status?.continuous_mode && (
-            <span className="flex items-center gap-1.5 text-[12px] text-[#9c9486]">
+            <span className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-secondary)]">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Cont
             </span>
           )}
-          <span className="text-[12px] tabular-nums text-[#6b6459]">
+          <span className="text-[12px] tabular-nums text-[var(--color-text-tertiary)]">
             {status ? formatUptime(status.uptime_s) : "--"}
           </span>
           <span
@@ -116,35 +118,35 @@ export function Header({
   const multiRepo = repos.length > 1;
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 md:gap-4 border-b border-[#2a2520] px-3 md:px-6">
+    <header className="flex h-14 shrink-0 items-center gap-2 md:gap-4 border-b border-[var(--color-border)] px-3 md:px-6">
       {onMenuToggle && (
         <button
           onClick={onMenuToggle}
-          className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[#6b6459] hover:text-[#e8e0d4] transition-colors lg:hidden"
+          className="flex h-[44px] w-[44px] items-center justify-center rounded-xl text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] transition-colors lg:hidden"
           aria-label="Toggle sidebar"
         >
           <Menu className="h-5 w-5" />
         </button>
       )}
-      <h1 className="text-[15px] font-semibold text-[#e8e0d4] truncate">{VIEW_TITLES[view ?? "tasks"]}</h1>
+      <h1 className="text-[15px] font-semibold text-[var(--color-text)] truncate">{VIEW_TITLES[view ?? "tasks"]}</h1>
 
       {!isMinimal && (
         <>
-          <div className="h-4 w-px bg-[#2a2520] hidden lg:block" />
-          <div className="hidden lg:flex items-center gap-4 text-[12px] text-[#6b6459]">
+          <div className="h-4 w-px bg-[var(--color-border)] hidden lg:block" />
+          <div className="hidden lg:flex items-center gap-4 text-[12px] text-[var(--color-text-tertiary)]">
             {status?.continuous_mode && (
-              <span className="flex items-center gap-1.5 text-[#9c9486]">
+              <span className="flex items-center gap-1.5 text-[var(--color-text-secondary)]">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 Continuous
               </span>
             )}
             <span>
-              Up <span className="text-[#9c9486]">{status ? formatUptime(status.uptime_s) : "--"}</span>
+              Up <span className="text-[var(--color-text-secondary)]">{status ? formatUptime(status.uptime_s) : "--"}</span>
             </span>
             <span>
-              Model <span className="text-[#9c9486]">{status?.model ?? "--"}</span>
+              Model <span className="text-[var(--color-text-secondary)]">{status?.model ?? "--"}</span>
             </span>
-            <span className="h-3 w-px bg-[#2a2520]" />
+            <span className="h-3 w-px bg-[var(--color-border)]" />
             <span>
               Active <span className="text-blue-400 tabular-nums">{status?.active_tasks ?? 0}</span>
             </span>
@@ -158,7 +160,7 @@ export function Header({
               Failed <span className="text-red-400 tabular-nums">{status?.failed_tasks ?? 0}</span>
             </span>
             {status?.version && (
-              <span className="rounded-full bg-amber-500/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-[#6b6459]">
+              <span className="rounded-full bg-amber-500/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-text-tertiary)]">
                 {status.version}
               </span>
             )}
@@ -182,7 +184,7 @@ export function Header({
                 setSwitchingWorkspace(false);
               }
             }}
-            className="h-8 min-h-[44px] md:min-h-0 md:h-7 max-w-[180px] md:max-w-[220px] shrink-0 rounded-lg border border-[#2a2520] bg-amber-500/[0.03] px-2 text-[13px] md:text-[12px] text-[#9c9486] outline-none"
+            className="h-8 min-h-[44px] md:min-h-0 md:h-7 max-w-[180px] md:max-w-[220px] shrink-0 rounded-lg border border-[var(--color-border)] bg-amber-500/[0.03] px-2 text-[13px] md:text-[12px] text-[var(--color-text-secondary)] outline-none"
           >
             {workspaces.map((workspace) => (
               <option key={workspace.workspace_id} value={workspace.workspace_id}>
@@ -195,7 +197,7 @@ export function Header({
           <select
             value={repoFilter ?? ""}
             onChange={(e) => onRepoFilterChange(e.target.value || null)}
-            className="hidden md:block h-7 shrink-0 rounded-lg border border-[#2a2520] bg-amber-500/[0.03] px-2 text-[12px] text-[#9c9486] outline-none"
+            className="hidden md:block h-7 shrink-0 rounded-lg border border-[var(--color-border)] bg-amber-500/[0.03] px-2 text-[12px] text-[var(--color-text-secondary)] outline-none"
           >
             <option value="">All repos</option>
             {repos.map((r) => (

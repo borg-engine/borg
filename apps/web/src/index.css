@@ -386,8 +386,9 @@ html:not(.dark) .animate-shimmer-text {
 }
 
 /* --- Light mode overrides --- */
-/* Remap hardcoded dark-mode colors when light mode is active.
-   html:not(.dark) + class is more specific than the utility alone. */
+/* Colors that use CSS variables (bg/border/text with --color-*) are now
+   handled automatically via [data-theme] in theme.css. The overrides below
+   cover Tailwind utility classes that still use named colors. */
 
 html:not(.dark) {
   --warm-success: hsl(145, 55%, 38%);
@@ -396,58 +397,6 @@ html:not(.dark) {
   --warm-amber: hsl(35, 75%, 42%);
   --warm-amber-dim: hsl(35, 50%, 55%);
   color-scheme: light;
-}
-
-/* --- Hardcoded hex backgrounds → light equivalents --- */
-html:not(.dark) .bg-\[\#0f0e0c\] {
-  background-color: #faf8f5;
-}
-html:not(.dark) .bg-\[\#151412\] {
-  background-color: #ffffff;
-}
-html:not(.dark) .bg-\[\#1c1a17\] {
-  background-color: #f0ece5;
-}
-html:not(.dark) .bg-\[\#1a1814\] {
-  background-color: #f5f1ea;
-}
-html:not(.dark) .bg-\[\#232019\] {
-  background-color: #e8e3da;
-}
-html:not(.dark) .bg-\[\#0e0e10\] {
-  background-color: #ffffff;
-}
-
-/* Gradient backgrounds (sidebar) */
-html:not(.dark) .from-\[\#1c1a17\] {
-  --tw-gradient-from: #f5f2ed;
-}
-html:not(.dark) .to-\[\#151412\] {
-  --tw-gradient-to: #faf8f5;
-}
-
-/* Semi-transparent bg overrides */
-html:not(.dark) .bg-\[\#0f0e0c\]\/80 {
-  background-color: rgba(250, 248, 245, 0.8);
-}
-html:not(.dark) .bg-\[\#0f0e0c\]\/90 {
-  background-color: rgba(250, 248, 245, 0.9);
-}
-
-/* --- Hardcoded hex borders → light equivalents --- */
-html:not(.dark) .border-\[\#2a2520\] {
-  border-color: #d4cfc7;
-}
-
-/* --- Hardcoded hex text → light equivalents --- */
-html:not(.dark) .text-\[\#e8e0d4\] {
-  color: #1c1a17;
-}
-html:not(.dark) .text-\[\#9c9486\] {
-  color: #5c574f;
-}
-html:not(.dark) .text-\[\#6b6459\] {
-  color: #8a847a;
 }
 
 /* --- Zinc text: invert scale for light backgrounds --- */
@@ -669,28 +618,7 @@ html:not(.dark) .text-foreground {
   color: #1c1a17;
 }
 
-/* Body */
-html:not(.dark) body {
-  background: #faf8f5;
-  color: #1c1a17;
-}
-
-/* Scrollbar */
-html:not(.dark) * {
-  scrollbar-color: hsla(35, 15%, 50%, 0.25) transparent;
-}
-html:not(.dark) *::-webkit-scrollbar-thumb {
-  background: hsla(35, 15%, 50%, 0.25);
-}
-html:not(.dark) *::-webkit-scrollbar-thumb:hover {
-  background: hsla(35, 15%, 50%, 0.4);
-}
-
-/* Selection */
-html:not(.dark) ::selection {
-  background: hsla(35, 70%, 55%, 0.25);
-  color: hsl(30, 10%, 10%);
-}
+/* Body background/text handled by CSS variables in theme.css */
 
 /* Borg logo text in light mode */
 html:not(.dark) .borg-logo span {
@@ -732,7 +660,7 @@ html:not(.dark) .shadow-\[0_0_8px_rgba\(200\,160\,80\,0\.3\)\] {
   }
   body {
     @apply bg-background text-foreground;
-    font-family: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+    font-family: var(--font-family, "Inter Variable", "Inter", system-ui, -apple-system, sans-serif);
     overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -755,10 +683,10 @@ html:not(.dark) .shadow-\[0_0_8px_rgba\(200\,160\,80\,0\.3\)\] {
     }
   }
 
-  /* Scrollbar styling — warm tint */
+  /* Scrollbar styling — uses theme variables */
   * {
     scrollbar-width: thin;
-    scrollbar-color: hsla(35, 15%, 40%, 0.2) transparent;
+    scrollbar-color: var(--color-scrollbar, hsla(35, 15%, 40%, 0.2)) transparent;
   }
   *::-webkit-scrollbar {
     width: 8px;
@@ -768,16 +696,16 @@ html:not(.dark) .shadow-\[0_0_8px_rgba\(200\,160\,80\,0\.3\)\] {
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
-    background: hsla(35, 15%, 40%, 0.3);
+    background: var(--color-scrollbar, hsla(35, 15%, 40%, 0.3));
     border-radius: 4px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: hsla(35, 15%, 40%, 0.5);
+    background: var(--color-scrollbar-hover, hsla(35, 15%, 40%, 0.5));
   }
 
-  /* Warm amber selection */
+  /* Selection — uses theme variables */
   ::selection {
-    background: hsla(35, 70%, 55%, 0.3);
-    color: #fff;
+    background: var(--color-selection-bg, hsla(35, 70%, 55%, 0.3));
+    color: var(--color-selection-text, #fff);
   }
 }

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useVocabulary } from "@/lib/vocabulary";
 
 const TYPE_COLORS: Record<PhaseType, string> = {
-  setup: "bg-[#1c1a17] text-[#6b6459]",
+  setup: "bg-[var(--color-card)] text-[var(--color-text-tertiary)]",
   agent: "bg-amber-500/15 text-amber-300",
   validate: "bg-teal-500/15 text-teal-400",
   rebase: "bg-violet-500/15 text-violet-400",
@@ -128,9 +128,9 @@ export function PhaseStrip({
                 <div key={`${phase.name}-${i}`} className="flex shrink-0 items-center" style={{ width: COL_W }}>
                   {i > 0 && (
                     <div className="flex items-center">
-                      <div className="h-px w-3 bg-[#2a2520]" />
+                      <div className="h-px w-3 bg-[var(--color-border)]" />
                       <span className="text-[10px] text-[#3d3830]">&rsaquo;</span>
-                      <div className="h-px w-3 bg-[#2a2520]" />
+                      <div className="h-px w-3 bg-[var(--color-border)]" />
                     </div>
                   )}
                   <button
@@ -139,11 +139,11 @@ export function PhaseStrip({
                       "flex-1 rounded-xl border px-3 py-2.5 text-left transition-colors",
                       selected
                         ? "border-amber-500/30 bg-amber-500/[0.06] ring-1 ring-amber-500/30"
-                        : "border-[#2a2520] bg-[#151412] hover:border-amber-900/30 hover:bg-[#1c1a17]",
+                        : "border-[var(--color-border)] bg-[var(--color-bg-secondary)] hover:border-amber-900/30 hover:bg-[var(--color-card)]",
                     )}
                   >
                     <div
-                      className={cn("text-[12px] font-medium truncate", selected ? "text-[#e8e0d4]" : "text-[#9c9486]")}
+                      className={cn("text-[12px] font-medium truncate", selected ? "text-[var(--color-text)]" : "text-[var(--color-text-secondary)]")}
                     >
                       {vocab.statusLabels[phase.name] || phase.label || phase.name}
                     </div>
@@ -212,37 +212,37 @@ export function PhaseStrip({
             <button
               type="button"
               onClick={() => setShowAddMenu((open) => !open)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] ring-1 ring-inset ring-[#2a2520] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-border)] transition-colors hover:bg-[var(--color-card-alt)] hover:text-[var(--color-text)]"
             >
               + Add Phase
               <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showAddMenu && "rotate-180")} />
             </button>
             {showAddMenu && (
-              <div className="absolute left-0 top-full z-20 mt-2 min-w-[220px] rounded-xl border border-[#2a2520] bg-[#151412] p-1.5 shadow-2xl">
+              <div className="absolute left-0 top-full z-20 mt-2 min-w-[220px] rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-1.5 shadow-2xl">
                 <button
                   type="button"
                   onClick={() => {
                     onAdd(selectedIndex ?? phases.length - 1);
                     setShowAddMenu(false);
                   }}
-                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] text-[#e8e0d4] transition-colors hover:bg-[#1c1a17]"
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-card)]"
                 >
                   <span>Standard Phase</span>
-                  <span className="text-[10px] text-[#6b6459]">blank</span>
+                  <span className="text-[10px] text-[var(--color-text-tertiary)]">blank</span>
                 </button>
                 {showComplianceOptions && (
                   <>
-                    <div className="my-1 h-px bg-[#2a2520]" />
+                    <div className="my-1 h-px bg-[var(--color-border)]" />
                     <button
                       type="button"
                       onClick={() => {
                         onAddCompliance(selectedIndex ?? phases.length - 1, "uk_sra");
                         setShowAddMenu(false);
                       }}
-                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] text-[#e8e0d4] transition-colors hover:bg-[#1c1a17]"
+                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-card)]"
                     >
                       <span>UK SRA Check</span>
-                      <span className="text-[10px] text-[#6b6459]">compliance</span>
+                      <span className="text-[10px] text-[var(--color-text-tertiary)]">compliance</span>
                     </button>
                     <button
                       type="button"
@@ -250,10 +250,10 @@ export function PhaseStrip({
                         onAddCompliance(selectedIndex ?? phases.length - 1, "us_prof_resp");
                         setShowAddMenu(false);
                       }}
-                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] text-[#e8e0d4] transition-colors hover:bg-[#1c1a17]"
+                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-card)]"
                     >
                       <span>US Ethics Check</span>
-                      <span className="text-[10px] text-[#6b6459]">compliance</span>
+                      <span className="text-[10px] text-[var(--color-text-tertiary)]">compliance</span>
                     </button>
                   </>
                 )}
@@ -268,7 +268,7 @@ export function PhaseStrip({
                 }}
                 disabled={selectedIndex <= 0}
                 aria-label="Move phase left"
-                className="rounded-lg bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] ring-1 ring-inset ring-[#2a2520] transition-colors hover:bg-[#232019] disabled:opacity-30"
+                className="rounded-lg bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-border)] transition-colors hover:bg-[var(--color-card-alt)] disabled:opacity-30"
               >
                 &larr;
               </button>
@@ -278,7 +278,7 @@ export function PhaseStrip({
                 }}
                 disabled={selectedIndex >= phases.length - 1}
                 aria-label="Move phase right"
-                className="rounded-lg bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] ring-1 ring-inset ring-[#2a2520] transition-colors hover:bg-[#232019] disabled:opacity-30"
+                className="rounded-lg bg-[var(--color-card)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-border)] transition-colors hover:bg-[var(--color-card-alt)] disabled:opacity-30"
               >
                 &rarr;
               </button>

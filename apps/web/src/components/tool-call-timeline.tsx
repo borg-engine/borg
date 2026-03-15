@@ -29,7 +29,7 @@ function ToolCallCard({ event }: { event: ToolCallEvent }) {
   const hasDetails = !!(event.input_summary || event.output_summary || event.error);
 
   return (
-    <div className="rounded-lg border border-[#2a2520] bg-[#1c1a17]/40">
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]/40">
       <button
         onClick={() => hasDetails && setExpanded(!expanded)}
         className={cn(
@@ -49,7 +49,7 @@ function ToolCallCard({ event }: { event: ToolCallEvent }) {
               ✓
             </span>
           ) : (
-            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#2a2520] text-[10px] text-[#6b6459]">
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-border)] text-[10px] text-[var(--color-text-tertiary)]">
               ?
             </span>
           )}
@@ -62,7 +62,7 @@ function ToolCallCard({ event }: { event: ToolCallEvent }) {
 
         {/* input summary preview */}
         {event.input_summary && !expanded && (
-          <span className="min-w-0 truncate text-[11px] text-[#6b6459]">
+          <span className="min-w-0 truncate text-[11px] text-[var(--color-text-tertiary)]">
             {event.input_summary.length > 80 ? `${event.input_summary.slice(0, 80)}...` : event.input_summary}
           </span>
         )}
@@ -76,25 +76,25 @@ function ToolCallCard({ event }: { event: ToolCallEvent }) {
           )}
           {/* expand indicator */}
           {hasDetails && (
-            <span className="text-[9px] text-[#6b6459]">{expanded ? "▲" : "▼"}</span>
+            <span className="text-[9px] text-[var(--color-text-tertiary)]">{expanded ? "▲" : "▼"}</span>
           )}
         </span>
       </button>
 
       {expanded && hasDetails && (
-        <div className="border-t border-[#2a2520] px-3 py-2 space-y-2">
+        <div className="border-t border-[var(--color-border)] px-3 py-2 space-y-2">
           {event.input_summary && (
             <div>
-              <div className="mb-0.5 text-[9px] font-medium uppercase tracking-wider text-[#6b6459]">Input</div>
-              <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-[#9c9486]">
+              <div className="mb-0.5 text-[9px] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]">Input</div>
+              <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-[var(--color-text-secondary)]">
                 {event.input_summary}
               </pre>
             </div>
           )}
           {event.output_summary && (
             <div>
-              <div className="mb-0.5 text-[9px] font-medium uppercase tracking-wider text-[#6b6459]">Output</div>
-              <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-[#9c9486]">
+              <div className="mb-0.5 text-[9px] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]">Output</div>
+              <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-[var(--color-text-secondary)]">
                 {event.output_summary}
               </pre>
             </div>
@@ -126,7 +126,7 @@ export function ToolCallTimeline({ taskId, chatKey, runId, taskStatus }: ToolCal
   const totalMs = toolCalls.reduce((sum, tc) => sum + (tc.duration_ms ?? 0), 0);
 
   if (isLoading) {
-    return <div className="flex h-full items-center justify-center text-xs text-[#6b6459]">Loading tool calls...</div>;
+    return <div className="flex h-full items-center justify-center text-xs text-[var(--color-text-tertiary)]">Loading tool calls...</div>;
   }
 
   if (isError) {
@@ -134,19 +134,19 @@ export function ToolCallTimeline({ taskId, chatKey, runId, taskStatus }: ToolCal
   }
 
   if (toolCalls.length === 0) {
-    return <div className="flex h-full items-center justify-center text-xs text-[#6b6459]">No tool calls recorded</div>;
+    return <div className="flex h-full items-center justify-center text-xs text-[var(--color-text-tertiary)]">No tool calls recorded</div>;
   }
 
   return (
     <div className="flex h-full flex-col">
       {/* Stats header */}
-      <div className="shrink-0 border-b border-[#2a2520] px-4 py-2.5 flex items-center gap-3 text-[11px] text-[#9c9486]">
+      <div className="shrink-0 border-b border-[var(--color-border)] px-4 py-2.5 flex items-center gap-3 text-[11px] text-[var(--color-text-secondary)]">
         <span>
-          <span className="font-medium text-[#e8e0d4]">{toolCalls.length}</span> tool call{toolCalls.length !== 1 ? "s" : ""}
+          <span className="font-medium text-[var(--color-text)]">{toolCalls.length}</span> tool call{toolCalls.length !== 1 ? "s" : ""}
         </span>
-        <span className="text-[#6b6459]">/</span>
+        <span className="text-[var(--color-text-tertiary)]">/</span>
         <span>
-          <span className="font-medium text-[#e8e0d4]">{formatDuration(totalMs)}</span> total
+          <span className="font-medium text-[var(--color-text)]">{formatDuration(totalMs)}</span> total
         </span>
         {isActive && (
           <span className="ml-auto flex items-center gap-1.5 text-[10px] text-emerald-400/60">

@@ -252,14 +252,14 @@ export function ProjectsPanel() {
 
   return (
     <div className="flex h-full min-h-0">
-      <div className="flex w-[310px] shrink-0 flex-col border-r border-[#2a2520] bg-[#0f0e0c] p-4">
+      <div className="flex w-[310px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg)] p-4">
         <div className="mb-3">
-          <span className="text-[12px] font-semibold uppercase tracking-wide text-[#6b6459]">
+          <span className="text-[12px] font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">
             {vocab.projectsLabel}
           </span>
         </div>
         <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6b6459]" />
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
           <input
             value={ftsQuery || searchQuery}
             onChange={(e) => {
@@ -268,7 +268,7 @@ export function ProjectsPanel() {
               handleFtsSearch(v);
             }}
             placeholder={`Search ${vocab.projectPlural} & documents...`}
-            className="w-full rounded-xl border border-[#2a2520] bg-[#1c1a17] pl-8 pr-3 py-2.5 text-[13px] text-[#e8e0d4] outline-none placeholder:text-[#6b6459] focus:border-amber-500/30"
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] pl-8 pr-3 py-2.5 text-[13px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-amber-500/30"
           />
         </div>
         {/* Knowledge — org-wide + personal */}
@@ -280,11 +280,11 @@ export function ProjectsPanel() {
           className={cn(
             "mb-1 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] transition-colors",
             showMemory === "org"
-              ? "bg-violet-500/[0.08] text-[#e8e0d4] font-medium ring-1 ring-violet-500/20"
-              : "text-[#9c9486] hover:bg-[#1c1a17]",
+              ? "bg-violet-500/[0.08] text-[var(--color-text)] font-medium ring-1 ring-violet-500/20"
+              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-card)]",
           )}
         >
-          <Brain className={cn("h-4 w-4 shrink-0", showMemory === "org" ? "text-violet-400" : "text-[#6b6459]")} />
+          <Brain className={cn("h-4 w-4 shrink-0", showMemory === "org" ? "text-violet-400" : "text-[var(--color-text-tertiary)]")} />
           <span>Org Knowledge</span>
         </button>
         <button
@@ -295,18 +295,18 @@ export function ProjectsPanel() {
           className={cn(
             "mb-2 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] transition-colors",
             showMemory === "my"
-              ? "bg-amber-500/[0.08] text-[#e8e0d4] font-medium ring-1 ring-amber-500/20"
-              : "text-[#9c9486] hover:bg-[#1c1a17]",
+              ? "bg-amber-500/[0.08] text-[var(--color-text)] font-medium ring-1 ring-amber-500/20"
+              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-card)]",
           )}
         >
-          <User className={cn("h-4 w-4 shrink-0", showMemory === "my" ? "text-amber-400" : "text-[#6b6459]")} />
+          <User className={cn("h-4 w-4 shrink-0", showMemory === "my" ? "text-amber-400" : "text-[var(--color-text-tertiary)]")} />
           <span>My Knowledge</span>
         </button>
-        <div className="mb-2 h-px bg-[#2a2520]" />
+        <div className="mb-2 h-px bg-[var(--color-border)]" />
 
         {ftsQuery.trim() && (ftsSearching || ftsResults.length > 0) ? (
           <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto mb-3">
-            {ftsSearching && <div className="text-[11px] text-[#6b6459] px-1">Searching...</div>}
+            {ftsSearching && <div className="text-[11px] text-[var(--color-text-tertiary)] px-1">Searching...</div>}
             {ftsResults.map((r, i) => (
               <button
                 key={`${r.task_id}-${r.file_path}-${i}`}
@@ -317,9 +317,9 @@ export function ProjectsPanel() {
                   setFtsQuery("");
                   setFtsResults([]);
                 }}
-                className="w-full rounded-xl border border-[#2a2520] bg-[#1c1a17] px-3 py-2.5 text-left hover:bg-[#232019] transition-colors"
+                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2.5 text-left hover:bg-[var(--color-card-alt)] transition-colors"
               >
-                <div className="text-[11px] text-[#6b6459] truncate flex items-center gap-1.5">
+                <div className="text-[11px] text-[var(--color-text-tertiary)] truncate flex items-center gap-1.5">
                   {r.project_name}
                   {r.source === "semantic" && (
                     <span className="px-1.5 py-0.5 rounded-lg bg-violet-900/50 text-violet-300 text-[10px]">
@@ -327,12 +327,12 @@ export function ProjectsPanel() {
                     </span>
                   )}
                 </div>
-                {r.title_snippet && <div className="text-[12px] text-[#e8e0d4] truncate mt-0.5">{r.title_snippet}</div>}
-                <div className="text-[11px] text-[#9c9486] line-clamp-2 mt-0.5">{r.content_snippet}</div>
+                {r.title_snippet && <div className="text-[12px] text-[var(--color-text)] truncate mt-0.5">{r.title_snippet}</div>}
+                <div className="text-[11px] text-[var(--color-text-secondary)] line-clamp-2 mt-0.5">{r.content_snippet}</div>
               </button>
             ))}
             {!ftsSearching && ftsResults.length === 0 && (
-              <div className="text-[11px] text-[#6b6459] px-1">No results.</div>
+              <div className="text-[11px] text-[var(--color-text-tertiary)] px-1">No results.</div>
             )}
           </div>
         ) : (
@@ -361,7 +361,7 @@ export function ProjectsPanel() {
                       </button>
                       <button
                         onClick={() => setConfirmDeleteId(null)}
-                        className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-[#9c9486] hover:bg-[#1c1a17]"
+                        className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-[var(--color-card)]"
                       >
                         Cancel
                       </button>
@@ -375,11 +375,11 @@ export function ProjectsPanel() {
                       className={cn(
                         "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] transition-colors",
                         p.id === activeProjectId && !showMemory
-                          ? "bg-amber-500/[0.08] text-[#e8e0d4] font-medium"
-                          : "text-[#9c9486] hover:bg-[#1c1a17]",
+                          ? "bg-amber-500/[0.08] text-[var(--color-text)] font-medium"
+                          : "text-[var(--color-text-secondary)] hover:bg-[var(--color-card)]",
                       )}
                     >
-                      <span className="shrink-0 text-[11px] text-[#6b6459] tabular-nums">#{p.id}</span>
+                      <span className="shrink-0 text-[11px] text-[var(--color-text-tertiary)] tabular-nums">#{p.id}</span>
                       <span className="min-w-0 flex-1 truncate">{p.name}</span>
                       <MatterStatusDot counts={p.task_counts} />
                       <button
@@ -387,7 +387,7 @@ export function ProjectsPanel() {
                           e.stopPropagation();
                           setConfirmDeleteId(p.id);
                         }}
-                        className="shrink-0 rounded p-0.5 text-[#6b6459] opacity-0 transition-opacity hover:text-red-400 group-hover/item:opacity-100"
+                        className="shrink-0 rounded p-0.5 text-[var(--color-text-tertiary)] opacity-0 transition-opacity hover:text-red-400 group-hover/item:opacity-100"
                         title={`Delete ${vocab.projectSingular}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -397,23 +397,23 @@ export function ProjectsPanel() {
                 </div>
               ))}
               {projects.length === 0 && (
-                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#2a2520] px-4 py-6 text-center">
-                  <Folder className="h-6 w-6 text-[#6b6459] mb-2" />
-                  <div className="text-[12px] text-[#9c9486]">No {vocab.projectPlural} yet</div>
-                  <div className="text-[11px] text-[#6b6459] mt-0.5">Create one below to get started</div>
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] px-4 py-6 text-center">
+                  <Folder className="h-6 w-6 text-[var(--color-text-tertiary)] mb-2" />
+                  <div className="text-[12px] text-[var(--color-text-secondary)]">No {vocab.projectPlural} yet</div>
+                  <div className="text-[11px] text-[var(--color-text-tertiary)] mt-0.5">Create one below to get started</div>
                 </div>
               )}
             </div>
 
             {sharedProjects.length > 0 && (
-              <div className="mt-3 border-t border-[#2a2520] pt-3">
+              <div className="mt-3 border-t border-[var(--color-border)] pt-3">
                 <button
                   onClick={() => setSharedExpanded((v) => !v)}
-                  className="flex w-full items-center gap-1.5 px-1 py-1 text-[11px] font-medium uppercase tracking-[0.1em] text-[#6b6459] hover:text-[#9c9486] transition-colors"
+                  className="flex w-full items-center gap-1.5 px-1 py-1 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
                 >
                   <ChevronRight className={cn("h-3 w-3 transition-transform", sharedExpanded && "rotate-90")} />
                   Shared with you
-                  <span className="ml-auto rounded-full bg-[#1c1a17] px-1.5 py-0.5 text-[10px] tabular-nums normal-case tracking-normal">
+                  <span className="ml-auto rounded-full bg-[var(--color-card)] px-1.5 py-0.5 text-[10px] tabular-nums normal-case tracking-normal">
                     {sharedProjects.length}
                   </span>
                 </button>
@@ -429,13 +429,13 @@ export function ProjectsPanel() {
                         className={cn(
                           "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] transition-colors",
                           sp.id === activeProjectId && !showMemory
-                            ? "bg-blue-500/[0.08] text-[#e8e0d4] font-medium"
-                            : "text-[#9c9486] hover:bg-[#1c1a17]",
+                            ? "bg-blue-500/[0.08] text-[var(--color-text)] font-medium"
+                            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-card)]",
                         )}
                       >
-                        <span className="shrink-0 text-[11px] text-[#6b6459] tabular-nums">#{sp.id}</span>
+                        <span className="shrink-0 text-[11px] text-[var(--color-text-tertiary)] tabular-nums">#{sp.id}</span>
                         <span className="min-w-0 flex-1 truncate">{sp.name}</span>
-                        <span className="shrink-0 rounded bg-[#1c1a17] px-1.5 py-0.5 text-[10px] text-[#6b6459]">
+                        <span className="shrink-0 rounded bg-[var(--color-card)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-tertiary)]">
                           {sp.share_role}
                         </span>
                       </button>
@@ -451,45 +451,45 @@ export function ProjectsPanel() {
             )}
           </>
         )}
-        <div className="mt-4 shrink-0 border-t border-[#2a2520] pt-4">
+        <div className="mt-4 shrink-0 border-t border-[var(--color-border)] pt-4">
           <input
             value={newProjectName}
             onChange={(e) => setNewProjectName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleCreateProject()}
             placeholder={vocab.newProjectPlaceholder}
-            className="w-full rounded-xl border border-[#2a2520] bg-[#1c1a17] px-4 py-2.5 text-[14px] text-[#e8e0d4] outline-none placeholder:text-[#6b6459] focus:border-amber-500/30"
+            className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-2.5 text-[14px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-amber-500/30"
           />
           {/* Mode picker hidden — defaults to "general" */}
           {isLegalProjectWorkflow && (
-            <div className="mt-2 rounded-xl border border-[#2a2520] bg-[#151412] px-3 py-2.5">
+            <div className="mt-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2.5">
               <div className="min-w-0">
-                <div className="text-[11px] font-medium text-[#e8e0d4]">{legalWorkflowTitle}</div>
-                <div className="mt-1 text-[11px] text-[#6b6459]">
+                <div className="text-[11px] font-medium text-[var(--color-text)]">{legalWorkflowTitle}</div>
+                <div className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">
                   This {LEGAL_VOCAB.projectSingular} will use this workflow automatically.
                 </div>
               </div>
-              <div className="mt-2 rounded-lg border border-[#2a2520] bg-[#1c1a17]">
+              <div className="mt-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]">
                 <button
                   type="button"
                   onClick={() => setShowLegalWorkflowPicker((open) => !open)}
-                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-[#151412]"
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-[var(--color-bg-secondary)]"
                 >
                   <span className="min-w-0">
-                    <span className="block text-[11px] font-medium text-[#e8e0d4]">Workflow</span>
-                    <span className="block text-[10px] text-[#6b6459]">
+                    <span className="block text-[11px] font-medium text-[var(--color-text)]">Workflow</span>
+                    <span className="block text-[10px] text-[var(--color-text-tertiary)]">
                       {selectedLegalWorkflow?.label ?? legalWorkflowTitle}
                     </span>
                   </span>
                   <ChevronDown
                     className={cn(
-                      "h-3.5 w-3.5 shrink-0 text-[#6b6459] transition-transform",
+                      "h-3.5 w-3.5 shrink-0 text-[var(--color-text-tertiary)] transition-transform",
                       showLegalWorkflowPicker && "rotate-180",
                     )}
                   />
                 </button>
                 {selectedLegalWorkflow?.phases?.length ? (
-                  <div className="border-t border-[#2a2520] px-3 py-2.5">
-                    <span className="block text-[10px] font-medium uppercase tracking-[0.14em] text-[#6b6459]">
+                  <div className="border-t border-[var(--color-border)] px-3 py-2.5">
+                    <span className="block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">
                       Workflow stages
                     </span>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -500,18 +500,18 @@ export function ProjectsPanel() {
                         )
                         .map((phase, i, arr) => (
                           <span key={phase.name} className="flex items-center">
-                            <span className="rounded-lg bg-[#151412] px-2 py-0.5 text-[10px] text-[#9c9486] ring-1 ring-inset ring-[#2a2520]">
+                            <span className="rounded-lg bg-[var(--color-bg-secondary)] px-2 py-0.5 text-[10px] text-[var(--color-text-secondary)] ring-1 ring-inset ring-[var(--color-border)]">
                               {LEGAL_VOCAB.statusLabels[phase.name] ?? phase.label ?? phase.name}
                             </span>
-                            {i < arr.length - 1 && <span className="mx-1 text-[10px] text-[#6b6459]">→</span>}
+                            {i < arr.length - 1 && <span className="mx-1 text-[10px] text-[var(--color-text-tertiary)]">→</span>}
                           </span>
                         ))}
                     </div>
                   </div>
                 ) : null}
                 {showLegalWorkflowPicker && (
-                  <div className="border-t border-[#2a2520] px-3 py-2.5">
-                    <div className="space-y-1 rounded-lg border border-[#2a2520] bg-[#151412] p-1.5">
+                  <div className="border-t border-[var(--color-border)] px-3 py-2.5">
+                    <div className="space-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-1.5">
                       {legalWorkflowOptions.map((mode) => {
                         const selected = mode.name === (selectedLegalWorkflow?.name ?? defaultLegalMode);
                         return (
@@ -524,19 +524,19 @@ export function ProjectsPanel() {
                             }}
                             className={cn(
                               "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition-colors",
-                              selected ? "bg-amber-500/[0.08] text-[#e8e0d4]" : "text-[#9c9486] hover:bg-[#1c1a17]",
+                              selected ? "bg-amber-500/[0.08] text-[var(--color-text)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-card)]",
                             )}
                           >
                             <span className="min-w-0">
                               <span className="block truncate text-[11px] font-medium">{mode.label ?? mode.name}</span>
-                              <span className="block truncate text-[10px] text-[#6b6459]">{mode.name}</span>
+                              <span className="block truncate text-[10px] text-[var(--color-text-tertiary)]">{mode.name}</span>
                             </span>
                             {selected && <Check className="h-3.5 w-3.5 shrink-0 text-amber-400" />}
                           </button>
                         );
                       })}
-                      <div className="mt-1 rounded-md border border-dashed border-[#2a2520] bg-[#1c1a17] px-2 py-2">
-                        <div className="text-[10px] text-[#6b6459]">
+                      <div className="mt-1 rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-card)] px-2 py-2">
+                        <div className="text-[10px] text-[var(--color-text-tertiary)]">
                           {legalWorkflowOptions.length > 1
                             ? "Need to edit or add workflows?"
                             : "No custom workflows yet. Create one in Pipelines."}
@@ -554,15 +554,15 @@ export function ProjectsPanel() {
                   </div>
                 )}
               </div>
-              <div className="mt-2 rounded-lg border border-[#2a2520] bg-[#1c1a17]">
+              <div className="mt-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]">
                 <button
                   type="button"
                   onClick={() => setShowLegalMatterDetails((open) => !open)}
-                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-[#151412]"
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-[var(--color-bg-secondary)]"
                 >
                   <span className="min-w-0">
-                    <span className="block text-[11px] font-medium text-[#e8e0d4]">Matter details</span>
-                    <span className="block text-[10px] text-[#6b6459]">
+                    <span className="block text-[11px] font-medium text-[var(--color-text)]">Matter details</span>
+                    <span className="block text-[10px] text-[var(--color-text-tertiary)]">
                       {newProjectJurisdiction.trim()
                         ? `Jurisdiction: ${newProjectJurisdiction.trim()}`
                         : "Jurisdiction is optional. Add it if it helps agents target the right law."}
@@ -570,23 +570,23 @@ export function ProjectsPanel() {
                   </span>
                   <ChevronDown
                     className={cn(
-                      "h-3.5 w-3.5 shrink-0 text-[#6b6459] transition-transform",
+                      "h-3.5 w-3.5 shrink-0 text-[var(--color-text-tertiary)] transition-transform",
                       showLegalMatterDetails && "rotate-180",
                     )}
                   />
                 </button>
                 {showLegalMatterDetails && (
-                  <div className="border-t border-[#2a2520] px-3 py-2.5">
-                    <label className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-[#6b6459]">
+                  <div className="border-t border-[var(--color-border)] px-3 py-2.5">
+                    <label className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">
                       Jurisdiction (Optional)
                     </label>
                     <input
                       value={newProjectJurisdiction}
                       onChange={(e) => setNewProjectJurisdiction(e.target.value)}
                       placeholder="England & Wales, Delaware, SDNY..."
-                      className="w-full rounded-lg border border-[#2a2520] bg-[#151412] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none placeholder:text-[#6b6459] focus:border-amber-500/30"
+                      className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-amber-500/30"
                     />
-                    <div className="mt-1.5 text-[10px] text-[#6b6459]">
+                    <div className="mt-1.5 text-[10px] text-[var(--color-text-tertiary)]">
                       Helps agents ground research and retrieval. You can also add or edit it later.
                     </div>
                   </div>
@@ -597,7 +597,7 @@ export function ProjectsPanel() {
           <button
             onClick={handleCreateProject}
             disabled={creating || !newProjectName.trim()}
-            className="mt-2.5 w-full rounded-lg bg-amber-500/20 px-3 py-2.5 text-[13px] font-medium text-amber-300 hover:bg-amber-500/30 transition-colors disabled:cursor-not-allowed disabled:text-[#6b6459]"
+            className="mt-2.5 w-full rounded-lg bg-amber-500/20 px-3 py-2.5 text-[13px] font-medium text-amber-300 hover:bg-amber-500/30 transition-colors disabled:cursor-not-allowed disabled:text-[var(--color-text-tertiary)]"
           >
             {creating
               ? "Creating..."
@@ -608,8 +608,8 @@ export function ProjectsPanel() {
 
       {/* Center: Chat (project view only, not knowledge tabs) */}
       {!isSWE && !showMemory && selectedProject && !selectedDoc && (
-        <div className="flex min-w-0 flex-1 flex-col border-r border-[#2a2520]">
-          <ChatBody thread={`web:project-${selectedProject?.id}`} className="bg-[#0f0e0c]" />
+        <div className="flex min-w-0 flex-1 flex-col border-r border-[var(--color-border)]">
+          <ChatBody thread={`web:project-${selectedProject?.id}`} className="bg-[var(--color-bg)]" />
         </div>
       )}
 
@@ -627,24 +627,24 @@ export function ProjectsPanel() {
         ) : !selectedProject ? (
           <div className="flex h-full items-center justify-center">
             <div className="max-w-[360px] text-center">
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1c1a17] ring-1 ring-amber-900/20">
-                <Folder className="h-7 w-7 text-[#6b6459]" />
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--color-card)] ring-1 ring-amber-900/20">
+                <Folder className="h-7 w-7 text-[var(--color-text-tertiary)]" />
               </div>
-              <div className="text-[16px] font-semibold text-[#e8e0d4]">Get Started</div>
-              <div className="mt-2 text-[13px] leading-relaxed text-[#9c9486]">
+              <div className="text-[16px] font-semibold text-[var(--color-text)]">Get Started</div>
+              <div className="mt-2 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
                 <p>Create a {vocab.projectSingular} in the sidebar to start.</p>
                 <p>Each {vocab.projectSingular} gets its own document store and AI agent.</p>
               </div>
-              <div className="mt-5 space-y-2.5 text-left text-[13px] text-[#9c9486]">
-                <div className="rounded-xl border border-[#2a2520] bg-[#151412] px-4 py-3">
-                  <span className="text-[#e8e0d4] font-medium">1.</span> Name your {vocab.projectSingular} and select a
+              <div className="mt-5 space-y-2.5 text-left text-[13px] text-[var(--color-text-secondary)]">
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3">
+                  <span className="text-[var(--color-text)] font-medium">1.</span> Name your {vocab.projectSingular} and select a
                   mode
                 </div>
-                <div className="rounded-xl border border-[#2a2520] bg-[#151412] px-4 py-3">
-                  <span className="text-[#e8e0d4] font-medium">2.</span> Upload reference documents
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3">
+                  <span className="text-[var(--color-text)] font-medium">2.</span> Upload reference documents
                 </div>
-                <div className="rounded-xl border border-[#2a2520] bg-[#151412] px-4 py-3">
-                  <span className="text-[#e8e0d4] font-medium">3.</span> Chat with Borg about your docs
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3">
+                  <span className="text-[var(--color-text)] font-medium">3.</span> Chat with Borg about your docs
                 </div>
               </div>
             </div>
@@ -676,8 +676,8 @@ export function ProjectsPanel() {
 
       {/* Right: Chat panel for knowledge tabs */}
       {!isSWE && showMemory && (
-        <div className="flex h-full w-[30vw] min-w-[300px] max-w-[500px] shrink-0 flex-col border-l border-[#2a2520] bg-[#0f0e0c] overflow-hidden">
-          <ChatBody thread="web:dashboard" className="bg-[#0f0e0c]" />
+        <div className="flex h-full w-[30vw] min-w-[300px] max-w-[500px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden">
+          <ChatBody thread="web:dashboard" className="bg-[var(--color-bg)]" />
         </div>
       )}
     </div>
@@ -783,8 +783,8 @@ function KnowledgeView({ scope }: { scope: "org" | "my" }) {
             <Icon className={`h-6 w-6 ${accentText}`} />
           </div>
           <div>
-            <div className="text-[16px] font-semibold text-[#e8e0d4]">{title}</div>
-            <div className="text-[13px] text-[#6b6459]">{subtitle}</div>
+            <div className="text-[16px] font-semibold text-[var(--color-text)]">{title}</div>
+            <div className="text-[13px] text-[var(--color-text-tertiary)]">{subtitle}</div>
           </div>
         </div>
 
@@ -853,13 +853,13 @@ function KnowledgeView({ scope }: { scope: "org" | "my" }) {
               >
                 <Icon className={`h-6 w-6 ${accentText}`} />
               </div>
-              <p className="text-[14px] text-[#9c9486]">{emptyTitle}</p>
-              <p className="mt-1 text-[12px] text-[#6b6459]">{emptySubtitle}</p>
+              <p className="text-[14px] text-[var(--color-text-secondary)]">{emptyTitle}</p>
+              <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{emptySubtitle}</p>
             </div>
           )}
 
           {!isLoading && files.length === 0 && search && (
-            <div className="rounded-xl border border-dashed border-[#2a2520] px-4 py-4 text-[12px] text-[#6b6459] text-center">
+            <div className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-4 text-[12px] text-[var(--color-text-tertiary)] text-center">
               No files match the current filter.
             </div>
           )}

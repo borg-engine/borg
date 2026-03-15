@@ -69,14 +69,14 @@ export function LogViewer({ logs }: { logs: LogEvent[] }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 flex-col border-b border-[#2a2520]">
+      <div className="flex shrink-0 flex-col border-b border-[var(--color-border)]">
         {/* Mode toggle + level filter */}
         <div className="flex h-14 items-center justify-between px-5">
           <div className="flex gap-1">
             <button
               className={cn(
                 "rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors",
-                viewMode === "live" ? "bg-amber-500/[0.08] text-[#e8e0d4]" : "text-[#6b6459] hover:text-[#9c9486]",
+                viewMode === "live" ? "bg-amber-500/[0.08] text-[var(--color-text)]" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]",
               )}
               onClick={() => setViewMode("live")}
             >
@@ -85,7 +85,7 @@ export function LogViewer({ logs }: { logs: LogEvent[] }) {
             <button
               className={cn(
                 "rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors",
-                viewMode === "events" ? "bg-amber-500/[0.08] text-[#e8e0d4]" : "text-[#6b6459] hover:text-[#9c9486]",
+                viewMode === "events" ? "bg-amber-500/[0.08] text-[var(--color-text)]" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]",
               )}
               onClick={() => setViewMode("events")}
             >
@@ -98,7 +98,7 @@ export function LogViewer({ logs }: { logs: LogEvent[] }) {
                 key={f}
                 className={cn(
                   "rounded-md px-2.5 py-1.5 md:py-1 text-[11px] font-medium uppercase tracking-wide transition-colors",
-                  levelFilter === f ? "bg-amber-500/[0.08] text-[#e8e0d4]" : "text-[#6b6459] hover:text-[#9c9486]",
+                  levelFilter === f ? "bg-amber-500/[0.08] text-[var(--color-text)]" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]",
                 )}
                 onClick={() => setLevelFilter(f)}
               >
@@ -116,7 +116,7 @@ export function LogViewer({ logs }: { logs: LogEvent[] }) {
                 key={f}
                 className={cn(
                   "rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
-                  categoryFilter === f ? "bg-amber-500/15 text-amber-300" : "text-[#6b6459] hover:text-[#9c9486]",
+                  categoryFilter === f ? "bg-amber-500/15 text-amber-300" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]",
                 )}
                 onClick={() => setCategoryFilter(f)}
               >
@@ -132,9 +132,9 @@ export function LogViewer({ logs }: { logs: LogEvent[] }) {
           {viewMode === "live" ? (
             filteredLogs.map((log) => <LogLine key={log._key} log={log} />)
           ) : loadingEvents ? (
-            <div className="text-[11px] text-[#6b6459] py-4 text-center">Loading events...</div>
+            <div className="text-[11px] text-[var(--color-text-tertiary)] py-4 text-center">Loading events...</div>
           ) : events.length === 0 ? (
-            <div className="text-[11px] text-[#6b6459] py-4 text-center">No events found</div>
+            <div className="text-[11px] text-[var(--color-text-tertiary)] py-4 text-center">No events found</div>
           ) : (
             events.map((ev) => <EventLine key={ev.id} event={ev} />)
           )}
@@ -195,9 +195,9 @@ function LogLine({ log }: { log: LogEvent }) {
   const message = safeText(log.message, "");
   return (
     <div className="whitespace-pre-wrap break-all py-px font-mono text-[12px] md:text-[11px] leading-relaxed">
-      <span className="text-[#6b6459]">{ts}</span>{" "}
+      <span className="text-[var(--color-text-tertiary)]">{ts}</span>{" "}
       <span className={levelColors[level] ?? "text-zinc-500"}>{`${level}`.padEnd(4)}</span>{" "}
-      <span className="text-[#e8e0d4]">{message}</span>
+      <span className="text-[var(--color-text)]">{message}</span>
       {log.metadata && <span className="text-zinc-600 ml-1">{log.metadata}</span>}
     </div>
   );
@@ -216,7 +216,7 @@ function EventLine({ event }: { event: DbEvent }) {
       </span>{" "}
       <span className={levelColors[level] ?? "text-zinc-500"}>{`${level}`.padEnd(5)}</span>{" "}
       <span className={categoryColors[category] ?? "text-zinc-500"}>[{category}]</span>{" "}
-      <span className="text-[#e8e0d4]">{message}</span>
+      <span className="text-[var(--color-text)]">{message}</span>
       {event.metadata && <span className="text-zinc-600 ml-1">{event.metadata}</span>}
     </div>
   );

@@ -135,18 +135,18 @@ export function FileUploadArea({
         "rounded-xl border-2 border-dashed p-4 transition-colors cursor-pointer",
         dragOver
           ? "border-amber-500/40 bg-amber-500/[0.04]"
-          : "border-[#2a2520] bg-[#151412] hover:border-amber-500/20",
+          : "border-[var(--color-border)] bg-[var(--color-bg-secondary)] hover:border-amber-500/20",
       )}
     >
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#1c1a17]">
-          <Upload className="h-4 w-4 text-[#6b6459]" />
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-card)]">
+          <Upload className="h-4 w-4 text-[var(--color-text-tertiary)]" />
         </div>
         <div>
-          <p className="text-[13px] font-medium text-[#e8e0d4]">
+          <p className="text-[13px] font-medium text-[var(--color-text)]">
             Drop files here or <span className="text-amber-400">browse</span>
           </p>
-          <p className="mt-0.5 text-[11px] text-[#6b6459]">{subtitle ?? "Upload source documents"}</p>
+          <p className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">{subtitle ?? "Upload source documents"}</p>
         </div>
         <input
           ref={fileInputRef}
@@ -181,16 +181,16 @@ export function FileSearchBar({
   return (
     <div className={cn("flex items-center gap-3", className)}>
       <div className="relative flex-1">
-        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6b6459]" />
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
         <input
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder ?? "Search files..."}
-          className="w-full rounded-xl border border-[#2a2520] bg-[#151412] py-2.5 pl-10 pr-4 text-[14px] text-[#e8e0d4] outline-none placeholder:text-[#6b6459] focus:border-amber-500/30"
+          className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] py-2.5 pl-10 pr-4 text-[14px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-amber-500/30"
         />
       </div>
-      {stats && <div className="shrink-0 text-[12px] text-[#6b6459] tabular-nums whitespace-nowrap">{stats}</div>}
+      {stats && <div className="shrink-0 text-[12px] text-[var(--color-text-tertiary)] tabular-nums whitespace-nowrap">{stats}</div>}
     </div>
   );
 }
@@ -223,7 +223,7 @@ export function FileListPagination({
   if (filePage.total <= fileCount) return null;
 
   return (
-    <div className="flex items-center justify-between gap-3 text-[11px] text-[#6b6459]">
+    <div className="flex items-center justify-between gap-3 text-[11px] text-[var(--color-text-tertiary)]">
       <span>
         {filePage.total === 0 ? 0 : currentOffset + 1}–{Math.min(currentOffset + fileCount, filePage.total)} of{" "}
         {filePage.total}
@@ -232,7 +232,7 @@ export function FileListPagination({
         <select
           value={pageSize}
           onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          className="rounded-lg border border-[#2a2520] bg-[#151412] px-2 py-1.5 text-[12px] text-[#9c9486] outline-none"
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1.5 text-[12px] text-[var(--color-text-secondary)] outline-none"
         >
           {[20, 50, 100].map((s) => (
             <option key={s} value={s}>
@@ -243,14 +243,14 @@ export function FileListPagination({
         <button
           onClick={onPrev}
           disabled={!canGoPrev}
-          className="rounded-lg border border-[#2a2520] px-3 py-1.5 text-[12px] text-[#9c9486] disabled:opacity-40 hover:border-amber-900/30"
+          className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] disabled:opacity-40 hover:border-amber-900/30"
         >
           Prev
         </button>
         <button
           onClick={onNext}
           disabled={!canGoNext}
-          className="rounded-lg border border-[#2a2520] px-3 py-1.5 text-[12px] text-[#9c9486] disabled:opacity-40 hover:border-amber-900/30"
+          className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)] disabled:opacity-40 hover:border-amber-900/30"
         >
           Next
         </button>
@@ -289,26 +289,26 @@ export function FileListItem({
       onClick={() => onClick?.()}
       className={cn(
         "group flex items-center gap-2.5 rounded-xl border px-3 py-2 transition-colors hover:border-amber-900/30",
-        isActive ? "border-amber-500/30 bg-[#1a1814]" : "border-[#2a2520] bg-[#151412]",
+        isActive ? "border-amber-500/30 bg-[var(--color-surface)]" : "border-[var(--color-border)] bg-[var(--color-bg-secondary)]",
         (canPreview || onClick) && "cursor-pointer",
       )}
     >
       <div
         className={cn(
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-          isActive ? "bg-amber-500/10 ring-1 ring-amber-500/30" : "bg-[#1c1a17] ring-1 ring-amber-900/20",
+          isActive ? "bg-amber-500/10 ring-1 ring-amber-500/30" : "bg-[var(--color-card)] ring-1 ring-amber-900/20",
         )}
       >
-        <FileText className={cn("h-3.5 w-3.5", isActive ? "text-amber-400" : "text-[#6b6459]")} />
+        <FileText className={cn("h-3.5 w-3.5", isActive ? "text-amber-400" : "text-[var(--color-text-tertiary)]")} />
       </div>
       {index != null && (
-        <span className="shrink-0 text-[11px] text-[#6b6459] tabular-nums w-[32px] text-right">{index}</span>
+        <span className="shrink-0 text-[11px] text-[var(--color-text-tertiary)] tabular-nums w-[32px] text-right">{index}</span>
       )}
-      <span className="shrink-0 text-[11px] text-[#6b6459] tabular-nums w-[52px]">
+      <span className="shrink-0 text-[11px] text-[var(--color-text-tertiary)] tabular-nums w-[52px]">
         {formatFileSize(file.size_bytes)}
       </span>
       <div className="min-w-0 flex-1 flex items-center gap-2">
-        <span className="text-[13px] font-medium text-[#e8e0d4] truncate">{file.file_name}</span>
+        <span className="text-[13px] font-medium text-[var(--color-text)] truncate">{file.file_name}</span>
         {isActive && (
           <span className="flex items-center gap-1 shrink-0">
             <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
@@ -321,7 +321,7 @@ export function FileListItem({
         {onDownload && (
           <button
             onClick={(e) => { e.stopPropagation(); onDownload(); }}
-            className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-amber-500/10 hover:text-amber-400"
+            className="rounded-lg p-2 text-[var(--color-text-tertiary)] transition-colors hover:bg-amber-500/10 hover:text-amber-400"
             title="Download"
           >
             <Download className="h-3.5 w-3.5" />
@@ -330,7 +330,7 @@ export function FileListItem({
         {onDelete && (
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="rounded-lg p-2 text-[#6b6459] transition-colors hover:bg-red-500/10 hover:text-red-400"
+            className="rounded-lg p-2 text-[var(--color-text-tertiary)] transition-colors hover:bg-red-500/10 hover:text-red-400"
             title="Delete"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -338,7 +338,7 @@ export function FileListItem({
         )}
         {extraActions}
         {canPreview && !onDownload && !onDelete && !extraActions && (
-          <Eye className="h-3.5 w-3.5 text-[#6b6459]" />
+          <Eye className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" />
         )}
       </div>
     </div>

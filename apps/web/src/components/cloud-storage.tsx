@@ -75,7 +75,7 @@ function OneDriveIcon() {
 }
 
 function ICloudIcon() {
-  return <CloudOff className="h-4 w-4 text-[#6b6459]" />;
+  return <CloudOff className="h-4 w-4 text-[var(--color-text-tertiary)]" />;
 }
 
 function CloudProviderIcon({ provider }: { provider: string }) {
@@ -407,21 +407,21 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
   return (
     <>
       {/* Cloud Storage dropdown */}
-      <div className="rounded-xl border border-[#2a2520] bg-[#151412]">
+      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex w-full items-center justify-between px-4 py-3 text-[12px] font-semibold text-[#e8e0d4] hover:bg-[#1a1816] rounded-xl transition-colors"
+          className="flex w-full items-center justify-between px-4 py-3 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[#1a1816] rounded-xl transition-colors"
         >
           <span className="flex items-center gap-2">
             Cloud Storage
             {cloudConnections.length > 0 && (
-              <span className="rounded-full bg-[#2a2520] px-1.5 py-0.5 text-[10px] text-[#6b6459]">
+              <span className="rounded-full bg-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-tertiary)]">
                 {cloudConnections.length}
               </span>
             )}
           </span>
-          <ChevronDown className={cn("h-3.5 w-3.5 text-[#6b6459] transition-transform", expanded && "rotate-180")} />
+          <ChevronDown className={cn("h-3.5 w-3.5 text-[var(--color-text-tertiary)] transition-transform", expanded && "rotate-180")} />
         </button>
         {expanded && (
           <div className="px-4 pb-4">
@@ -440,7 +440,7 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
                 )}
               >
                 <span>{cloudMessage.text}</span>
-                <button onClick={() => setCloudMessage(null)} className="shrink-0 text-[#6b6459] hover:text-[#e8e0d4]">
+                <button onClick={() => setCloudMessage(null)} className="shrink-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]">
                   <X className="h-3 w-3" />
                 </button>
               </div>
@@ -460,7 +460,7 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
                           ? `Connect ${provider.label}`
                           : `Configure ${provider.label} credentials in Settings > Cloud Storage`
                     }
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#2a2520] px-3 py-1.5 text-[12px] text-[#e8e0d4] transition-colors hover:bg-[#232019] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-card-alt)] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <CloudProviderIcon provider={provider.id} />
                     {provider.label}
@@ -469,12 +469,12 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
               })}
               {/* iCloud - disabled with explanation */}
               <div
-                className="group relative inline-flex items-center gap-1.5 rounded-lg border border-[#2a2520] px-3 py-1.5 text-[12px] text-[#6b6459] cursor-not-allowed opacity-50"
+                className="group relative inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] text-[var(--color-text-tertiary)] cursor-not-allowed opacity-50"
               >
                 <ICloudIcon />
                 <span>iCloud</span>
-                <Info className="h-3 w-3 text-[#6b6459]" />
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-56 -translate-x-1/2 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[11px] leading-relaxed text-[#9c9486] opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+                <Info className="h-3 w-3 text-[var(--color-text-tertiary)]" />
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-56 -translate-x-1/2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[11px] leading-relaxed text-[var(--color-text-secondary)] opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
                   iCloud Drive does not support standard OAuth. To import iCloud files, download them to your device first, then upload directly.
                 </div>
               </div>
@@ -483,23 +483,23 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
               {cloudConnections.map((conn) => (
                 <div
                   key={conn.id}
-                  className="flex items-center justify-between rounded-lg border border-[#2a2520] px-3 py-2 text-[12px]"
+                  className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-[12px]"
                 >
-                  <div className="min-w-0 flex items-center gap-1.5 text-[#e8e0d4]">
+                  <div className="min-w-0 flex items-center gap-1.5 text-[var(--color-text)]">
                     <CloudProviderIcon provider={conn.provider} />
                     <span className="truncate">{conn.account_email || cloudProviderLabel(conn.provider)}</span>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       onClick={() => openCloudBrowser(conn)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#2a2520] px-2.5 py-1 text-[12px] text-[#e8e0d4] transition-colors hover:bg-[#232019]"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-card-alt)]"
                     >
                       <Folder className="h-3 w-3" />
                       Browse
                     </button>
                     <button
                       onClick={() => disconnectCloudConnection(conn)}
-                      className="rounded-lg p-1.5 text-[#6b6459] transition-colors hover:bg-red-500/10 hover:text-red-400"
+                      className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-red-500/10 hover:text-red-400"
                       title="Disconnect"
                     >
                       <X className="h-3 w-3" />
@@ -508,7 +508,7 @@ export function CloudStoragePanel({ projectId, settings, onImported }: CloudStor
                 </div>
               ))}
               {!cloudConnectionsLoading && cloudConnections.length === 0 && (
-                <div className="text-[12px] text-[#6b6459]">No connected cloud accounts.</div>
+                <div className="text-[12px] text-[var(--color-text-tertiary)]">No connected cloud accounts.</div>
               )}
             </div>
           </div>

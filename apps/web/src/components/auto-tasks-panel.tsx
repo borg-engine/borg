@@ -64,21 +64,21 @@ export function AutoTasksPanel() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-[#2a2520] p-5">
+      <div className="shrink-0 border-b border-[var(--color-border)] p-5">
         <div className="mx-auto max-w-4xl flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1c1a17] ring-1 ring-amber-900/20">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-card)] ring-1 ring-amber-900/20">
             <Zap className="h-6 w-6 text-amber-400/60" />
           </div>
           <div className="flex-1">
-            <h2 className="text-[20px] font-semibold text-[#e8e0d4]">Auto Tasks</h2>
-            <p className="text-[13px] text-[#6b6459]">Tasks generated automatically when the pipeline is idle.</p>
+            <h2 className="text-[20px] font-semibold text-[var(--color-text)]">Auto Tasks</h2>
+            <p className="text-[13px] text-[var(--color-text-tertiary)]">Tasks generated automatically when the pipeline is idle.</p>
           </div>
           {activeModes.length > 1 && (
             <div>
               <select
                 value={currentMode?.name ?? ""}
                 onChange={(e) => setSelectedMode(e.target.value)}
-                className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none focus:border-amber-500/30"
+                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none focus:border-amber-500/30"
               >
                 {activeModes.map((m) => (
                   <option key={m.name} value={m.name}>
@@ -111,7 +111,7 @@ export function AutoTasksPanel() {
       </div>
 
       {(isDirty || msg) && (
-        <div className="sticky bottom-0 flex shrink-0 items-center gap-3 border-t border-[#2a2520] bg-[#0f0e0c]/95 px-5 py-3 backdrop-blur">
+        <div className="sticky bottom-0 flex shrink-0 items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-bg)]/95 px-5 py-3 backdrop-blur">
           {isDirty && !isReadOnly && (
             <button
               onClick={handleSave}
@@ -121,7 +121,7 @@ export function AutoTasksPanel() {
               {busy ? "Saving..." : "Save"}
             </button>
           )}
-          {msg && <span className="ml-auto text-[12px] text-[#6b6459]">{msg}</span>}
+          {msg && <span className="ml-auto text-[12px] text-[var(--color-text-tertiary)]">{msg}</span>}
         </div>
       )}
     </div>

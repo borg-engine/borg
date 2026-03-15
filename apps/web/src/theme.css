@@ -1,0 +1,219 @@
+/* ── Theme CSS Variables ─────────────────────────────────────────────────
+   All themeable colors are defined here as CSS custom properties.
+   The default (:root) values match the existing dark theme exactly.
+   Presets override via [data-theme="..."] on <html>.
+   Custom user overrides are applied inline via JS.
+   ──────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Base backgrounds */
+  --color-bg: #0f0e0c;
+  --color-bg-secondary: #151412;
+  --color-card: #1c1a17;
+  --color-card-alt: #232019;
+  --color-surface: #1a1814;
+
+  /* Borders */
+  --color-border: #2a2520;
+  --color-border-hover: #3a3530;
+
+  /* Text */
+  --color-text: #e8e0d4;
+  --color-text-secondary: #9c9486;
+  --color-text-tertiary: #6b6459;
+  --color-text-muted: #4a443d;
+  --color-text-faint: #4a4540;
+
+  /* Accent */
+  --color-accent: #f59e0b;
+  --color-accent-dim: #92400e;
+  --color-accent-hover: #d97706;
+  --color-accent-text: #fbbf24;
+  --color-accent-soft: rgba(245, 158, 11, 0.08);
+  --color-accent-soft-hover: rgba(245, 158, 11, 0.05);
+  --color-accent-badge: rgba(245, 158, 11, 0.06);
+  --color-accent-btn-bg: rgba(245, 158, 11, 0.15);
+  --color-accent-btn-ring: rgba(245, 158, 11, 0.20);
+  --color-accent-btn-hover: rgba(245, 158, 11, 0.20);
+
+  /* Status */
+  --color-success: #22c55e;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+
+  /* UI elements */
+  --color-input-bg: #0f0e0c;
+  --color-scrollbar: rgba(87, 67, 51, 0.3);
+  --color-scrollbar-hover: rgba(87, 67, 51, 0.5);
+  --color-selection-bg: rgba(194, 145, 61, 0.3);
+  --color-selection-text: #fff;
+
+  /* Layout */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --spacing-density: 1;
+  --font-family: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+}
+
+/* ── Preset: Light ───────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --color-bg: #faf8f5;
+  --color-bg-secondary: #ffffff;
+  --color-card: #f0ece5;
+  --color-card-alt: #e8e3da;
+  --color-surface: #f5f1ea;
+
+  --color-border: #d4cfc7;
+  --color-border-hover: #c4bfb7;
+
+  --color-text: #1c1a17;
+  --color-text-secondary: #5c574f;
+  --color-text-tertiary: #8a847a;
+  --color-text-muted: #a8a29e;
+  --color-text-faint: #b8b2a8;
+
+  --color-accent: #b45309;
+  --color-accent-dim: #92400e;
+  --color-accent-hover: #a3520c;
+  --color-accent-text: hsl(38, 80%, 40%);
+  --color-accent-soft: rgba(180, 83, 9, 0.08);
+  --color-accent-soft-hover: rgba(180, 83, 9, 0.05);
+  --color-accent-badge: rgba(180, 83, 9, 0.06);
+  --color-accent-btn-bg: rgba(180, 83, 9, 0.12);
+  --color-accent-btn-ring: rgba(180, 83, 9, 0.20);
+  --color-accent-btn-hover: rgba(180, 83, 9, 0.15);
+
+  --color-success: #16a34a;
+  --color-error: #dc2626;
+  --color-warning: #d97706;
+  --color-info: #2563eb;
+
+  --color-input-bg: #ffffff;
+  --color-scrollbar: rgba(87, 67, 51, 0.25);
+  --color-scrollbar-hover: rgba(87, 67, 51, 0.4);
+  --color-selection-bg: rgba(194, 145, 61, 0.25);
+  --color-selection-text: #1c1a17;
+}
+
+/* ── Preset: Midnight ────────────────────────────────────────────────── */
+[data-theme="midnight"] {
+  --color-bg: #0a0a1a;
+  --color-bg-secondary: #10102a;
+  --color-card: #161636;
+  --color-card-alt: #1c1c40;
+  --color-surface: #141430;
+
+  --color-border: #2a2a50;
+  --color-border-hover: #3a3a60;
+
+  --color-text: #e0e0f0;
+  --color-text-secondary: #9898b8;
+  --color-text-tertiary: #6868a8;
+  --color-text-muted: #4a4a78;
+  --color-text-faint: #404068;
+
+  --color-accent: #818cf8;
+  --color-accent-dim: #4338ca;
+  --color-accent-hover: #6366f1;
+  --color-accent-text: #a5b4fc;
+  --color-accent-soft: rgba(129, 140, 248, 0.08);
+  --color-accent-soft-hover: rgba(129, 140, 248, 0.05);
+  --color-accent-badge: rgba(129, 140, 248, 0.06);
+  --color-accent-btn-bg: rgba(129, 140, 248, 0.15);
+  --color-accent-btn-ring: rgba(129, 140, 248, 0.20);
+  --color-accent-btn-hover: rgba(129, 140, 248, 0.20);
+
+  --color-success: #34d399;
+  --color-error: #f87171;
+  --color-warning: #fbbf24;
+  --color-info: #60a5fa;
+
+  --color-input-bg: #0a0a1a;
+  --color-scrollbar: rgba(100, 100, 160, 0.3);
+  --color-scrollbar-hover: rgba(100, 100, 160, 0.5);
+  --color-selection-bg: rgba(129, 140, 248, 0.3);
+  --color-selection-text: #fff;
+}
+
+/* ── Preset: Forest ──────────────────────────────────────────────────── */
+[data-theme="forest"] {
+  --color-bg: #0a120a;
+  --color-bg-secondary: #101c10;
+  --color-card: #162216;
+  --color-card-alt: #1c2a1c;
+  --color-surface: #142014;
+
+  --color-border: #2a3e2a;
+  --color-border-hover: #3a4e3a;
+
+  --color-text: #d8e8d8;
+  --color-text-secondary: #8eb88e;
+  --color-text-tertiary: #5a8a5a;
+  --color-text-muted: #3a6a3a;
+  --color-text-faint: #305030;
+
+  --color-accent: #22c55e;
+  --color-accent-dim: #166534;
+  --color-accent-hover: #16a34a;
+  --color-accent-text: #4ade80;
+  --color-accent-soft: rgba(34, 197, 94, 0.08);
+  --color-accent-soft-hover: rgba(34, 197, 94, 0.05);
+  --color-accent-badge: rgba(34, 197, 94, 0.06);
+  --color-accent-btn-bg: rgba(34, 197, 94, 0.15);
+  --color-accent-btn-ring: rgba(34, 197, 94, 0.20);
+  --color-accent-btn-hover: rgba(34, 197, 94, 0.20);
+
+  --color-success: #34d399;
+  --color-error: #f87171;
+  --color-warning: #fbbf24;
+  --color-info: #60a5fa;
+
+  --color-input-bg: #0a120a;
+  --color-scrollbar: rgba(60, 120, 60, 0.3);
+  --color-scrollbar-hover: rgba(60, 120, 60, 0.5);
+  --color-selection-bg: rgba(34, 197, 94, 0.3);
+  --color-selection-text: #fff;
+}
+
+/* ── Preset: Warm ────────────────────────────────────────────────────── */
+[data-theme="warm"] {
+  --color-bg: #1a1210;
+  --color-bg-secondary: #201816;
+  --color-card: #2a201e;
+  --color-card-alt: #322a26;
+  --color-surface: #261e1c;
+
+  --color-border: #3e3230;
+  --color-border-hover: #4e4240;
+
+  --color-text: #f0e0d0;
+  --color-text-secondary: #b89878;
+  --color-text-tertiary: #8a6a4a;
+  --color-text-muted: #5a4a3a;
+  --color-text-faint: #4a3e32;
+
+  --color-accent: #f97316;
+  --color-accent-dim: #9a3412;
+  --color-accent-hover: #ea580c;
+  --color-accent-text: #fb923c;
+  --color-accent-soft: rgba(249, 115, 22, 0.08);
+  --color-accent-soft-hover: rgba(249, 115, 22, 0.05);
+  --color-accent-badge: rgba(249, 115, 22, 0.06);
+  --color-accent-btn-bg: rgba(249, 115, 22, 0.15);
+  --color-accent-btn-ring: rgba(249, 115, 22, 0.20);
+  --color-accent-btn-hover: rgba(249, 115, 22, 0.20);
+
+  --color-success: #22c55e;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+
+  --color-input-bg: #1a1210;
+  --color-scrollbar: rgba(120, 80, 50, 0.3);
+  --color-scrollbar-hover: rgba(120, 80, 50, 0.5);
+  --color-selection-bg: rgba(249, 115, 22, 0.3);
+  --color-selection-text: #fff;
+}
