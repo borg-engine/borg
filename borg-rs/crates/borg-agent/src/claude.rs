@@ -19,7 +19,7 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 const BORG_SIGNAL_MARKER: &str = "BORG_SIGNAL:";
-const BORG_MCP_READ_ONLY_TOOLS: &[&str] = &[
+pub const BORG_MCP_READ_ONLY_TOOLS: &[&str] = &[
     "mcp__borg__list_services",
     "mcp__borg__search_documents",
     "mcp__borg__list_documents",

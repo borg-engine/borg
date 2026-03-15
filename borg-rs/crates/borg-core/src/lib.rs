@@ -23,6 +23,7 @@ pub mod sidecar;
 pub mod stream;
 pub mod telegram;
 pub mod tool_calls;
+pub mod tool_update;
 pub mod traits;
 pub mod types;
 

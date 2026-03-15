@@ -376,48 +376,22 @@ impl AgentBackend for AgentSdkBackend {
         let mut instruction =
             crate::instruction::build_instruction(task, phase, &ctx, file_listing.as_deref());
 
-        // Agent-SDK uses MCP tools for document access. Prepend retrieval
-        // instructions so the model does retrieval BEFORE anything else.
+        // Agent-SDK uses MCP tools for document access. The MCP tools are deferred
+        // and must be fetched via ToolSearch before use. Prepend retrieval instructions.
         let retrieval_preamble = "\
-             IMPORTANT: Your FIRST action must be document retrieval using MCP tools. \
-             Do NOT write any deliverables or analysis until you have completed these steps:\n\
-             1. Call mcp__borg__list_documents to see all project documents\n\
-             2. Call mcp__borg__search_documents with at least 3 distinct queries\n\
-             3. Call mcp__borg__read_document to read the full text of key documents\n\
-             4. Call mcp__borg__check_coverage to verify coverage\n\
-             The retrieval protocol guard WILL reject your work if these tools are not called.\n\
-             After completing retrieval, proceed with the task below.\n\n---\n\n";
+             IMPORTANT: Your FIRST actions must be document retrieval. The project corpus is \
+             accessible only via MCP tools. These are deferred tools — you MUST call ToolSearch \
+             to load them before use.\n\n\
+             Step 1: Call ToolSearch with query \"select:mcp__borg__list_documents,mcp__borg__search_documents,mcp__borg__read_document,mcp__borg__check_coverage,mcp__borg__get_document_categories\" to fetch the MCP tool schemas.\n\
+             Step 2: Call mcp__borg__list_documents to inventory all project documents.\n\
+             Step 3: Call mcp__borg__search_documents with at least 3 distinct queries.\n\
+             Step 4: Call mcp__borg__read_document to read full documents for key clauses.\n\
+             Step 5: Call mcp__borg__check_coverage to verify analysis coverage.\n\n\
+             Do NOT write any deliverables until steps 1-4 are complete. The retrieval protocol \
+             guard WILL reject your work if these tools are not called.\n\n---\n\n";
         instruction = format!("{retrieval_preamble}{instruction}");
 
-        let allowed: Vec<String> = if phase.allowed_tools.is_empty() {
-            Vec::new()
-        } else {
-            phase
-                .allowed_tools
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect()
-        };
-
-        let mut disallowed: Vec<String> = if phase.disallowed_tools.is_empty() {
-            Vec::new()
-        } else {
-            phase
-                .disallowed_tools
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect()
-        };
-        if !ctx.disallowed_tools.is_empty() {
-            for t in ctx.disallowed_tools.split(',') {
-                let t = t.trim().to_string();
-                if !t.is_empty() && !disallowed.contains(&t) {
-                    disallowed.push(t);
-                }
-            }
-        }
-
-        // Build MCP servers config
+        // Build MCP servers config first so we know what tools to allow
         let mcp_servers = if !ctx.borg_api_token.is_empty() && !ctx.borg_api_url.is_empty() {
             let api_keys_vec: Vec<(String, String)> = ctx
                 .api_keys
@@ -437,6 +411,49 @@ impl AgentBackend for AgentSdkBackend {
         } else {
             serde_json::Value::Null
         };
+
+        let mut allowed: Vec<String> = if phase.allowed_tools.is_empty() {
+            Vec::new()
+        } else {
+            phase
+                .allowed_tools
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect()
+        };
+
+        // Merge MCP tool names into allowed_tools, same as the CLI backend does.
+        // Without this, the SDK filters out MCP tools and the model never calls them.
+        if !allowed.is_empty() {
+            if let Some(mcp_obj) = mcp_servers.as_object() {
+                if mcp_obj.contains_key("borg") {
+                    for tool in crate::claude::BORG_MCP_READ_ONLY_TOOLS {
+                        let t = tool.to_string();
+                        if !allowed.contains(&t) {
+                            allowed.push(t);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut disallowed: Vec<String> = if phase.disallowed_tools.is_empty() {
+            Vec::new()
+        } else {
+            phase
+                .disallowed_tools
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect()
+        };
+        if !ctx.disallowed_tools.is_empty() {
+            for t in ctx.disallowed_tools.split(',') {
+                let t = t.trim().to_string();
+                if !t.is_empty() && !disallowed.contains(&t) {
+                    disallowed.push(t);
+                }
+            }
+        }
 
         let resume = if !phase.fresh_session && !task.session_id.is_empty() {
             Some(task.session_id.clone())
@@ -461,6 +478,13 @@ impl AgentBackend for AgentSdkBackend {
                 env.insert("CLAUDE_CODE_OAUTH_TOKEN".into(), token);
             }
         }
+
+        info!(
+            task_id = task.id,
+            allowed_tools = ?allowed,
+            mcp_null = mcp_servers.is_null(),
+            "bridge run_phase: tools config"
+        );
 
         let request_id = next_request_id();
         let request = QueryRequest {

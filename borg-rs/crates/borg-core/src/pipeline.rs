@@ -226,6 +226,8 @@ impl Pipeline {
         phase: &PhaseConfig,
         ctx: PhaseContext,
     ) -> Result<PhaseOutput> {
+        // Ensure agent CLI tools are current (no-ops if updated within 24h)
+        crate::tool_update::ensure_agent_tools_updated().await;
         self.ai_request_count.fetch_add(1, Ordering::Relaxed);
         backend.run_phase(task, phase, ctx).await
     }
