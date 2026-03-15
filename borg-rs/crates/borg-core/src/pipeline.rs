@@ -5952,7 +5952,25 @@ fn inspect_legal_retrieval_trace(raw_stream: &str) -> LegalRetrievalTrace {
             continue;
         }
 
-        if value.get("type").and_then(|v| v.as_str()) != Some("assistant") {
+        let event_type = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+        // Agent-sdk bridge format: {"type":"tool_use","tool":"...","input":{...}}
+        if event_type == "tool_use" {
+            let name = value.get("tool").and_then(|v| v.as_str()).unwrap_or_default();
+            let input = value
+                .get("input")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
+            process_retrieval_tool_call(
+                name,
+                &input,
+                &mut trace,
+                &mut distinct_queries,
+            );
+            continue;
+        }
+
+        if event_type != "assistant" {
             continue;
         }
         let Some(blocks) = value
@@ -5976,43 +5994,56 @@ fn inspect_legal_retrieval_trace(raw_stream: &str) -> LegalRetrievalTrace {
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!({}));
 
-            match normalize_tool_name(name) {
-                "list_documents" => trace.inventory_calls += 1,
-                "get_document_categories" => trace.category_calls += 1,
-                "search_documents" => {
-                    trace.search_calls += 1;
-                    if let Some(query) = extract_trace_query(&input, &["query", "q"]) {
-                        let normalized = normalize_trace_query(&query);
-                        if distinct_queries.insert(normalized.clone()) {
-                            trace.distinct_search_queries.push(query.clone());
-                        }
-                        trace.search_queries.push(query);
-                    }
-                },
-                "check_coverage" => {
-                    trace.coverage_calls += 1;
-                    if let Some(query) = extract_trace_query(&input, &["query", "q"]) {
-                        trace.coverage_queries.push(query);
-                    }
-                },
-                "read_document" => trace.full_document_reads += 1,
-                "Read"
-                    if block
-                        .get("input")
-                        .and_then(|v| v.get("file_path"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.contains("/project_files/") || s.starts_with("project_files/"))
-                        .unwrap_or(false)
-                    => {
-                        trace.full_document_reads += 1;
-                    },
-                "WebFetch" => classify_borg_webfetch(&input, &mut trace, &mut distinct_queries),
-                _ => {},
-            }
+            process_retrieval_tool_call(
+                name,
+                &input,
+                &mut trace,
+                &mut distinct_queries,
+            );
         }
     }
 
     trace
+}
+
+fn process_retrieval_tool_call(
+    name: &str,
+    input: &serde_json::Value,
+    trace: &mut LegalRetrievalTrace,
+    distinct_queries: &mut HashSet<String>,
+) {
+    match normalize_tool_name(name) {
+        "list_documents" => trace.inventory_calls += 1,
+        "get_document_categories" => trace.category_calls += 1,
+        "search_documents" => {
+            trace.search_calls += 1;
+            if let Some(query) = extract_trace_query(input, &["query", "q"]) {
+                let normalized = normalize_trace_query(&query);
+                if distinct_queries.insert(normalized.clone()) {
+                    trace.distinct_search_queries.push(query.clone());
+                }
+                trace.search_queries.push(query);
+            }
+        }
+        "check_coverage" => {
+            trace.coverage_calls += 1;
+            if let Some(query) = extract_trace_query(input, &["query", "q"]) {
+                trace.coverage_queries.push(query);
+            }
+        }
+        "read_document" => trace.full_document_reads += 1,
+        "Read"
+            if input
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.contains("/project_files/") || s.starts_with("project_files/"))
+                .unwrap_or(false) =>
+        {
+            trace.full_document_reads += 1;
+        }
+        "WebFetch" => classify_borg_webfetch(input, trace, distinct_queries),
+        _ => {}
+    }
 }
 
 fn normalize_tool_name(name: &str) -> &str {
