@@ -9,16 +9,14 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, { FadeInDown } from "react-native-reanimated";
-import { useTasks, useCreateTask } from "@/lib/query";
+import Animated, { FadeIn } from "react-native-reanimated";
+import { useTasks, useStatus } from "@/lib/query";
+import { TaskCard } from "@/components/TaskCard";
 import { FilterChips } from "@/components/FilterChips";
-import { StatusBadge } from "@/components/StatusBadge";
-import { ModeBadge } from "@/components/ModeBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { ErrorScreen } from "@/components/ErrorScreen";
 import { colors, spacing, radius, common } from "@/lib/theme";
-import { timeAgo } from "@/lib/utils";
 import type { Task } from "@borg/api";
 import { isActiveStatus } from "@borg/api";
 
@@ -39,55 +37,99 @@ function filterTasks(tasks: Task[], filter: FilterKey): Task[] {
   }
 }
 
-function TaskCard({ task, index }: { task: Task; index: number }) {
+function StatusSummary() {
+  const { data: status } = useStatus();
+  if (!status) return null;
+
   return (
-    <Animated.View entering={FadeInDown.duration(300).delay(index * 50)}>
-      <Pressable
-        style={styles.card}
-        onPress={() => router.push(`/task/${task.id}`)}
-        android_ripple={{ color: colors.bgHover }}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardTitleRow}>
-            <Text style={styles.taskId}>#{task.id}</Text>
-            <StatusBadge status={task.status} />
-          </View>
-          {task.mode && <ModeBadge mode={task.mode} />}
-        </View>
-        <Text style={styles.taskTitle} numberOfLines={2}>
-          {task.title}
-        </Text>
-        {task.description ? (
-          <Text style={styles.taskDesc} numberOfLines={2}>
-            {task.description}
-          </Text>
-        ) : null}
-        <View style={styles.cardFooter}>
-          <View style={styles.metaRow}>
-            <Ionicons name="time-outline" size={12} color={colors.textTertiary} />
-            <Text style={styles.metaText}>{timeAgo(task.created_at)}</Text>
-          </View>
-          {task.duration_secs !== undefined && task.duration_secs > 0 && (
-            <View style={styles.metaRow}>
-              <Ionicons name="hourglass-outline" size={12} color={colors.textTertiary} />
-              <Text style={styles.metaText}>
-                {task.duration_secs < 60
-                  ? `${task.duration_secs}s`
-                  : `${Math.floor(task.duration_secs / 60)}m`}
-              </Text>
-            </View>
-          )}
-          <View style={styles.metaRow}>
-            <Ionicons name="repeat-outline" size={12} color={colors.textTertiary} />
-            <Text style={styles.metaText}>
-              {task.attempt}/{task.max_attempts}
-            </Text>
-          </View>
-        </View>
-      </Pressable>
+    <Animated.View entering={FadeIn.duration(400)}>
+      <View style={summaryStyles.container}>
+        <SummaryItem
+          icon="rocket-outline"
+          value={status.active_tasks}
+          label="Active"
+          color={colors.statusActive}
+        />
+        <View style={summaryStyles.divider} />
+        <SummaryItem
+          icon="checkmark-done-outline"
+          value={status.merged_tasks}
+          label="Merged"
+          color={colors.statusDone}
+        />
+        <View style={summaryStyles.divider} />
+        <SummaryItem
+          icon="people-outline"
+          value={status.dispatched_agents}
+          label="Agents"
+          color={colors.info}
+        />
+        <View style={summaryStyles.divider} />
+        <SummaryItem
+          icon="flash-outline"
+          value={status.ai_requests}
+          label="Requests"
+          color={colors.accent}
+        />
+      </View>
     </Animated.View>
   );
 }
+
+function SummaryItem({
+  icon,
+  value,
+  label,
+  color,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  value: number;
+  label: string;
+  color: string;
+}) {
+  return (
+    <View style={summaryStyles.item}>
+      <Ionicons name={icon} size={16} color={color} />
+      <Text style={[summaryStyles.value, { color }]}>{value}</Text>
+      <Text style={summaryStyles.label}>{label}</Text>
+    </View>
+  );
+}
+
+const summaryStyles = StyleSheet.create({
+  container: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.bgCard,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+  },
+  item: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  divider: {
+    width: 1,
+    height: 32,
+    backgroundColor: colors.borderSubtle,
+  },
+  value: {
+    fontSize: 18,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  label: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+});
 
 export default function TasksScreen() {
   const { data: tasks, isLoading, error, refetch, isRefetching } = useTasks();
@@ -124,20 +166,30 @@ export default function TasksScreen() {
     [],
   );
 
+  const listHeader = useCallback(
+    () => (
+      <>
+        <StatusSummary />
+        <FilterChips
+          chips={chips}
+          selected={filter}
+          onSelect={(k) => setFilter(k as FilterKey)}
+        />
+      </>
+    ),
+    [chips, filter],
+  );
+
   if (isLoading) return <LoadingScreen />;
   if (error) return <ErrorScreen message={error.message} onRetry={refetch} />;
 
   return (
     <View style={common.screen}>
-      <FilterChips
-        chips={chips}
-        selected={filter}
-        onSelect={(k) => setFilter(k as FilterKey)}
-      />
       <FlatList
         data={filteredTasks}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
+        ListHeaderComponent={listHeader}
         contentContainerStyle={[
           styles.listContent,
           filteredTasks.length === 0 && styles.listEmpty,
@@ -181,58 +233,6 @@ const styles = StyleSheet.create({
   },
   listEmpty: {
     flexGrow: 1,
-  },
-  card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.sm,
-  },
-  cardTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  taskId: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textTertiary,
-    fontVariant: ["tabular-nums"],
-  },
-  taskTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.text,
-    lineHeight: 21,
-    marginBottom: spacing.xs,
-  },
-  taskDesc: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    lineHeight: 18,
-    marginBottom: spacing.sm,
-  },
-  cardFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    marginTop: spacing.sm,
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  metaText: {
-    fontSize: 11,
-    color: colors.textTertiary,
   },
   fab: {
     position: "absolute",
