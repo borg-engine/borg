@@ -373,8 +373,22 @@ impl AgentBackend for AgentSdkBackend {
         } else {
             None
         };
-        let instruction =
+        let mut instruction =
             crate::instruction::build_instruction(task, phase, &ctx, file_listing.as_deref());
+
+        // Agent-SDK uses MCP tools for document access, not file-based tools.
+        // Add explicit retrieval instructions so the model knows to use them.
+        instruction.push_str(
+            "\n\n# Document Retrieval Protocol\n\
+             You MUST use the MCP document tools for corpus retrieval. Do NOT skip this step.\n\
+             1. Call `mcp__borg__list_documents` to inventory all project documents.\n\
+             2. Call `mcp__borg__search_documents` with multiple distinct queries to find relevant content.\n\
+             3. Call `mcp__borg__read_document` to read full documents for clauses that drive conclusions.\n\
+             4. Call `mcp__borg__check_coverage` to verify your analysis covers the key issues.\n\
+             5. Call `mcp__borg__get_document_categories` to understand the document taxonomy.\n\
+             You must complete steps 1-3 before writing any deliverables. The retrieval protocol \
+             guard will reject your work if you skip document retrieval.\n",
+        );
 
         let allowed: Vec<String> = if phase.allowed_tools.is_empty() {
             Vec::new()
