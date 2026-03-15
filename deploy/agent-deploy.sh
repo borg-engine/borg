@@ -98,7 +98,7 @@ export PATH="\$HOME/.cargo/bin:\$HOME/.bun/bin:\$PATH"
 cd ${REMOTE_DIR}
 
 cd borg-rs && cargo build --release && cd ..
-cd apps/web && bun install --frozen-lockfile && bun run build && cd ../..
+cd apps/web && bun install && bun run build && cd ../..
 cd sidecar/agent-bridge && bun install && cd ../..
 docker build -t borg-agent -f container/Dockerfile container/
 
