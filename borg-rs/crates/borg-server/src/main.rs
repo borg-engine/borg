@@ -1622,6 +1622,11 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
         .route("/api/user/microsoft/callback", get(routes::ms365_auth_callback))
         .route("/api/user/microsoft/status", get(routes::ms365_status))
         .route("/api/user/microsoft", delete(routes::ms365_disconnect))
+        // Google Workspace OAuth
+        .route("/api/user/google/auth", get(routes::google_auth_init))
+        .route("/api/user/google/callback", get(routes::google_auth_callback))
+        .route("/api/user/google/status", get(routes::google_status))
+        .route("/api/user/google", delete(routes::google_disconnect))
         // Cache volumes
         .route("/api/cache", get(routes::list_cache_volumes))
         .route("/api/cache/:name", delete(routes::delete_cache_volume))

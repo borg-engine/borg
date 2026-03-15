@@ -502,6 +502,7 @@ mod tests {
     fn test_cron_job_type_roundtrip() {
         let agent = CronJobType::AgentTask;
         let shell = CronJobType::Shell;
+        let backup = CronJobType::BackupExport;
         assert_eq!(
             CronJobType::from_str_lossy(agent.as_str()),
             CronJobType::AgentTask
@@ -509,6 +510,10 @@ mod tests {
         assert_eq!(
             CronJobType::from_str_lossy(shell.as_str()),
             CronJobType::Shell
+        );
+        assert_eq!(
+            CronJobType::from_str_lossy(backup.as_str()),
+            CronJobType::BackupExport
         );
     }
 
@@ -525,6 +530,12 @@ mod tests {
         assert_eq!(json, "\"shell\"");
         let deserialized: CronJobType = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, CronJobType::Shell);
+
+        let backup = CronJobType::BackupExport;
+        let json = serde_json::to_string(&backup).unwrap();
+        assert_eq!(json, "\"backup_export\"");
+        let deserialized: CronJobType = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, CronJobType::BackupExport);
     }
 
     #[test]

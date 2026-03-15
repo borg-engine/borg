@@ -325,6 +325,7 @@ fn is_exempt(path: &str) -> bool {
         || path.starts_with("/api/public/")
         || path.starts_with("/api/cloud/") && path.ends_with("/callback")
         || path == "/api/user/microsoft/callback"
+        || path == "/api/user/google/callback"
         || !path.starts_with("/api/")
 }
 

@@ -4,7 +4,7 @@ use axum::{
     body::{Body, Bytes},
     extract::{Path, State},
     http::{header, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Json,
 };
 use serde::Deserialize;

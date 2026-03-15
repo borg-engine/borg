@@ -19,6 +19,9 @@ pub(crate) use knowledge::*;
 pub(crate) mod linked_credentials;
 pub(crate) use linked_credentials::*;
 
+pub(crate) mod google;
+pub(crate) use google::*;
+
 pub(crate) mod microsoft;
 pub(crate) use microsoft::*;
 

@@ -460,6 +460,27 @@ export async function disconnectMs365(): Promise<{ ok: boolean }> {
   return r.json();
 }
 
+// ── Google Workspace ────────────────────────────────────────────────────
+
+export interface GoogleStatus {
+  connected: boolean;
+  account_email: string;
+}
+
+export function useGoogleStatus() {
+  return useQuery<GoogleStatus>({
+    queryKey: ["google-status"],
+    queryFn: () => fetchJson<GoogleStatus>("/api/user/google/status"),
+    staleTime: 30_000,
+  });
+}
+
+export async function disconnectGoogle(): Promise<{ ok: boolean }> {
+  const r = await apiFetch("/api/user/google", { method: "DELETE" });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
 export interface LinkedCredential {
   id: number;
   user_id: number;

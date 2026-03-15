@@ -185,18 +185,22 @@ impl Pipeline {
             clarification_resume_reuses_prior_review,
             clarification_resume_question,
             custom_mcp_servers: {
-                let rows = self
+                let mut servers: Vec<crate::types::CustomMcpServer> = self
                     .db
                     .get_enabled_custom_mcp_servers_resolved(task.workspace_id)
-                    .unwrap_or_default();
-                rows.into_iter()
+                    .unwrap_or_default()
+                    .into_iter()
                     .map(|(name, command, args, env)| crate::types::CustomMcpServer {
                         name,
                         command,
                         args,
                         env,
                     })
-                    .collect()
+                    .collect();
+                if let Some(google) = self.build_google_mcp_server(&task.created_by) {
+                    servers.push(google);
+                }
+                servers
             },
             ms365_token: self.resolve_ms365_token(&task.created_by),
         }
@@ -228,6 +232,42 @@ impl Pipeline {
             return String::new();
         }
         crate::db::Db::decrypt_secret(&encrypted)
+    }
+
+    fn build_google_mcp_server(&self, created_by: &str) -> Option<crate::types::CustomMcpServer> {
+        if created_by.is_empty() {
+            return None;
+        }
+        let user_id = self
+            .db
+            .get_user_by_username(created_by)
+            .ok()
+            .flatten()
+            .map(|(id, _, _, _, _)| id)?;
+        let encrypted_refresh = self
+            .db
+            .get_user_setting(user_id, "google_refresh_token")
+            .ok()
+            .flatten()?;
+        let refresh_token = crate::db::Db::decrypt_secret(&encrypted_refresh);
+        if refresh_token.is_empty() {
+            return None;
+        }
+        let client_id = self.db.get_config("google_client_id").ok().flatten().unwrap_or_default();
+        let client_secret = self.db.get_config("google_client_secret").ok().flatten().unwrap_or_default();
+        if client_id.is_empty() || client_secret.is_empty() {
+            return None;
+        }
+        let mut env = std::collections::HashMap::new();
+        env.insert("GOOGLE_WORKSPACE_CLIENT_ID".into(), client_id);
+        env.insert("GOOGLE_WORKSPACE_CLIENT_SECRET".into(), client_secret);
+        env.insert("GOOGLE_WORKSPACE_REFRESH_TOKEN".into(), refresh_token);
+        Some(crate::types::CustomMcpServer {
+            name: "google-workspace".into(),
+            command: "npx".into(),
+            args: vec!["-y".into(), "@alanxchen/google-workspace-mcp".into()],
+            env,
+        })
     }
 
     fn clear_session_provider_credentials(session_dir: &str, provider: &str) {

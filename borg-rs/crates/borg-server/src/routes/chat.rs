@@ -332,12 +332,32 @@ pub(crate) async fn run_chat_agent(
         .as_ref()
         .map(|p| p.workspace_id)
         .unwrap_or(0);
-    let custom_servers = {
+    let mut custom_servers = {
         let rows = db
             .get_enabled_custom_mcp_servers_resolved(workspace_id)
             .unwrap_or_default();
         borg_agent::mcp::custom_servers_from_db(rows)
     };
+    // Inject Google Workspace MCP if user has connected
+    if let Some(uid) = user_id {
+        if let Some(encrypted_refresh) = db.get_user_setting(uid, "google_refresh_token").ok().flatten() {
+            let refresh_token = borg_core::db::Db::decrypt_secret(&encrypted_refresh);
+            let g_client_id = db.get_config("google_client_id").ok().flatten().unwrap_or_default();
+            let g_client_secret = db.get_config("google_client_secret").ok().flatten().unwrap_or_default();
+            if !refresh_token.is_empty() && !g_client_id.is_empty() && !g_client_secret.is_empty() {
+                let mut env = std::collections::HashMap::new();
+                env.insert("GOOGLE_WORKSPACE_CLIENT_ID".into(), g_client_id);
+                env.insert("GOOGLE_WORKSPACE_CLIENT_SECRET".into(), g_client_secret);
+                env.insert("GOOGLE_WORKSPACE_REFRESH_TOKEN".into(), refresh_token);
+                custom_servers.push(borg_core::types::CustomMcpServer {
+                    name: "google-workspace".into(),
+                    command: "npx".into(),
+                    args: vec!["-y".into(), "@alanxchen/google-workspace-mcp".into()],
+                    env,
+                });
+            }
+        }
+    }
     let ms365_token = if let Some(uid) = user_id {
         crate::routes::microsoft::refresh_ms365_token(db, uid).await
     } else {

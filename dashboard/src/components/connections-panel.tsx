@@ -10,6 +10,7 @@ import {
   type CustomMcpServer,
   deleteCustomMcpServer,
   disconnectDiscordBot,
+  disconnectGoogle,
   disconnectMs365,
   disconnectSlackBot,
   disconnectTelegramBot,
@@ -17,6 +18,7 @@ import {
   toggleCustomMcpServer,
   upsertCustomMcpServer,
   useCustomMcpServers,
+  useGoogleStatus,
   useMs365Status,
   type UserSettings,
   updateUserSettings,
@@ -62,6 +64,7 @@ export function ConnectionsPanel() {
           <CollapsibleSection icon={<Building2 className="h-4 w-4" />} title="Productivity">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <Microsoft365Card />
+              <GoogleWorkspaceCard />
             </div>
           </CollapsibleSection>
 
@@ -552,6 +555,83 @@ function Microsoft365Card() {
   );
 }
 
+// ── Google Workspace card ─────────────────────────────────────────────────
+
+function GoogleWorkspaceCard() {
+  const queryClient = useQueryClient();
+  const { data: status } = useGoogleStatus();
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    const hashParams = new URLSearchParams(hash.split("?")[1] || "");
+    if (hashParams.get("google_connected")) {
+      queryClient.invalidateQueries({ queryKey: ["google-status"] });
+      window.history.replaceState({}, "", window.location.pathname + window.location.hash.split("?")[0]);
+    }
+  }, [queryClient]);
+
+  if (!status) return null;
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    try {
+      await disconnectGoogle();
+      queryClient.invalidateQueries({ queryKey: ["google-status"] });
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        icon={<GoogleIcon />}
+        iconBg=""
+        title="Google Workspace"
+        subtitle="Gmail, Calendar, Drive, Docs, and Sheets"
+        status={status.connected ? "connected" : undefined}
+        statusLabel={status.connected ? status.account_email : undefined}
+        customIconStyle={{ background: "rgb(66 133 244 / 0.1)", boxShadow: "inset 0 0 0 1px rgb(66 133 244 / 0.2)" }}
+      />
+      {status.connected ? (
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            onClick={() => { window.location.href = `${apiBase()}/api/user/google/auth`; }}
+            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+          >
+            Reconnect
+          </button>
+          <button
+            onClick={handleDisconnect}
+            disabled={disconnecting}
+            className="rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-1.5 text-[12px] text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
+          >
+            Disconnect
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3 pt-1">
+          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
+            <p className="font-medium text-[#e8e0d4]">What you get</p>
+            <ul className="list-disc list-inside space-y-1 text-[12px]">
+              <li>Agents can read and send emails via Gmail</li>
+              <li>Manage calendar events</li>
+              <li>Access Google Drive, Docs, and Sheets</li>
+            </ul>
+          </div>
+          <button
+            onClick={() => { window.location.href = `${apiBase()}/api/user/google/auth`; }}
+            className="rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20"
+          >
+            Connect with Google
+          </button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ── Generic bot connection card ───────────────────────────────────────────
 
 function BotConnectionCard({
@@ -821,6 +901,97 @@ const MCP_TEMPLATES: McpTemplate[] = [
     credentials: [{ envVar: "GITHUB_PERSONAL_ACCESS_TOKEN", label: "Personal Access Token", placeholder: "ghp_..." }],
     color: "#e8e0d4",
     icon: <Github className="h-4 w-4 text-[#e8e0d4]" />,
+  },
+  {
+    name: "playwright",
+    label: "Playwright",
+    description: "Browser automation for web scraping, testing, and interaction",
+    command: "npx",
+    args: ["-y", "@playwright/mcp@latest"],
+    credentials: [],
+    color: "#2EAD33",
+    icon: <PlaywrightIcon />,
+  },
+  {
+    name: "stripe",
+    label: "Stripe",
+    description: "Manage customers, subscriptions, invoices, and payments",
+    command: "npx",
+    args: ["-y", "@stripe/mcp", "--tools=all"],
+    credentials: [{ envVar: "STRIPE_SECRET_KEY", label: "Secret Key", placeholder: "sk_..." }],
+    color: "#635BFF",
+    icon: <StripeIcon />,
+  },
+  {
+    name: "sentry",
+    label: "Sentry",
+    description: "Browse issues, errors, and performance data",
+    command: "npx",
+    args: ["-y", "@sentry/mcp-server"],
+    credentials: [{ envVar: "SENTRY_AUTH_TOKEN", label: "Auth Token", placeholder: "sntrys_..." }],
+    color: "#362D59",
+    icon: <SentryIcon />,
+  },
+  {
+    name: "jira",
+    label: "Jira",
+    description: "Search and manage issues, projects, and boards",
+    command: "npx",
+    args: ["-y", "@aashari/mcp-server-atlassian-jira"],
+    credentials: [
+      { envVar: "ATLASSIAN_SITE_NAME", label: "Site Name", placeholder: "yourteam" },
+      { envVar: "ATLASSIAN_USER_EMAIL", label: "Email", placeholder: "you@company.com" },
+      { envVar: "ATLASSIAN_API_TOKEN", label: "API Token", placeholder: "ATATT3..." },
+    ],
+    color: "#0052CC",
+    icon: <JiraIcon />,
+    setupUrl: "https://id.atlassian.com/manage-profile/security/api-tokens",
+  },
+  {
+    name: "n8n",
+    label: "n8n",
+    description: "Trigger workflows and access 400+ app integrations",
+    command: "npx",
+    args: ["-y", "@cmwen/min-n8n-mcp"],
+    credentials: [
+      { envVar: "N8N_BASE_URL", label: "Instance URL", placeholder: "https://n8n.example.com" },
+      { envVar: "N8N_API_KEY", label: "API Key", placeholder: "n8n_api_..." },
+    ],
+    color: "#EA4B71",
+    icon: <N8nIcon />,
+  },
+  {
+    name: "supabase",
+    label: "Supabase",
+    description: "Manage tables, query data, and configure your project",
+    command: "npx",
+    args: ["-y", "@supabase/mcp-server-supabase"],
+    credentials: [{ envVar: "SUPABASE_ACCESS_TOKEN", label: "Access Token", placeholder: "sbp_..." }],
+    color: "#3ECF8E",
+    icon: <SupabaseIcon />,
+  },
+  {
+    name: "twilio",
+    label: "Twilio",
+    description: "Send SMS, make calls, and manage communications",
+    command: "npx",
+    args: ["-y", "@twilio-alpha/mcp"],
+    credentials: [
+      { envVar: "TWILIO_ACCOUNT_SID", label: "Account SID", placeholder: "AC..." },
+      { envVar: "TWILIO_AUTH_TOKEN", label: "Auth Token", placeholder: "" },
+    ],
+    color: "#F22F46",
+    icon: <TwilioIcon />,
+  },
+  {
+    name: "firebase",
+    label: "Firebase",
+    description: "Manage Firestore, Auth, Storage, and Cloud Functions",
+    command: "npx",
+    args: ["-y", "@gannonh/firebase-mcp"],
+    credentials: [{ envVar: "SERVICE_ACCOUNT_KEY", label: "Service Account JSON", placeholder: '{"type":"service_account",...}' }],
+    color: "#FFCA28",
+    icon: <FirebaseIcon />,
   },
 ];
 
@@ -1327,6 +1498,49 @@ function MongoIcon() {
 
 function LinearIcon() {
   return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#5E6AD2"><path d="M3.36 7.56a10.2 10.2 0 0013.08 13.08L3.36 7.56zm.91-1.95l14.12 14.12A10.2 10.2 0 004.27 5.61zm2.12-1.7L19.7 17.22a10.2 10.2 0 00-13.31-13.3z" /></svg>;
+}
+
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4.5 w-4.5">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+    </svg>
+  );
+}
+
+function PlaywrightIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#2EAD33"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l7 4.5-7 4.5z" /></svg>;
+}
+
+function StripeIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#635BFF"><path d="M13.98 11.02c0-1.07-.45-1.47-1.32-1.47-.87 0-1.44.4-1.44 1.47v1.96c0 1.07.57 1.47 1.44 1.47.87 0 1.32-.4 1.32-1.47v-1.96zM24 4v16a4 4 0 01-4 4H4a4 4 0 01-4-4V4a4 4 0 014-4h16a4 4 0 014 4zm-7.55 7.02c0-2.35-1.18-3.62-3.22-3.62-1.15 0-1.97.42-2.6 1.16V7.5H8.5v9h2.13v-.92c.63.7 1.41 1.07 2.56 1.07 2.08 0 3.26-1.32 3.26-3.67v-1.96z" /></svg>;
+}
+
+function SentryIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#362D59"><path d="M13.93 2.18a1.86 1.86 0 00-3.22 0l-2.4 4.15a10.64 10.64 0 015.17 8.94h-2.31a8.33 8.33 0 00-4.05-7.01l-2.92 5.05A4.54 4.54 0 016.32 17h-2.3a1.86 1.86 0 01-1.61-2.79L7.56 5.2l.48-.83a1.86 1.86 0 013.22 0L13.93 9l2.67-4.61.48-.83 2.67 4.62 2.67 4.61A1.86 1.86 0 0120.81 15h-1.15" /></svg>;
+}
+
+function JiraIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#0052CC"><path d="M11.53 2c0 4.97-4.03 9-9 9a.47.47 0 000 .94c4.97 0 9 4.03 9 9a.47.47 0 00.94 0c0-4.97 4.03-9 9-9a.47.47 0 000-.94c-4.97 0-9-4.03-9-9a.47.47 0 00-.94 0z" /></svg>;
+}
+
+function N8nIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#EA4B71"><circle cx="6" cy="12" r="3" /><circle cx="18" cy="7" r="3" /><circle cx="18" cy="17" r="3" /><path d="M9 12h3m0 0l3-5m-3 5l3 5" stroke="#EA4B71" strokeWidth="1.5" fill="none" /></svg>;
+}
+
+function SupabaseIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#3ECF8E"><path d="M13.36 21.89c-.53.67-1.6.13-1.56-.78l.57-12.11H21c1.26 0 1.95 1.47 1.15 2.44L13.36 21.9z" opacity="0.7" /><path d="M10.64 2.11c.53-.67 1.6-.13 1.56.78L11.63 15H3c-1.26 0-1.95-1.47-1.15-2.44L10.64 2.1z" /></svg>;
+}
+
+function TwilioIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#F22F46"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm0 20.4c-4.64 0-8.4-3.76-8.4-8.4S7.36 3.6 12 3.6s8.4 3.76 8.4 8.4-3.76 8.4-8.4 8.4zm3.54-11.94a2.1 2.1 0 110 4.2 2.1 2.1 0 010-4.2zm0 5.28a2.1 2.1 0 110 4.2 2.1 2.1 0 010-4.2zm-7.08-5.28a2.1 2.1 0 110 4.2 2.1 2.1 0 010-4.2zm0 5.28a2.1 2.1 0 110 4.2 2.1 2.1 0 010-4.2z" /></svg>;
+}
+
+function FirebaseIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4"><path d="M4.53 20.26L6.23 3.1a.5.5 0 01.93-.18L9 7.1l1.61-3.07a.5.5 0 01.89 0L19.47 20.26" fill="#FFA000" /><path d="M4.53 20.26L9 7.1l2.52 4.2z" fill="#F57F17" opacity="0.7" /><path d="M4.53 20.26h14.94L11.52 11.3z" fill="#FFCA28" /></svg>;
 }
 
 // ── Shared UI ─────────────────────────────────────────────────────────────
