@@ -179,6 +179,7 @@ async fn run_bridge_query(
     let io_future = async move {
         let mut result = BridgeResult::default();
         let mut text_parts: Vec<String> = Vec::new();
+        let mut raw_lines: Vec<String> = Vec::new();
         let mut tool_calls: Vec<ToolCallRecord> = Vec::new();
         let mut pending_tool: Option<(String, String)> = None;
 
@@ -193,6 +194,9 @@ async fn run_bridge_query(
                     match line {
                         Ok(Some(l)) => {
                             if l.trim().is_empty() { continue; }
+
+                            // Collect raw lines for retrieval protocol inspection
+                            raw_lines.push(l.clone());
 
                             // Forward raw line to stream
                             if let Some(tx) = &stream_tx_clone {
@@ -278,7 +282,7 @@ async fn run_bridge_query(
             result.text = text_parts.join("");
         }
         result.tool_calls = tool_calls;
-        result.raw_stream = text_parts.join("");
+        result.raw_stream = raw_lines.join("\n");
 
         let exit = child.wait().await.ok();
         result.success = exit.map(|s| s.success()).unwrap_or(false) && result.error.is_none();
