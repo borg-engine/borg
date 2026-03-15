@@ -14,6 +14,7 @@ const PROJECT_ID = process.env.PROJECT_ID || "";
 const PROJECT_MODE = process.env.PROJECT_MODE || "";
 const CHAT_THREAD = process.env.CHAT_THREAD || "";
 const WORKSPACE_ID = process.env.WORKSPACE_ID || "";
+const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY || "";
 
 async function apiFetch(path, opts = {}) {
   const url = path.startsWith("http") ? path : `${API_URL}${path}`;
@@ -380,6 +381,53 @@ const TOOLS = [
       properties: {},
     },
   },
+
+  // -- OCR tools --
+  {
+    name: "ocr_document",
+    description:
+      "Extract text from scanned/image-based documents (PDFs, images) using OCR. " +
+      "Use this when a document contains scanned pages or images of text rather than selectable text. " +
+      "Returns extracted text as markdown.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_id: {
+          type: "string",
+          description: "The document file ID from the project",
+        },
+        project_id: {
+          type: "number",
+          description: "The project ID",
+        },
+        pages: {
+          type: "string",
+          description: 'Page range to OCR, e.g. "1-5" or "3". Default: all pages.',
+        },
+      },
+      required: ["file_id", "project_id"],
+    },
+  },
+  {
+    name: "ocr_image",
+    description:
+      "Extract text from an image file (PNG, JPG, TIFF, etc.) using OCR. " +
+      "Use this for standalone image files that contain text you need to extract.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_id: {
+          type: "string",
+          description: "The image file ID",
+        },
+        project_id: {
+          type: "number",
+          description: "The project ID",
+        },
+      },
+      required: ["file_id", "project_id"],
+    },
+  },
 ];
 
 // ── Tool handlers ───────────────────────────────────────────────────────
@@ -500,6 +548,13 @@ async function handleListServices() {
   lines.push("  upload_to_knowledge — upload a local file to org/user/project knowledge");
   lines.push("  list_knowledge_files — list org or personal knowledge files");
   lines.push("  list_projects — list all projects with IDs");
+  lines.push("\n## OCR (borg-mcp)");
+  if (MISTRAL_API_KEY) {
+    lines.push("  ocr_document — extract text from scanned PDFs/documents via Mistral OCR");
+    lines.push("  ocr_image — extract text from image files via Mistral OCR");
+  } else {
+    lines.push("  ocr_document / ocr_image — NOT configured (MISTRAL_API_KEY not set)");
+  }
 
   // Check which external services have API keys configured
   // These are set by the borg server when it wires MCP servers
@@ -676,6 +731,88 @@ async function handleListProjects() {
   return lines.join("\n");
 }
 
+async function fetchFileRaw(fileId, projectId) {
+  const url = `${API_URL}/api/borgsearch/file/${fileId}?project_id=${projectId}`;
+  const headers = {};
+  if (API_TOKEN) headers["Authorization"] = `Bearer ${API_TOKEN}`;
+  if (WORKSPACE_ID) headers["x-workspace-id"] = WORKSPACE_ID;
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    if (res.status === 404) throw new Error("File not found");
+    const text = await res.text().catch(() => "");
+    throw new Error(`API ${res.status}: ${text.slice(0, 500)}`);
+  }
+  const contentType = res.headers.get("content-type") || "";
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return { buffer, contentType };
+}
+
+async function callMistralOcr(document) {
+  if (!MISTRAL_API_KEY) throw new Error("OCR not configured — set MISTRAL_API_KEY");
+  const res = await fetch("https://api.mistral.ai/v1/ocr", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${MISTRAL_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "mistral-ocr-latest",
+      document,
+      include_image_base64: false,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Mistral OCR API ${res.status}: ${text.slice(0, 500)}`);
+  }
+  return res.json();
+}
+
+async function handleOcrDocument(args) {
+  const pid = args.project_id;
+  const { buffer, contentType } = await fetchFileRaw(args.file_id, pid);
+  const base64 = buffer.toString("base64");
+
+  const isPdf = contentType.includes("pdf") || contentType.includes("octet-stream");
+  const mimeType = isPdf ? "application/pdf" : contentType.split(";")[0].trim();
+  const docType = isPdf ? "document_url" : "image_url";
+  const dataUri = `data:${mimeType};base64,${base64}`;
+
+  const document = { type: docType, [docType]: dataUri };
+  const data = await callMistralOcr(document);
+
+  if (!data.pages?.length) return "OCR completed but no text was extracted.";
+
+  let pages = data.pages;
+  if (args.pages) {
+    const range = args.pages.trim();
+    const match = range.match(/^(\d+)(?:-(\d+))?$/);
+    if (match) {
+      const start = parseInt(match[1], 10) - 1;
+      const end = match[2] ? parseInt(match[2], 10) : start + 1;
+      pages = pages.slice(start, end);
+    }
+  }
+
+  return pages.map((p) => p.markdown).join("\n\n---\n\n");
+}
+
+async function handleOcrImage(args) {
+  const pid = args.project_id;
+  const { buffer, contentType } = await fetchFileRaw(args.file_id, pid);
+  const base64 = buffer.toString("base64");
+
+  let mimeType = contentType.split(";")[0].trim();
+  if (!mimeType.startsWith("image/")) mimeType = "image/png";
+  const dataUri = `data:${mimeType};base64,${base64}`;
+
+  const document = { type: "image_url", image_url: dataUri };
+  const data = await callMistralOcr(document);
+
+  if (!data.pages?.length) return "OCR completed but no text was extracted.";
+  return data.pages.map((p) => p.markdown).join("\n\n---\n\n");
+}
+
 const HANDLERS = {
   search_documents: instrumentHandler("search_documents", handleSearchDocuments, 60000),
   list_documents: instrumentHandler("list_documents", handleListDocuments),
@@ -689,6 +826,8 @@ const HANDLERS = {
   upload_to_knowledge: instrumentHandler("upload_to_knowledge", handleUploadToKnowledge),
   list_knowledge_files: instrumentHandler("list_knowledge_files", handleListKnowledgeFiles),
   list_projects: instrumentHandler("list_projects", handleListProjects),
+  ocr_document: instrumentHandler("ocr_document", handleOcrDocument, 60000),
+  ocr_image: instrumentHandler("ocr_image", handleOcrImage, 60000),
 };
 
 // ── MCP server setup ────────────────────────────────────────────────────
