@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Borg",
+    "slug": "borg",
+    "version": "0.1.0",
+    "scheme": "borg",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "bundleIdentifier": "com.borg.mobile",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.borg.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0f0e0c"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
