@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Github, Plug, Plus, Power, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, Github, GitBranch, MessageSquare, Plug, Plus, Power, Settings2, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import {
@@ -38,19 +38,56 @@ export function ConnectionsPanel() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-        <div className="mx-auto max-w-3xl space-y-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <DiscordCard />
-            <TelegramCard />
-            <WhatsAppCard />
-            <SlackCard />
-            <GitHubCard />
-            <GitLabCard />
-            <CodebergCard />
-          </div>
-          <McpServersSection />
+        <div className="mx-auto max-w-3xl space-y-4">
+          <CollapsibleSection icon={<MessageSquare className="h-4 w-4" />} title="Messaging" defaultOpen>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <DiscordCard />
+              <TelegramCard />
+              <WhatsAppCard />
+              <SlackCard />
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={<GitBranch className="h-4 w-4" />} title="Git">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <GitHubCard />
+              <GitLabCard />
+              <CodebergCard />
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={<Plug className="h-4 w-4" />} title="Integrations" defaultOpen>
+            <McpServersSection />
+          </CollapsibleSection>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CollapsibleSection({
+  icon,
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-2xl border border-[#2a2520] bg-[#181614]">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2.5 px-4 py-3 text-left"
+      >
+        <span className="text-[#6b6459]">{icon}</span>
+        <span className="flex-1 text-[13px] font-semibold text-[#e8e0d4]">{title}</span>
+        <ChevronDown className={cn("h-4 w-4 text-[#6b6459] transition-transform", open && "rotate-180")} />
+      </button>
+      {open && <div className="px-4 pb-4">{children}</div>}
     </div>
   );
 }
@@ -590,68 +627,353 @@ function CancelButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-// ── MCP Servers ──────────────────────────────────────────────────────────
+// ── Integration Templates ────────────────────────────────────────────────
+
+interface McpTemplate {
+  name: string;
+  label: string;
+  description: string;
+  command: string;
+  args: string[];
+  credentials: { envVar: string; label: string; placeholder: string }[];
+  color: string;
+  icon: React.ReactNode;
+  setupUrl?: string;
+}
+
+const MCP_TEMPLATES: McpTemplate[] = [
+  {
+    name: "notion",
+    label: "Notion",
+    description: "Search pages, read content, create and update databases",
+    command: "npx",
+    args: ["-y", "@notionhq/notion-mcp-server"],
+    credentials: [{ envVar: "NOTION_TOKEN", label: "Integration Token", placeholder: "ntn_..." }],
+    color: "#FFFFFF",
+    icon: <NotionIcon />,
+    setupUrl: "https://www.notion.so/my-integrations",
+  },
+  {
+    name: "figma",
+    label: "Figma",
+    description: "Get design context, components, and layout info from Figma files",
+    command: "npx",
+    args: ["-y", "figma-developer-mcp", "--stdio"],
+    credentials: [{ envVar: "FIGMA_API_KEY", label: "Personal Access Token", placeholder: "figd_..." }],
+    color: "#A259FF",
+    icon: <FigmaIcon />,
+    setupUrl: "https://www.figma.com/developers/api#access-tokens",
+  },
+  {
+    name: "airtable",
+    label: "Airtable",
+    description: "Read and write records, manage bases and tables",
+    command: "npx",
+    args: ["-y", "airtable-mcp-server"],
+    credentials: [{ envVar: "AIRTABLE_API_KEY", label: "Personal Access Token", placeholder: "pat..." }],
+    color: "#18BFFF",
+    icon: <AirtableIcon />,
+    setupUrl: "https://airtable.com/create/tokens",
+  },
+  {
+    name: "hubspot",
+    label: "HubSpot",
+    description: "Manage contacts, deals, companies, and tickets",
+    command: "npx",
+    args: ["-y", "@hubspot/mcp-server"],
+    credentials: [{ envVar: "PRIVATE_APP_ACCESS_TOKEN", label: "Private App Token", placeholder: "pat-..." }],
+    color: "#FF7A59",
+    icon: <HubSpotIcon />,
+    setupUrl: "https://developers.hubspot.com/docs/api/private-apps",
+  },
+  {
+    name: "mongodb",
+    label: "MongoDB",
+    description: "Query collections, manage databases, run aggregations",
+    command: "npx",
+    args: ["-y", "mongodb-mcp-server"],
+    credentials: [{ envVar: "MDB_MCP_CONNECTION_STRING", label: "Connection String", placeholder: "mongodb+srv://user:pass@cluster.mongodb.net/db" }],
+    color: "#00ED64",
+    icon: <MongoIcon />,
+  },
+  {
+    name: "linear",
+    label: "Linear",
+    description: "Manage issues, projects, and teams",
+    command: "npx",
+    args: ["-y", "mcp-server-linear"],
+    credentials: [{ envVar: "LINEAR_API_KEY", label: "API Key", placeholder: "lin_api_..." }],
+    color: "#5E6AD2",
+    icon: <LinearIcon />,
+    setupUrl: "https://linear.app/settings/api",
+  },
+  {
+    name: "slack-tools",
+    label: "Slack (Agent Tools)",
+    description: "Search messages, read channels, manage conversations",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-slack"],
+    credentials: [{ envVar: "SLACK_BOT_TOKEN", label: "Bot Token", placeholder: "xoxb-..." }],
+    color: "#E01E5A",
+    icon: <SlackIcon />,
+  },
+  {
+    name: "github-tools",
+    label: "GitHub (Agent Tools)",
+    description: "Search code, manage issues and PRs, browse repos",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-github"],
+    credentials: [{ envVar: "GITHUB_PERSONAL_ACCESS_TOKEN", label: "Personal Access Token", placeholder: "ghp_..." }],
+    color: "#e8e0d4",
+    icon: <Github className="h-4 w-4 text-[#e8e0d4]" />,
+  },
+];
+
+// ── MCP Servers Section ─────────────────────────────────────────────────
 
 function McpServersSection() {
   const queryClient = useQueryClient();
   const { data: servers, isLoading } = useCustomMcpServers();
-  const [adding, setAdding] = useState(false);
+  const [view, setView] = useState<"list" | "catalog" | "custom">("list");
+  const [selectedTemplate, setSelectedTemplate] = useState<McpTemplate | null>(null);
 
   if (isLoading) return null;
+
+  const configuredNames = new Set(servers?.map((s) => s.name) ?? []);
+  const availableTemplates = MCP_TEMPLATES.filter((t) => !configuredNames.has(t.name));
+
+  if (selectedTemplate) {
+    return (
+      <TemplateSetupCard
+        template={selectedTemplate}
+        onSave={async (data) => {
+          await upsertCustomMcpServer(data);
+          queryClient.invalidateQueries({ queryKey: ["custom-mcp-servers"] });
+          setSelectedTemplate(null);
+          setView("list");
+        }}
+        onBack={() => setSelectedTemplate(null)}
+      />
+    );
+  }
+
+  if (view === "custom") {
+    return (
+      <div className="space-y-3">
+        <button
+          onClick={() => setView("catalog")}
+          className="inline-flex items-center gap-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Back
+        </button>
+        <CustomMcpForm
+          onSave={async (data) => {
+            await upsertCustomMcpServer(data);
+            queryClient.invalidateQueries({ queryKey: ["custom-mcp-servers"] });
+            setView("list");
+          }}
+          onCancel={() => setView("catalog")}
+        />
+      </div>
+    );
+  }
+
+  if (view === "catalog") {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setView("list")}
+            className="inline-flex items-center gap-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Back
+          </button>
+          <button
+            onClick={() => setView("custom")}
+            className="inline-flex items-center gap-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            Custom Server
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {availableTemplates.map((template) => (
+            <button
+              key={template.name}
+              onClick={() => setSelectedTemplate(template)}
+              className="flex items-center gap-3 rounded-xl border border-[#2a2520] bg-[#151412] p-3.5 text-left transition-colors hover:border-[#3a3530] hover:bg-[#1a1815]"
+            >
+              <div
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1"
+                style={{ background: `${template.color}10`, borderColor: `${template.color}30` }}
+              >
+                {template.icon}
+              </div>
+              <div className="min-w-0">
+                <div className="text-[13px] font-medium text-[#e8e0d4]">{template.label}</div>
+                <div className="text-[11px] text-[#6b6459] leading-tight truncate">{template.description}</div>
+              </div>
+            </button>
+          ))}
+          {availableTemplates.length === 0 && (
+            <div className="col-span-2 py-6 text-center text-[13px] text-[#6b6459]">
+              All available integrations are already configured.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-[14px] font-semibold text-[#e8e0d4]">MCP Servers</div>
-          <div className="text-[12px] text-[#6b6459]">Add custom tool servers that agents can use during tasks and chat</div>
+          <div className="text-[14px] font-semibold text-[#e8e0d4]">Integrations</div>
+          <div className="text-[12px] text-[#6b6459]">Tools your agents can use during tasks and chat</div>
         </div>
-        {!adding && (
-          <button
-            onClick={() => setAdding(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-3 py-1.5 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add Server
-          </button>
-        )}
+        <button
+          onClick={() => setView("catalog")}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-3 py-1.5 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add
+        </button>
       </div>
 
-      {adding && (
-        <McpServerForm
-          onSave={async (data) => {
-            await upsertCustomMcpServer(data);
-            queryClient.invalidateQueries({ queryKey: ["custom-mcp-servers"] });
-            setAdding(false);
-          }}
-          onCancel={() => setAdding(false)}
-        />
-      )}
-
-      {servers && servers.length > 0 && (
-        <div className="space-y-3">
+      {servers && servers.length > 0 ? (
+        <div className="space-y-2">
           {servers.map((server) => (
             <McpServerCard key={server.id} server={server} />
           ))}
         </div>
-      )}
-
-      {(!servers || servers.length === 0) && !adding && (
+      ) : (
         <div className="rounded-2xl border border-dashed border-[#2a2520] px-5 py-8 text-center">
           <div className="text-[13px] text-[#6b6459]">
-            No custom MCP servers configured. Add one to give agents access to external tools like Airtable, Notion, or any MCP-compatible service.
+            No integrations configured yet.
           </div>
+          <button
+            onClick={() => setView("catalog")}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20"
+          >
+            Browse integrations
+          </button>
         </div>
       )}
     </div>
   );
 }
 
+function TemplateSetupCard({
+  template,
+  onSave,
+  onBack,
+}: {
+  template: McpTemplate;
+  onSave: (data: McpFormData) => Promise<void>;
+  onBack: () => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const allFilled = template.credentials.every((c) => (values[c.envVar] ?? "").trim());
+
+  async function handleConnect() {
+    setSaving(true);
+    setError("");
+    try {
+      const env: Record<string, string> = {};
+      for (const cred of template.credentials) {
+        env[cred.envVar] = values[cred.envVar] ?? "";
+      }
+      await onSave({
+        name: template.name,
+        label: template.label,
+        command: template.command,
+        args: template.args,
+        env,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to connect");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <button
+        onClick={onBack}
+        className="inline-flex items-center gap-1.5 text-[12px] text-[#9c9486] hover:text-[#e8e0d4] transition-colors"
+      >
+        <ChevronLeft className="h-3.5 w-3.5" />
+        Back
+      </button>
+      <Card>
+        <CardHeader
+          icon={template.icon}
+          iconBg=""
+          title={template.label}
+          subtitle={template.description}
+          customIconStyle={{ background: `${template.color}10`, boxShadow: `inset 0 0 0 1px ${template.color}30` }}
+        />
+        <div className="space-y-3 pt-1">
+          <div className="rounded-xl border border-[#2a2520] bg-[#1c1a17]/60 px-4 py-3 text-[12px] text-[#9c9486] space-y-2">
+            <p className="font-medium text-[#e8e0d4]">Setup</p>
+            <ol className="list-decimal list-inside space-y-1.5 text-[12px]">
+              {template.setupUrl ? (
+                <li>
+                  Go to{" "}
+                  <span className="font-medium text-[#e8e0d4]">{template.label}</span> and create an API token
+                </li>
+              ) : (
+                <li>Create an API token in your <span className="font-medium text-[#e8e0d4]">{template.label}</span> settings</li>
+              )}
+              <li>Paste your credentials below</li>
+            </ol>
+          </div>
+          <div className="space-y-2">
+            {template.credentials.map((cred) => (
+              <div key={cred.envVar} className="space-y-1">
+                <label className="text-[11px] font-medium text-[#9c9486]">{cred.label}</label>
+                <input
+                  type={cred.envVar.toLowerCase().includes("url") || cred.envVar.toLowerCase().includes("email") ? "text" : "password"}
+                  value={values[cred.envVar] ?? ""}
+                  onChange={(e) => setValues({ ...values, [cred.envVar]: e.target.value })}
+                  placeholder={cred.placeholder}
+                  className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleConnect}
+              disabled={saving || !allFilled}
+              className={cn(
+                "rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20",
+                (saving || !allFilled) && "opacity-40 cursor-not-allowed",
+              )}
+            >
+              {saving ? "Connecting..." : "Connect"}
+            </button>
+          </div>
+          {error && <div className="text-[12px] text-red-400">{error}</div>}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function McpServerCard({ server }: { server: CustomMcpServer }) {
   const queryClient = useQueryClient();
-  const [editing, setEditing] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const template = MCP_TEMPLATES.find((t) => t.name === server.name);
 
   async function handleToggle() {
     setToggling(true);
@@ -673,78 +995,55 @@ function McpServerCard({ server }: { server: CustomMcpServer }) {
     }
   }
 
-  if (editing) {
-    return (
-      <McpServerForm
-        initial={server}
-        onSave={async (data) => {
-          await upsertCustomMcpServer(data);
-          queryClient.invalidateQueries({ queryKey: ["custom-mcp-servers"] });
-          setEditing(false);
-        }}
-        onCancel={() => setEditing(false)}
-      />
-    );
-  }
-
   return (
-    <div className="rounded-2xl border border-[#2a2520] bg-[#151412] p-4 space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 ring-1 ring-violet-500/20">
-            <McpIcon />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-semibold text-[#e8e0d4]">{server.label || server.name}</span>
-              {server.enabled ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                  <span className="h-1 w-1 rounded-full bg-emerald-400" />
-                  Active
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-full border border-[#2a2520] bg-[#1c1a17] px-2 py-0.5 text-[10px] font-medium text-[#6b6459]">
-                  Disabled
-                </span>
-              )}
-            </div>
-            <div className="text-[11px] text-[#6b6459] font-mono">{server.command} {JSON.parse(server.args_json || "[]").join(" ")}</div>
-          </div>
+    <div className="flex items-center justify-between rounded-xl border border-[#2a2520] bg-[#151412] px-4 py-3">
+      <div className="flex items-center gap-3">
+        <div
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1"
+          style={template
+            ? { background: `${template.color}10`, borderColor: `${template.color}30` }
+            : { background: "rgb(139 92 246 / 0.1)", borderColor: "rgb(139 92 246 / 0.2)" }
+          }
+        >
+          {template?.icon ?? <McpIcon />}
         </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setEditing(true)}
-            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1 text-[11px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
-          >
-            Edit
-          </button>
-          <button
-            onClick={handleToggle}
-            disabled={toggling}
-            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] p-1.5 text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
-            title={server.enabled ? "Disable" : "Enable"}
-          >
-            <Power className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="rounded-lg border border-red-500/20 bg-red-500/[0.06] p-1.5 text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
-            title="Delete"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-medium text-[#e8e0d4]">{server.label || server.name}</span>
+            {server.enabled ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                <span className="h-1 w-1 rounded-full bg-emerald-400" />
+                Connected
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#2a2520] bg-[#1c1a17] px-2 py-0.5 text-[10px] font-medium text-[#6b6459]">
+                Disabled
+              </span>
+            )}
+          </div>
+          <div className="text-[11px] text-[#6b6459]">
+            {template?.description ?? `${server.command} ${JSON.parse(server.args_json || "[]").join(" ")}`}
+          </div>
         </div>
       </div>
-      {server.env_keys.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pl-[42px]">
-          {server.env_keys.map((key) => (
-            <span key={key} className="rounded bg-[#1c1a17] px-2 py-0.5 text-[10px] font-mono text-[#6b6459] ring-1 ring-[#2a2520]">
-              {key}
-            </span>
-          ))}
-        </div>
-      )}
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={handleToggle}
+          disabled={toggling}
+          className="rounded-lg border border-[#2a2520] bg-[#1c1a17] p-1.5 text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+          title={server.enabled ? "Disable" : "Enable"}
+        >
+          <Power className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="rounded-lg border border-red-500/20 bg-red-500/[0.06] p-1.5 text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
+          title="Remove"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -758,27 +1057,18 @@ interface McpFormData {
   enabled?: boolean;
 }
 
-function McpServerForm({
-  initial,
+function CustomMcpForm({
   onSave,
   onCancel,
 }: {
-  initial?: CustomMcpServer;
   onSave: (data: McpFormData) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [label, setLabel] = useState(initial?.label ?? "");
-  const [command, setCommand] = useState(initial?.command ?? "npx");
-  const [argsStr, setArgsStr] = useState(
-    initial?.args_json ? JSON.parse(initial.args_json).join(" ") : "-y "
-  );
-  const [envPairs, setEnvPairs] = useState<{ key: string; value: string }[]>(() => {
-    if (initial?.env_keys?.length) {
-      return initial.env_keys.map((k) => ({ key: k, value: "" }));
-    }
-    return [{ key: "", value: "" }];
-  });
+  const [name, setName] = useState("");
+  const [label, setLabel] = useState("");
+  const [command, setCommand] = useState("npx");
+  const [argsStr, setArgsStr] = useState("-y ");
+  const [envPairs, setEnvPairs] = useState<{ key: string; value: string }[]>([{ key: "", value: "" }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -798,7 +1088,6 @@ function McpServerForm({
         command: command.trim(),
         args,
         env: Object.keys(env).length > 0 ? env : undefined,
-        enabled: initial?.enabled ?? true,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
@@ -807,44 +1096,31 @@ function McpServerForm({
     }
   }
 
-  function addEnvPair() {
-    setEnvPairs([...envPairs, { key: "", value: "" }]);
-  }
-
-  function removeEnvPair(index: number) {
-    setEnvPairs(envPairs.filter((_, i) => i !== index));
-  }
-
-  function updateEnvPair(index: number, field: "key" | "value", value: string) {
-    setEnvPairs(envPairs.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
-  }
-
   const isValid = name.trim() && command.trim() && /^[a-zA-Z0-9_-]+$/.test(name.trim());
 
   return (
     <div className="rounded-2xl border border-amber-500/20 bg-[#151412] p-5 space-y-4">
+      <div className="text-[13px] font-medium text-[#e8e0d4]">Custom MCP Server</div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-[#9c9486]">Name (unique ID)</label>
+          <label className="text-[11px] font-medium text-[#9c9486]">Name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="airtable"
-            disabled={!!initial}
-            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540] disabled:opacity-50"
+            placeholder="my-server"
+            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
           />
         </div>
         <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-[#9c9486]">Label (display name)</label>
+          <label className="text-[11px] font-medium text-[#9c9486]">Display Name</label>
           <input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="Airtable"
+            placeholder="My Server"
             className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
           />
         </div>
       </div>
-
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <label className="text-[11px] font-medium text-[#9c9486]">Command</label>
@@ -860,40 +1136,39 @@ function McpServerForm({
           <input
             value={argsStr}
             onChange={(e) => setArgsStr(e.target.value)}
-            placeholder="-y @airtable/mcp-server"
+            placeholder="-y @some/mcp-server"
             className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
           />
         </div>
       </div>
-
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="text-[11px] font-medium text-[#9c9486]">Environment Variables</label>
           <button
-            onClick={addEnvPair}
+            onClick={() => setEnvPairs([...envPairs, { key: "", value: "" }])}
             className="text-[11px] text-amber-400/70 hover:text-amber-300 transition-colors"
           >
-            + Add variable
+            + Add
           </button>
         </div>
         {envPairs.map((pair, i) => (
           <div key={i} className="flex items-center gap-2">
             <input
               value={pair.key}
-              onChange={(e) => updateEnvPair(i, "key", e.target.value)}
-              placeholder="AIRTABLE_API_KEY"
+              onChange={(e) => setEnvPairs(envPairs.map((p, j) => (j === i ? { ...p, key: e.target.value } : p)))}
+              placeholder="KEY"
               className="w-2/5 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
             />
             <input
               type="password"
               value={pair.value}
-              onChange={(e) => updateEnvPair(i, "value", e.target.value)}
-              placeholder={initial && pair.key ? "(unchanged)" : "value"}
+              onChange={(e) => setEnvPairs(envPairs.map((p, j) => (j === i ? { ...p, value: e.target.value } : p)))}
+              placeholder="value"
               className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
             />
             {envPairs.length > 1 && (
               <button
-                onClick={() => removeEnvPair(i)}
+                onClick={() => setEnvPairs(envPairs.filter((_, j) => j !== i))}
                 className="shrink-0 rounded-lg p-1.5 text-[#6b6459] hover:text-red-400 transition-colors"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -902,7 +1177,6 @@ function McpServerForm({
           </div>
         ))}
       </div>
-
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={handleSave}
@@ -912,7 +1186,7 @@ function McpServerForm({
             (saving || !isValid) && "opacity-40 cursor-not-allowed",
           )}
         >
-          {saving ? "Saving..." : initial ? "Update" : "Add Server"}
+          {saving ? "Saving..." : "Add Server"}
         </button>
         <button
           onClick={onCancel}
@@ -936,6 +1210,30 @@ function McpIcon() {
   );
 }
 
+function AirtableIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#18BFFF"><path d="M11.5 3.02L3.63 6.2a.86.86 0 000 1.58l7.89 3.2a2.29 2.29 0 001.72 0l7.89-3.2a.86.86 0 000-1.58L13.22 3.02a2.29 2.29 0 00-1.72 0z" /><path d="M12.6 12.15v8.27a.43.43 0 00.6.4l8.54-3.47a.86.86 0 00.52-.79v-8.27a.43.43 0 00-.6-.4L13.12 11.36a.86.86 0 00-.52.79z" opacity="0.7" /><path d="M11.14 12.3L3.47 9.2a.43.43 0 00-.63.38v8.12a.86.86 0 00.48.77l7.67 3.83a.43.43 0 00.63-.38v-8.85a.86.86 0 00-.48-.77z" opacity="0.5" /></svg>;
+}
+
+function NotionIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#e8e0d4"><path d="M4.46 4.18l9.68-.71c1.19-.1 1.49-.04 2.24.53l3.07 2.14c.52.38.68.48.68.89v12.27c0 .71-.26 1.12-1.18 1.18l-11.26.66c-.68.04-.97-.07-1.32-.49l-2.1-2.72c-.38-.52-.52-.89-.52-1.34V5.34c0-.57.26-1.08 1-1.16h-.29zm10.09 2.5v9.1c0 .49-.2.72-.63.75l-7.8.46c-.43.02-.63-.21-.63-.68V6.97c0-.47.21-.73.63-.75l7.8-.28c.46-.02.63.22.63.74z" /></svg>;
+}
+
+function FigmaIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#A259FF"><path d="M8 24c2.2 0 4-1.8 4-4v-4H8c-2.2 0-4 1.8-4 4s1.8 4 4 4z" /><path d="M4 12c0-2.2 1.8-4 4-4h4v8H8c-2.2 0-4-1.8-4-4z" opacity="0.8" /><path d="M4 4c0-2.2 1.8-4 4-4h4v8H8C5.8 8 4 6.2 4 4z" opacity="0.6" /><path d="M12 0h4c2.2 0 4 1.8 4 4s-1.8 4-4 4h-4V0z" opacity="0.4" /><circle cx="16" cy="12" r="4" opacity="0.6" /></svg>;
+}
+
+function HubSpotIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#FF7A59"><circle cx="12" cy="12" r="3" /><circle cx="18" cy="15" r="2" /><circle cx="6" cy="15" r="2" /><circle cx="12" cy="5" r="2" /><path d="M12 8v1m4.5 4.5l-1.5-1m-6 0l-1.5 1" stroke="#FF7A59" strokeWidth="1.5" fill="none" /></svg>;
+}
+
+function MongoIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#00ED64"><path d="M12.5 2.1c-.3-.5-.5-.9-.5-1.1 0 0-.2.4-.5 1.1C9.4 6.7 5 9.2 5 14c0 3.9 3.1 7 7 7s7-3.1 7-7c0-4.8-4.4-7.3-6.5-11.9zM12 19c-.6 0-1-.2-1-.5v-4c0-.3.4-.5 1-.5s1 .2 1 .5v4c0 .3-.4.5-1 .5z" /></svg>;
+}
+
+function LinearIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#5E6AD2"><path d="M3.36 7.56a10.2 10.2 0 0013.08 13.08L3.36 7.56zm.91-1.95l14.12 14.12A10.2 10.2 0 004.27 5.61zm2.12-1.7L19.7 17.22a10.2 10.2 0 00-13.31-13.3z" /></svg>;
+}
+
 // ── Shared UI ─────────────────────────────────────────────────────────────
 
 function Card({ children }: { children: React.ReactNode }) {
@@ -949,6 +1247,7 @@ function CardHeader({
   subtitle,
   status,
   statusLabel,
+  customIconStyle,
 }: {
   icon: React.ReactNode;
   iconBg: string;
@@ -956,10 +1255,11 @@ function CardHeader({
   subtitle: string;
   status?: "connected";
   statusLabel?: string;
+  customIconStyle?: React.CSSProperties;
 }) {
   return (
     <div className="flex items-start gap-3.5">
-      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1", iconBg)}>{icon}</div>
+      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1", iconBg)} style={customIconStyle}>{icon}</div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2.5">
           <span className="text-[14px] font-semibold text-[#e8e0d4]">{title}</span>

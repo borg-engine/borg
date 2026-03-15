@@ -654,6 +654,29 @@ pub(crate) async fn get_mcp_status(
         *service_counts.entry(status).or_insert(0) += 1;
     }
 
+    let custom_mcp: Vec<Value> = state
+        .db
+        .list_custom_mcp_servers(workspace.id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| {
+            mcp_status_item(
+                &format!("custom:{}", s.name),
+                &s.label,
+                if s.enabled { "configured" } else { "disabled" },
+                format!(
+                    "{} {}",
+                    s.command,
+                    serde_json::from_str::<Vec<String>>(&s.args_json)
+                        .unwrap_or_default()
+                        .join(" ")
+                ),
+                Some("custom"),
+                Some(s.created_at.clone()),
+            )
+        })
+        .collect();
+
     Ok(Json(json!({
         "generated_at": Utc::now().to_rfc3339(),
         "summary": {
@@ -665,6 +688,7 @@ pub(crate) async fn get_mcp_status(
         "agent_access": agent_access,
         "runtime": runtime,
         "services": services,
+        "custom_mcp_servers": custom_mcp,
         "workspace": {
             "id": workspace.id,
             "name": workspace.name,
