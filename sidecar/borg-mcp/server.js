@@ -428,6 +428,30 @@ const TOOLS = [
       required: ["file_id", "project_id"],
     },
   },
+
+  // -- Web scraping tools --
+  {
+    name: "scrape_url",
+    description:
+      "Scrape a web page and return its content as clean markdown. " +
+      "Use this instead of WebFetch when you need readable content from a URL — " +
+      "it strips navigation, ads, scripts, and returns just the article/page content as markdown, " +
+      "which uses far fewer tokens than raw HTML.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "The URL to scrape",
+        },
+        include_links: {
+          type: "boolean",
+          description: "Whether to preserve hyperlinks in the markdown output. Default: true.",
+        },
+      },
+      required: ["url"],
+    },
+  },
 ];
 
 // ── Tool handlers ───────────────────────────────────────────────────────
@@ -548,6 +572,9 @@ async function handleListServices() {
   lines.push("  upload_to_knowledge — upload a local file to org/user/project knowledge");
   lines.push("  list_knowledge_files — list org or personal knowledge files");
   lines.push("  list_projects — list all projects with IDs");
+  lines.push("\n## Web (borg-mcp)");
+  lines.push("  scrape_url — scrape a web page and get clean markdown");
+
   lines.push("\n## OCR (borg-mcp)");
   if (MISTRAL_API_KEY) {
     lines.push("  ocr_document — extract text from scanned PDFs/documents via Mistral OCR");
@@ -813,6 +840,22 @@ async function handleOcrImage(args) {
   return data.pages.map((p) => p.markdown).join("\n\n---\n\n");
 }
 
+async function handleScrapeUrl(args) {
+  if (!args.url) return "url is required";
+  const url = args.url;
+  const include_links = args.include_links ?? true;
+  const data = await apiFetch("/api/scrape", {
+    method: "POST",
+    json: { url, include_links },
+  });
+  const title = data.title;
+  const sourceUrl = data.url || url;
+  const markdown = data.markdown || "";
+  if (!markdown) return "Scrape completed but no content was extracted.";
+  const prefix = title ? `# ${title}\n\nSource: ${sourceUrl}\n\n` : "";
+  return prefix + markdown;
+}
+
 const HANDLERS = {
   search_documents: instrumentHandler("search_documents", handleSearchDocuments, 60000),
   list_documents: instrumentHandler("list_documents", handleListDocuments),
@@ -828,6 +871,7 @@ const HANDLERS = {
   list_projects: instrumentHandler("list_projects", handleListProjects),
   ocr_document: instrumentHandler("ocr_document", handleOcrDocument, 60000),
   ocr_image: instrumentHandler("ocr_image", handleOcrImage, 60000),
+  scrape_url: instrumentHandler("scrape_url", handleScrapeUrl, 30000),
 };
 
 // ── MCP server setup ────────────────────────────────────────────────────
