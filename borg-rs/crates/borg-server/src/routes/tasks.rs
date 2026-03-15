@@ -77,6 +77,14 @@ pub(crate) struct CreateMessageBody {
 #[derive(Deserialize)]
 pub(crate) struct TasksQuery {
     pub repo: Option<String>,
+    pub status: Option<String>,
+    pub mode: Option<String>,
+    pub created_by: Option<String>,
+    pub project_id: Option<i64>,
+    pub q: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub sort: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -89,11 +97,51 @@ pub(crate) async fn list_tasks(
     axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
     Query(q): Query<TasksQuery>,
 ) -> Result<Json<Value>, StatusCode> {
-    let tasks = state
+    let mut tasks = state
         .db
         .list_all_tasks_in_workspace(workspace.id, q.repo.as_deref())
         .map_err(internal)?;
-    Ok(Json(json!(tasks)))
+
+    // Filter by status
+    if let Some(ref status) = q.status {
+        tasks.retain(|t| t.status == *status);
+    }
+    // Filter by mode
+    if let Some(ref mode) = q.mode {
+        tasks.retain(|t| t.mode == *mode);
+    }
+    // Filter by created_by
+    if let Some(ref created_by) = q.created_by {
+        tasks.retain(|t| t.created_by == *created_by);
+    }
+    // Filter by project_id
+    if let Some(project_id) = q.project_id {
+        tasks.retain(|t| t.project_id == project_id);
+    }
+    // Search by title
+    if let Some(ref search) = q.q {
+        let lower = search.to_lowercase();
+        tasks.retain(|t| t.title.to_lowercase().contains(&lower));
+    }
+    // Sort
+    match q.sort.as_deref() {
+        Some("created_at") => tasks.sort_by(|a, b| a.created_at.cmp(&b.created_at)),
+        Some("updated_at") => tasks.sort_by(|a, b| b.updated_at.cmp(&a.updated_at)),
+        Some("status") => tasks.sort_by(|a, b| a.status.cmp(&b.status)),
+        _ => {} // default: DB order (usually created_at desc)
+    }
+    // Pagination
+    let total = tasks.len();
+    let offset = q.offset.unwrap_or(0).max(0) as usize;
+    let limit = q.limit.unwrap_or(50).max(1).min(500) as usize;
+    let tasks: Vec<_> = tasks.into_iter().skip(offset).take(limit).collect();
+
+    Ok(Json(json!({
+        "tasks": tasks,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })))
 }
 
 pub(crate) async fn get_task(
