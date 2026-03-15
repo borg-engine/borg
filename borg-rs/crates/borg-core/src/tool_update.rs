@@ -19,7 +19,7 @@ pub async fn ensure_agent_tools_updated() {
 
     info!("updating agent CLI tools (>24h since last update)");
     let cmds: &[(&str, &[&str])] = &[
-        ("claude", &["update"]),
+        ("claude", &["install"]),
         ("bun", &["install", "-g", "@openai/codex@latest"]),
     ];
     for (bin, args) in cmds {
