@@ -144,6 +144,7 @@ pub struct AppState {
     pub secret_store: Arc<dyn SecretStore>,
     pub document_parser: Arc<DocumentParserRouter>,
     pub ocr: Arc<borg_core::ocr::OcrRouter>,
+    pub scraper: Arc<borg_core::scraper::ScrapeRouter>,
 }
 
 impl AppState {
@@ -1694,6 +1695,9 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
         // OCR
         .route("/api/ocr", post(routes::ocr_document))
         .route("/api/ocr/status", get(routes::ocr_status))
+        // Web scraping
+        .route("/api/scrape", post(routes::scrape_url))
+        .route("/api/scrape/status", get(routes::scrape_status))
         // Admin / debugging
         .route(
             "/api/admin/conversation",
@@ -2021,6 +2025,12 @@ async fn main() -> anyhow::Result<()> {
         secret_store,
         document_parser,
         ocr: ocr_router,
+        scraper: Arc::new(
+            borg_core::scraper::ScrapeRouter::from_env().unwrap_or_else(|e| {
+                warn!("failed to initialize scraper: {e}");
+                borg_core::scraper::ScrapeRouter::new()
+            }),
+        ),
     });
 
     spawn_post_state_tasks(&state, &config, &db);

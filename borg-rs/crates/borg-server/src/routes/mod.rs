@@ -34,6 +34,9 @@ pub(crate) use tool_calls::*;
 pub(crate) mod ocr;
 pub(crate) use ocr::*;
 
+pub(crate) mod scrape;
+pub(crate) use scrape::*;
+
 pub(crate) mod utils;
 
 pub(crate) use crate::routes_modes::{

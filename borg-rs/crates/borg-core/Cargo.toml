@@ -38,6 +38,7 @@ bytes = "1"
 chacha20poly1305 = "0.10"
 rand = "0.8"
 hex = "0.4.3"
+html2md = "0.2"
 aws-config = "1"
 aws-sdk-kms = "1"
 imap = { version = "3.0.0-alpha.15", features = ["native-tls"] }

@@ -17,6 +17,7 @@ pub mod pipeline;
 mod pipeline_maintenance;
 pub mod registry;
 pub mod sandbox;
+pub mod scraper;
 pub mod secrets;
 pub mod sidecar;
 pub mod stream;

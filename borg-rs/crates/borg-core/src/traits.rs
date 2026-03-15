@@ -237,6 +237,25 @@ pub trait DocumentParser: Send + Sync {
     fn supported_types(&self) -> Vec<String>;
 }
 
+// ── Web Scraper ──────────────────────────────────────────────────────────
+
+/// Result of scraping a web page.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ScrapeResult {
+    pub markdown: String,
+    pub title: Option<String>,
+    pub url: String,
+    pub metadata: HashMap<String, String>,
+}
+
+/// Provider for web scraping — fetches a URL and returns clean content.
+#[async_trait]
+pub trait ScrapeProvider: Send + Sync {
+    async fn scrape(&self, url: &str) -> Result<ScrapeResult>;
+    fn name(&self) -> &str;
+    fn is_available(&self) -> bool;
+}
+
 // ── OCR Provider ─────────────────────────────────────────────────────────
 
 /// Result of OCR processing.
