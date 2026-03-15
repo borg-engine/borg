@@ -31,6 +31,9 @@ pub(crate) use tasks::*;
 pub(crate) mod tool_calls;
 pub(crate) use tool_calls::*;
 
+pub(crate) mod ocr;
+pub(crate) use ocr::*;
+
 pub(crate) mod utils;
 
 pub(crate) use crate::routes_modes::{

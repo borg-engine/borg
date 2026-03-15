@@ -84,6 +84,12 @@ pub fn build_mcp_servers_json(
         if workspace_id > 0 {
             env_vars.insert("WORKSPACE_ID".into(), json!(workspace_id.to_string()));
         }
+        // Pass OCR API key so MCP tools can do OCR
+        if let Ok(key) = std::env::var("MISTRAL_API_KEY") {
+            if !key.is_empty() {
+                env_vars.insert("MISTRAL_API_KEY".into(), json!(key));
+            }
+        }
         mcp_servers.insert(
             "borg".into(),
             json!({

@@ -90,6 +90,7 @@ impl IngestionQueue {
         storage: Arc<FileStorage>,
         search: Option<Arc<SearchClient>>,
         embed_registry: Arc<borg_core::knowledge::EmbeddingRegistry>,
+        ocr: Arc<borg_core::ocr::OcrRouter>,
     ) {
         let (queue_url, client) = match self.as_ref() {
             Self::Disabled => return,
@@ -135,11 +136,12 @@ impl IngestionQueue {
                 let sqs_client = client.clone();
                 let queue_url = queue_url.clone();
                 let sem = Arc::clone(&sem);
+                let ocr = Arc::clone(&ocr);
 
                 set.spawn(async move {
                     let _permit = sem.acquire().await;
                     let processed =
-                        process_message(&body, &db, &storage, search.as_deref(), &embed_registry)
+                        process_message(&body, &db, &storage, search.as_deref(), &embed_registry, &ocr)
                             .await;
                     if processed {
                         let _ = sqs_client
@@ -171,6 +173,7 @@ async fn process_message(
     storage: &FileStorage,
     search: Option<&SearchClient>,
     embed_registry: &borg_core::knowledge::EmbeddingRegistry,
+    ocr: &borg_core::ocr::OcrRouter,
 ) -> bool {
     let parsed = serde_json::from_str::<ProjectFileIngestMsg>(body);
     let Ok(msg) = parsed else {
@@ -200,13 +203,32 @@ async fn process_message(
             return false;
         },
     };
-    let text = match extract_text_from_bytes(&msg.file_name, &msg.mime_type, &bytes).await {
+    let mut text = match extract_text_from_bytes(&msg.file_name, &msg.mime_type, &bytes).await {
         Ok(t) => t,
         Err(e) => {
             tracing::warn!("ingestion worker extract failed: {e}");
-            return false;
+            String::new()
         },
     };
+
+    // If text extraction yielded little/no content, try OCR for scanned docs
+    if borg_core::ocr::needs_ocr(&msg.mime_type, &text) && ocr.is_available() {
+        match ocr.ocr(&bytes, &msg.mime_type).await {
+            Ok(result) => {
+                tracing::info!(
+                    file = %msg.file_name,
+                    pages = result.page_count,
+                    text_len = result.text.len(),
+                    "OCR extracted text from scanned document"
+                );
+                text = result.text;
+            },
+            Err(e) => {
+                tracing::warn!(file = %msg.file_name, "OCR failed: {e}");
+            },
+        }
+    }
+
     if text.is_empty() {
         return true;
     }

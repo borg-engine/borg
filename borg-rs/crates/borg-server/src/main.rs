@@ -143,6 +143,7 @@ pub struct AppState {
     pub active_chat_agents: Arc<std::sync::atomic::AtomicUsize>,
     pub secret_store: Arc<dyn SecretStore>,
     pub document_parser: Arc<DocumentParserRouter>,
+    pub ocr: Arc<borg_core::ocr::OcrRouter>,
 }
 
 impl AppState {
@@ -875,6 +876,7 @@ fn spawn_ingestion_workers(
     file_storage: Arc<storage::FileStorage>,
     search: Option<Arc<search::SearchClient>>,
     embed_registry: Arc<borg_core::knowledge::EmbeddingRegistry>,
+    ocr: Arc<borg_core::ocr::OcrRouter>,
     worker_loops: usize,
 ) {
     for _ in 0..worker_loops {
@@ -883,8 +885,9 @@ fn spawn_ingestion_workers(
         let storage = Arc::clone(&file_storage);
         let search = search.clone();
         let er = Arc::clone(&embed_registry);
+        let ocr = Arc::clone(&ocr);
         tokio::spawn(async move {
-            queue.run_worker(db, storage, search, er).await;
+            queue.run_worker(db, storage, search, er, ocr).await;
         });
     }
 }
@@ -1245,6 +1248,7 @@ fn spawn_post_state_tasks(state: &Arc<AppState>, config: &Arc<Config>, db: &Arc<
         Arc::clone(&state.file_storage),
         state.search.clone(),
         Arc::clone(&state.embed_registry),
+        Arc::clone(&state.ocr),
         worker_loops,
     );
 
@@ -1687,6 +1691,9 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
         // Tool calls & usage
         .route("/api/tool-calls", get(routes::list_tool_calls))
         .route("/api/usage", get(routes::get_usage))
+        // OCR
+        .route("/api/ocr", post(routes::ocr_document))
+        .route("/api/ocr/status", get(routes::ocr_status))
         // Admin / debugging
         .route(
             "/api/admin/conversation",
@@ -1961,6 +1968,12 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let document_parser = Arc::new(DocumentParserRouter::new());
+    let ocr_router = Arc::new(
+        borg_core::ocr::OcrRouter::from_env().unwrap_or_else(|e| {
+            warn!("failed to initialize OCR: {e}");
+            borg_core::ocr::OcrRouter::new()
+        }),
+    );
 
     let state = Arc::new(AppState {
         db: Arc::clone(&db),
@@ -2007,6 +2020,7 @@ async fn main() -> anyhow::Result<()> {
         active_chat_agents: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         secret_store,
         document_parser,
+        ocr: ocr_router,
     });
 
     spawn_post_state_tasks(&state, &config, &db);

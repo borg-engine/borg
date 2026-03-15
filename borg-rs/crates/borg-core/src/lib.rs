@@ -10,6 +10,7 @@ pub mod knowledge;
 pub mod linked_credentials;
 pub mod modes;
 pub mod observer;
+pub mod ocr;
 pub mod parser;
 pub mod pgcompat;
 pub mod pipeline;

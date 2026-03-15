@@ -237,6 +237,38 @@ pub trait DocumentParser: Send + Sync {
     fn supported_types(&self) -> Vec<String>;
 }
 
+// ── OCR Provider ─────────────────────────────────────────────────────────
+
+/// Result of OCR processing.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OcrResult {
+    /// Extracted text (typically markdown).
+    pub text: String,
+    /// Per-page text if the provider returns page-level results.
+    pub pages: Vec<OcrPage>,
+    /// Number of pages processed.
+    pub page_count: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OcrPage {
+    pub page_index: usize,
+    pub text: String,
+}
+
+/// Provider for optical character recognition on scanned documents/images.
+#[async_trait]
+pub trait OcrProvider: Send + Sync {
+    /// OCR a document (PDF, image, etc.) and return extracted text.
+    async fn ocr_document(&self, data: &[u8], mime_type: &str) -> Result<OcrResult>;
+
+    /// Provider name for logging/config.
+    fn name(&self) -> &str;
+
+    /// Whether this provider is available (has API key, etc.).
+    fn is_available(&self) -> bool;
+}
+
 // ── Provider Config ──────────────────────────────────────────────────────
 
 /// Which LLM hosting backend to route through.
