@@ -538,7 +538,7 @@ function AppInner() {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col bg-[#0f0e0c] text-foreground antialiased text-[16px]" style={{ height: "100dvh" }}>
+      <div className="flex flex-col bg-[#0f0e0c] text-foreground antialiased text-[16px] overflow-x-hidden" style={{ height: "100dvh" }}>
         {/* Mobile sidebar overlay */}
         {sidebarOpen && (
           <div
@@ -671,7 +671,7 @@ function AppInner() {
 
   // Desktop layout
   return (
-    <div className="flex h-screen bg-[#0f0e0c] text-foreground antialiased">
+    <div className="flex h-screen bg-[#0f0e0c] text-foreground antialiased overflow-x-hidden">
       {/* Sidebar backdrop overlay for md screens */}
       {sidebarOpen && (
         <div
@@ -856,7 +856,7 @@ function AppInner() {
       </nav>
 
       {/* Main content */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col max-w-screen-2xl">
         {isSWE && (
           <Header
             connected={connected}
@@ -881,8 +881,8 @@ function AppInner() {
         <div className="min-h-0 flex-1 flex flex-col md:flex-row overflow-hidden">
           <div className="min-w-0 flex-1 overflow-hidden" style={{ contain: "strict" }}>
             {view === "tasks" && (
-              <div className="flex h-full flex-col md:flex-row">
-                <div className="md:w-[320px] shrink-0 overflow-hidden border-b md:border-b-0 md:border-r border-[#2a2520] max-h-[40vh] md:max-h-none">
+              <div className="flex h-full flex-col lg:flex-row">
+                <div className="lg:w-[320px] shrink-0 overflow-hidden border-b lg:border-b-0 lg:border-r border-[#2a2520] max-h-[40vh] lg:max-h-none">
                   <TaskList selectedId={selectedTaskId} onSelect={handleSelectTask} repoFilter={repoFilter} />
                 </div>
                 <div className="min-w-0 flex-1 overflow-hidden">

@@ -579,7 +579,7 @@ function WorkItemControls({ thread }: { thread: string }) {
             #{task.id} {task.title}
           </div>
           <div className="text-[11px] text-emerald-400/70 mb-2">Awaiting review</div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={async () => {
                 await approveTask(task.id);

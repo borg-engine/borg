@@ -676,7 +676,7 @@ export function ProjectsPanel() {
 
       {/* Right: Chat panel for knowledge tabs */}
       {!isSWE && showMemory && (
-        <div className="flex h-full w-[30vw] shrink-0 flex-col border-l border-[#2a2520] bg-[#0f0e0c] overflow-hidden">
+        <div className="flex h-full w-[30vw] min-w-[300px] max-w-[500px] shrink-0 flex-col border-l border-[#2a2520] bg-[#0f0e0c] overflow-hidden">
           <ChatBody thread="web:dashboard" className="bg-[#0f0e0c]" />
         </div>
       )}

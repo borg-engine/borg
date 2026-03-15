@@ -65,7 +65,7 @@ export function AutoTasksPanel() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 border-b border-[#2a2520] p-5">
-        <div className="flex items-center gap-3">
+        <div className="mx-auto max-w-4xl flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1c1a17] ring-1 ring-amber-900/20">
             <Zap className="h-6 w-6 text-amber-400/60" />
           </div>
@@ -92,6 +92,7 @@ export function AutoTasksPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
+        <div className="mx-auto max-w-4xl">
         {isReadOnly && (
           <div className="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/[0.04] px-4 py-2.5 text-[12px] text-amber-400/80">
             This is a built-in pipeline. Copy &amp; Edit it from the Pipelines view to modify auto tasks.
@@ -106,6 +107,7 @@ export function AutoTasksPanel() {
           onAdd={() => dispatch({ type: "ADD_SEED" })}
           onRemove={(i) => dispatch({ type: "REMOVE_SEED", index: i })}
         />
+        </div>
       </div>
 
       {(isDirty || msg) && (

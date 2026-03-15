@@ -758,6 +758,7 @@ html:not(.dark) .shadow-\[0_0_8px_rgba\(200\,160\,80\,0\.3\)\] {
   }
   html {
     height: -webkit-fill-available;
+    overflow-x: hidden;
   }
   input,
   textarea,
