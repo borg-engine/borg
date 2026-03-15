@@ -10,6 +10,6 @@ logs/
 whatsapp/auth/
 whatsapp/node_modules/
 discord/node_modules/
-dashboard/node_modules/
-dashboard/dist/
+apps/web/node_modules/
+apps/web/dist/
 .worktrees/

@@ -1,5 +1,5 @@
 {
-  "name": "dashboard",
+  "name": "@borg/web",
   "private": true,
   "version": "0.0.0",
   "license": "AGPL-3.0-only",
@@ -36,7 +36,9 @@
     "shiki": "^4.0.1",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "@borg/api": "workspace:*",
+    "@borg/hooks": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",

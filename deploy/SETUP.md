@@ -46,7 +46,7 @@ VPS (host)
 ├── PostgreSQL                 control-plane database
 ├── SeaweedFS / S3 endpoint    object storage for files + active-work backups
 ├── Vespa                      retrieval engine
-└── /opt/borg/dashboard/dist/  static dashboard files
+└── /opt/borg/apps/web/dist/   static dashboard files
 ```
 
 No ports exposed. Cloudflare handles TLS + SSO. ~€6.49/mo.
@@ -132,7 +132,7 @@ SANDBOX_BACKEND=docker
 CONTAINER_IMAGE=borg-agent
 CONTINUOUS_MODE=true
 DATA_DIR=store
-DASHBOARD_DIST_DIR=dashboard/dist
+DASHBOARD_DIST_DIR=apps/web/dist
 MODEL=claude-sonnet-4-6
 PIPELINE_MAX_AGENTS=2
 RUST_LOG=info
@@ -142,7 +142,7 @@ EOF
 # Build everything
 source ~/.cargo/env
 cd borg-rs && cargo build --release && cd ..
-cd dashboard && bun install && bun run build && cd ..
+cd apps/web && bun install && bun run build && cd ../..
 docker build -t borg-agent -f container/Dockerfile container/
 
 # Install borg service

@@ -33,10 +33,10 @@ whatsapp/auth/
 spec.md
 
 # Dashboard build artifacts
-dashboard/dist/
+apps/web/dist/
 
 # Local deployment config
-dashboard/.env.production
+apps/web/.env.production
 
 # SQLite databases
 *.db

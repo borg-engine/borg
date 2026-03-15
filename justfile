@@ -14,7 +14,7 @@ r:
 
 # Build dashboard
 dash:
-    cd dashboard && bun install && bun run format && bun run build
+    cd apps/web && bun install && bun run format && bun run build
 
 # Build Docker agent image
 image:
@@ -109,7 +109,7 @@ s: t b install-service restart
 
 # Quick dev build (debug) + dashboard (no tsc) + restart
 dev: ensure-stack
-    cd dashboard && bun install --frozen-lockfile 2>/dev/null || cd dashboard && bun install && bunx vite build
+    cd apps/web && bun install --frozen-lockfile 2>/dev/null || cd apps/web && bun install && bunx vite build
     cd borg-rs && cargo build
     just stop || true
     cp borg-rs/target/debug/borg-server borg-rs/target/release/borg-server
@@ -117,7 +117,7 @@ dev: ensure-stack
 
 # Format dashboard code
 fmt:
-    cd dashboard && bun run format
+    cd apps/web && bun run format
 
 ship: ensure-stack dash s
 

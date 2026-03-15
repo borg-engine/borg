@@ -3,7 +3,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'dashboard/**'
+      - 'apps/web/**'
+      - 'packages/**'
 
 jobs:
   dashboard:
@@ -11,10 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - run: cd dashboard && bun install && bash build.sh
+      - run: cd apps/web && bun install && bash build.sh
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: dashboard
+          workingDirectory: apps/web
           command: deploy

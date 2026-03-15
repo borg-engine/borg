@@ -1130,7 +1130,7 @@ impl Config {
                 bind: get_str("WEB_BIND", &dotenv, "127.0.0.1"),
                 port: web_port,
                 proxy_port,
-                dashboard_dist_dir: get_str("DASHBOARD_DIST_DIR", &dotenv, "dashboard/dist"),
+                dashboard_dist_dir: get_str("DASHBOARD_DIST_DIR", &dotenv, "apps/web/dist"),
                 public_url: get_str("PUBLIC_URL", &dotenv, ""),
                 disable_auth: get_bool("DISABLE_AUTH", &dotenv, false),
                 auth_mode: get_str("AUTH_MODE", &dotenv, "local"),

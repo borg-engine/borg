@@ -18,7 +18,7 @@ git clone <repo-url> borg && cd borg
 just setup
 ```
 
-This builds the binary, Docker agent image, sidecar deps, and dashboard.
+This builds the binary, Docker agent image, sidecar deps, and web dashboard.
 
 ## 2. Configure
 

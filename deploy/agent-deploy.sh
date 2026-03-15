@@ -98,14 +98,14 @@ export PATH="\$HOME/.cargo/bin:\$HOME/.bun/bin:\$PATH"
 cd ${REMOTE_DIR}
 
 cd borg-rs && cargo build --release && cd ..
-cd dashboard && bun install --frozen-lockfile && bun run build && cd ..
+cd apps/web && bun install --frozen-lockfile && bun run build && cd ../..
 cd sidecar/agent-bridge && bun install && cd ../..
 docker build -t borg-agent -f container/Dockerfile container/
 
 # Ensure borg user owns the entire working directory
 if id borg >/dev/null 2>&1; then
   chown -R borg:borg ${REMOTE_DIR}/borg-rs/target/release/borg-server
-  chown -R borg:borg ${REMOTE_DIR}/dashboard/dist
+  chown -R borg:borg ${REMOTE_DIR}/apps/web/dist
   chown -R borg:borg ${REMOTE_DIR}/store 2>/dev/null || true
   # Install global CLI tools the service needs at runtime
   su - borg -c "bun install -g @openai/codex@latest" 2>/dev/null || true
