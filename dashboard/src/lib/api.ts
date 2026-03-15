@@ -381,6 +381,64 @@ export async function disconnectSlackBot(): Promise<{ ok: boolean }> {
   return r.json();
 }
 
+// ── Custom MCP Servers ──────────────────────────────────────────────────
+
+export interface CustomMcpServer {
+  id: number;
+  workspace_id: number;
+  name: string;
+  label: string;
+  command: string;
+  args_json: string;
+  env_keys: string[];
+  enabled: boolean;
+  created_at: string;
+}
+
+export function useCustomMcpServers() {
+  return useQuery<CustomMcpServer[]>({
+    queryKey: ["custom-mcp-servers"],
+    queryFn: async () => {
+      const data = await fetchJson<{ servers: CustomMcpServer[] }>("/api/mcp/servers");
+      return data.servers;
+    },
+    staleTime: 30_000,
+  });
+}
+
+export async function upsertCustomMcpServer(body: {
+  name: string;
+  label?: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  enabled?: boolean;
+}): Promise<{ id: number }> {
+  const r = await apiFetch("/api/mcp/servers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`Failed to save MCP server (${r.status})`);
+  return r.json();
+}
+
+export async function deleteCustomMcpServer(id: number): Promise<{ ok: boolean }> {
+  const r = await apiFetch(`/api/mcp/servers/${id}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
+export async function toggleCustomMcpServer(id: number, enabled: boolean): Promise<{ ok: boolean }> {
+  const r = await apiFetch(`/api/mcp/servers/${id}/toggle`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
 export interface LinkedCredential {
   id: number;
   user_id: number;

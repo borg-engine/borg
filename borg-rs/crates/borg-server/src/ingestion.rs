@@ -18,20 +18,20 @@ pub enum IngestionQueue {
 impl IngestionQueue {
     pub async fn from_config(config: &Config) -> Result<Self> {
         if config
-            .ingestion_queue_backend
+            .ingestion.queue_backend
             .trim()
             .eq_ignore_ascii_case("sqs")
         {
-            if config.sqs_queue_url.trim().is_empty() {
+            if config.ingestion.sqs_queue_url.trim().is_empty() {
                 return Ok(Self::Disabled);
             }
 
             let mut loader = aws_config::defaults(BehaviorVersion::latest())
-                .region(Region::new(config.sqs_region.clone()));
-            if !config.s3_access_key.is_empty() && !config.s3_secret_key.is_empty() {
+                .region(Region::new(config.ingestion.sqs_region.clone()));
+            if !config.storage.s3_access_key.is_empty() && !config.storage.s3_secret_key.is_empty() {
                 loader = loader.credentials_provider(Credentials::new(
-                    config.s3_access_key.clone(),
-                    config.s3_secret_key.clone(),
+                    config.storage.s3_access_key.clone(),
+                    config.storage.s3_secret_key.clone(),
                     None,
                     None,
                     "borg-server-config",
@@ -40,7 +40,7 @@ impl IngestionQueue {
             let shared = loader.load().await;
             let client = Client::new(&shared);
             return Ok(Self::Sqs {
-                queue_url: config.sqs_queue_url.clone(),
+                queue_url: config.ingestion.sqs_queue_url.clone(),
                 client,
             });
         }

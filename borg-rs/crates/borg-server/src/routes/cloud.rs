@@ -679,8 +679,8 @@ pub(crate) async fn import_cloud_files(
     Path((id, conn_id)): Path<(i64, i64)>,
     Json(body): Json<CloudImportBody>,
 ) -> Result<Json<Value>, StatusCode> {
-    let max_import_batch_files = state.config.cloud_import_max_batch_files.max(1) as usize;
-    let max_project_bytes = state.config.project_max_bytes.max(1);
+    let max_import_batch_files = state.config.quota.cloud_import_max_batch_files.max(1) as usize;
+    let max_project_bytes = state.config.quota.project_max_bytes.max(1);
     if body.files.len() > max_import_batch_files {
         return Err(StatusCode::PAYLOAD_TOO_LARGE);
     }

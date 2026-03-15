@@ -12,10 +12,10 @@ impl Pipeline {
     pub(crate) async fn check_integration(self: &Arc<Self>) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
         let last = self.db.get_ts("last_release_ts");
-        let min_interval = if self.config.continuous_mode {
+        let min_interval = if self.config.pipeline.continuous_mode {
             60i64
         } else {
-            self.config.release_interval_mins as i64 * 60
+            self.config.pipeline.release_interval_mins as i64 * 60
         };
         if now - last < min_interval {
             return Ok(());
@@ -56,8 +56,8 @@ impl Pipeline {
         let timeout = std::time::Duration::from_secs(self.config.agent_timeout_s.max(300) as u64);
         let mut cmd = tokio::process::Command::new("gh");
         cmd.args(args);
-        if !self.config.github_token.is_empty() {
-            cmd.env("GH_TOKEN", &self.config.github_token);
+        if !self.config.git.github_token.is_empty() {
+            cmd.env("GH_TOKEN", &self.config.git.github_token);
         }
         let output = tokio::time::timeout(timeout, cmd.output())
             .await
@@ -453,7 +453,7 @@ impl Pipeline {
 
         if !merged_branches.is_empty() {
             let digest = self.generate_digest(&merged_branches);
-            self.notify(&self.config.pipeline_admin_chat, &digest);
+            self.notify(&self.config.pipeline.admin_chat, &digest);
             info!("Integration complete: {} merged", merged_branches.len());
         }
 

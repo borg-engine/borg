@@ -7,12 +7,12 @@ impl Pipeline {
     // ── Seed ─────────────────────────────────────────────────────────────
 
     pub(crate) async fn seed_if_idle(&self) -> Result<()> {
-        if !self.config.continuous_mode {
+        if !self.config.pipeline.continuous_mode {
             return Ok(());
         }
 
         let active = self.db.list_active_tasks()?.len() as u32;
-        if active >= self.config.pipeline_max_backlog {
+        if active >= self.config.pipeline.max_backlog {
             return Ok(());
         }
 
@@ -20,7 +20,7 @@ impl Pipeline {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let cooldown = self.config.pipeline_seed_cooldown_s;
+        let cooldown = self.config.pipeline.seed_cooldown_s;
 
         for repo in &self.config.watched_repos {
             if repo.is_self {
@@ -51,7 +51,7 @@ impl Pipeline {
                 }
                 // Re-check backlog limit between seeds to avoid blocking for ages
                 if let Ok(active) = self.db.list_active_tasks() {
-                    if active.len() as u32 >= self.config.pipeline_max_backlog {
+                    if active.len() as u32 >= self.config.pipeline.max_backlog {
                         info!("seed: backlog full, stopping seed scan early");
                         return Ok(());
                     }
@@ -101,7 +101,7 @@ impl Pipeline {
         };
 
         let active = self.db.list_active_tasks()?.len() as i64;
-        let available_slots = (self.config.pipeline_max_backlog as i64 - active).max(0) as usize;
+        let available_slots = (self.config.pipeline.max_backlog as i64 - active).max(0) as usize;
         if available_slots == 0 {
             return Ok(());
         }

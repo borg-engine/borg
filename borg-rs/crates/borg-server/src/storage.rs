@@ -35,18 +35,18 @@ impl FileStorage {
     }
 
     pub async fn from_config(config: &Config) -> Result<Self> {
-        if config.storage_backend.trim().eq_ignore_ascii_case("s3") {
-            if config.s3_bucket.trim().is_empty() {
+        if config.storage.backend.trim().eq_ignore_ascii_case("s3") {
+            if config.storage.s3_bucket.trim().is_empty() {
                 return Err(anyhow!(
                     "S3 storage backend selected but S3_BUCKET/s3_bucket is empty"
                 ));
             }
             let mut loader = aws_config::defaults(BehaviorVersion::latest())
-                .region(Region::new(config.s3_region.clone()));
-            if !config.s3_access_key.is_empty() && !config.s3_secret_key.is_empty() {
+                .region(Region::new(config.storage.s3_region.clone()));
+            if !config.storage.s3_access_key.is_empty() && !config.storage.s3_secret_key.is_empty() {
                 loader = loader.credentials_provider(Credentials::new(
-                    config.s3_access_key.clone(),
-                    config.s3_secret_key.clone(),
+                    config.storage.s3_access_key.clone(),
+                    config.storage.s3_secret_key.clone(),
                     None,
                     None,
                     "borg-server-config",
@@ -54,18 +54,18 @@ impl FileStorage {
             }
             let shared = loader.load().await;
             let mut s3_builder = aws_sdk_s3::config::Builder::from(&shared);
-            if !config.s3_endpoint.trim().is_empty() {
+            if !config.storage.s3_endpoint.trim().is_empty() {
                 s3_builder = s3_builder
-                    .endpoint_url(config.s3_endpoint.clone())
+                    .endpoint_url(config.storage.s3_endpoint.clone())
                     .force_path_style(true);
             }
             let client = Client::from_conf(s3_builder.build());
-            let mut prefix = config.s3_prefix.trim().to_string();
+            let mut prefix = config.storage.s3_prefix.trim().to_string();
             if !prefix.is_empty() && !prefix.ends_with('/') {
                 prefix.push('/');
             }
             return Ok(Self::S3 {
-                bucket: config.s3_bucket.clone(),
+                bucket: config.storage.s3_bucket.clone(),
                 prefix,
                 client,
             });

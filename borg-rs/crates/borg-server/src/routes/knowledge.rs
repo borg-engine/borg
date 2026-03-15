@@ -96,7 +96,7 @@ pub(crate) async fn upload_knowledge(
     mut multipart: Multipart,
 ) -> Result<Json<Value>, StatusCode> {
     const MAX_KNOWLEDGE_FILE_BYTES: i64 = 50 * 1024 * 1024;
-    let max_knowledge_total_bytes = state.config.knowledge_max_bytes.max(1);
+    let max_knowledge_total_bytes = state.config.quota.knowledge_max_bytes.max(1);
 
     let knowledge_dir = format!(
         "{}/knowledge/workspaces/{}",
@@ -397,7 +397,7 @@ pub(crate) async fn upload_user_knowledge(
     mut multipart: Multipart,
 ) -> Result<Json<Value>, StatusCode> {
     const MAX_KNOWLEDGE_FILE_BYTES: i64 = 50 * 1024 * 1024;
-    let max_knowledge_total_bytes = state.config.knowledge_max_bytes.max(1);
+    let max_knowledge_total_bytes = state.config.quota.knowledge_max_bytes.max(1);
 
     let knowledge_dir = format!(
         "{}/knowledge/workspaces/{}/users/{}",

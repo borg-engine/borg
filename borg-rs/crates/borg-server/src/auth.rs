@@ -229,7 +229,7 @@ pub fn resolve_auth_user_from_headers(
 
 fn external_email_is_admin(config: &borg_core::config::Config, email: &str) -> bool {
     config
-        .cloudflare_admin_emails
+        .web.cloudflare_admin_emails
         .iter()
         .any(|allowed| allowed.eq_ignore_ascii_case(email))
 }
@@ -358,12 +358,12 @@ pub async fn auth_middleware(
         return next.run(request).await;
     }
 
-    if state.config.disable_auth {
+    if state.config.web.disable_auth {
         request.extensions_mut().insert(AuthUser::system_admin());
         return next.run(request).await;
     }
 
-    if auth_mode_is_cloudflare_access(&state.config.auth_mode) {
+    if auth_mode_is_cloudflare_access(&state.config.web.auth_mode) {
         if let Some(token) = extract_bearer(request.headers()) {
             if token == state.api_token {
                 request.extensions_mut().insert(AuthUser::system_admin());
@@ -372,7 +372,7 @@ pub async fn auth_middleware(
         }
         let Some(email) = extract_email_header(
             request.headers(),
-            &state.config.cloudflare_access_email_header,
+            &state.config.web.cloudflare_access_email_header,
         ) else {
             return (
                 StatusCode::UNAUTHORIZED,
@@ -510,7 +510,7 @@ pub async fn workspace_middleware(
 
 // GET /api/auth/token — returns shared token for backward compat
 pub async fn get_token(State(state): State<Arc<AppState>>) -> Response {
-    if !state.config.disable_auth {
+    if !state.config.web.disable_auth {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({"error": "shared token disabled"})),
@@ -553,7 +553,7 @@ pub async fn auth_status(State(state): State<Arc<AppState>>) -> Response {
     if microsoft_configured {
         sso_providers.push("microsoft");
     }
-    if state.config.disable_auth {
+    if state.config.web.disable_auth {
         return Json(json!({
             "needs_setup": false,
             "user_count": 1,
@@ -563,7 +563,7 @@ pub async fn auth_status(State(state): State<Arc<AppState>>) -> Response {
         }))
         .into_response();
     }
-    if auth_mode_is_cloudflare_access(&state.config.auth_mode) {
+    if auth_mode_is_cloudflare_access(&state.config.web.auth_mode) {
         let user_count = state.db.count_users().unwrap_or(0);
         return Json(json!({
             "needs_setup": false,
@@ -596,7 +596,7 @@ pub struct SetupBody {
 static SETUP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub async fn setup(State(state): State<Arc<AppState>>, Json(body): Json<SetupBody>) -> Response {
-    if auth_mode_is_cloudflare_access(&state.config.auth_mode) {
+    if auth_mode_is_cloudflare_access(&state.config.web.auth_mode) {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "setup disabled when AUTH_MODE=cloudflare_access"})),
@@ -687,7 +687,7 @@ pub struct LoginBody {
 
 // POST /api/auth/login
 pub async fn login(State(state): State<Arc<AppState>>, Json(body): Json<LoginBody>) -> Response {
-    if auth_mode_is_cloudflare_access(&state.config.auth_mode) {
+    if auth_mode_is_cloudflare_access(&state.config.web.auth_mode) {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "login disabled when AUTH_MODE=cloudflare_access"})),
@@ -865,10 +865,10 @@ pub async fn sso_start(
     State(state): State<Arc<AppState>>,
     Path(provider): Path<String>,
 ) -> Response {
-    if state.config.disable_auth {
+    if state.config.web.disable_auth {
         return sso_error_redirect("sso_disabled_when_auth_is_disabled");
     }
-    if auth_mode_is_cloudflare_access(&state.config.auth_mode) {
+    if auth_mode_is_cloudflare_access(&state.config.web.auth_mode) {
         return sso_error_redirect("sso_disabled_when_auth_mode_is_cloudflare_access");
     }
     let Ok((client_id, _)) = sso_client_credentials(state.as_ref(), &provider) else {

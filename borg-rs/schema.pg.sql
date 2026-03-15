@@ -660,3 +660,19 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 CREATE INDEX IF NOT EXISTS idx_tool_calls_task ON tool_calls(task_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_chat ON tool_calls(chat_key);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_run ON tool_calls(run_id);
+
+-- ── Custom MCP servers (user-configured integrations) ──────────────────
+
+CREATE TABLE IF NOT EXISTS custom_mcp_servers (
+  id BIGSERIAL PRIMARY KEY,
+  workspace_id BIGINT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  command TEXT NOT NULL,
+  args TEXT NOT NULL DEFAULT '[]',
+  env TEXT NOT NULL DEFAULT '{}',
+  enabled BIGINT NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_mcp_workspace_name ON custom_mcp_servers(workspace_id, name);
+CREATE INDEX IF NOT EXISTS idx_custom_mcp_workspace ON custom_mcp_servers(workspace_id);

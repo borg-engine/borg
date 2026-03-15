@@ -32,7 +32,7 @@ pub enum SearchClient {
 
 impl SearchClient {
     pub fn from_config(config: &Config) -> Option<Self> {
-        if config.search_backend.eq_ignore_ascii_case("vespa") {
+        if config.search.backend.eq_ignore_ascii_case("vespa") {
             VespaClient::from_config(config).map(Self::Vespa)
         } else {
             None

@@ -490,11 +490,11 @@ async fn spawn_sidecar_manager(
 ) {
     match Sidecar::spawn(
         &config.assistant_name,
-        &config.discord_token,
-        &config.wa_auth_dir,
-        config.wa_disabled,
-        &config.slack_bot_token,
-        &config.slack_app_token,
+        &config.sidecar.discord_token,
+        &config.sidecar.wa_auth_dir,
+        config.sidecar.wa_disabled,
+        &config.sidecar.slack_bot_token,
+        &config.sidecar.slack_app_token,
         &config.data_dir,
     )
     .await
@@ -955,11 +955,11 @@ fn spawn_imap_poller(
                     {
                         Ok(reply) if !reply.is_empty() => {
                             let _ = borg_core::email::send_smtp_reply(
-                                &config.smtp_host,
-                                config.smtp_port,
-                                &config.smtp_from,
-                                &config.smtp_user,
-                                &config.smtp_pass,
+                                &config.email.smtp_host,
+                                config.email.smtp_port,
+                                &config.email.smtp_from,
+                                &config.email.smtp_user,
+                                &config.email.smtp_pass,
                                 &from_email,
                                 &reply_subject,
                                 &reply,
@@ -1029,7 +1029,7 @@ fn init_db(env_config: &Config) -> anyhow::Result<(Db, Config)> {
     let config = env_config
         .load_from_db(&db)
         .apply_explicit_env_overrides(env_config);
-    let builtin_modes = borg_domains::modes_for_focus(config.experimental_domains);
+    let builtin_modes = borg_domains::modes_for_focus(config.pipeline.experimental_domains);
     borg_core::modes::register_modes(builtin_modes);
 
     if let Err(e) = db.abandon_running_agents() {
@@ -1096,7 +1096,7 @@ fn build_registry(
     backends.insert(
         "claude".into(),
         Arc::new(
-            ClaudeBackend::new("claude", sandbox_mode.clone(), &config.container_image)
+            ClaudeBackend::new("claude", sandbox_mode.clone(), &config.container.image)
                 .with_reasoning_effort(
                     std::env::var("CLAUDE_REASONING_EFFORT")
                         .ok()
@@ -1104,9 +1104,9 @@ fn build_registry(
                         .unwrap_or_default(),
                 )
                 .with_timeout(config.agent_timeout_s as u64)
-                .with_resource_limits(config.container_memory_mb, config.container_cpus)
-                .with_git_author(&config.git_author_name, &config.git_author_email)
-                .with_base_url(format!("http://127.0.0.1:{}", config.proxy_port)),
+                .with_resource_limits(config.container.memory_mb, config.container.cpus)
+                .with_git_author(&config.git.author_name, &config.git.author_email)
+                .with_base_url(format!("http://127.0.0.1:{}", config.web.proxy_port)),
         ),
     );
 
@@ -1141,10 +1141,10 @@ fn build_registry(
                     .with_reasoning_effort(codex_reasoning_effort)
                     .with_timeout(config.agent_timeout_s as u64)
                     .with_git_identity(
-                        &config.git_author_name,
-                        &config.git_author_email,
-                        &config.git_committer_name,
-                        &config.git_committer_email,
+                        &config.git.author_name,
+                        &config.git.author_email,
+                        &config.git.committer_name,
+                        &config.git.committer_email,
                     ),
             ),
         );
@@ -1175,17 +1175,17 @@ fn build_registry(
         let provider = borg_core::traits::ProviderConfig::from_env();
         let sdk_backend = borg_agent::AgentSdkBackend::new(provider)
             .with_timeout(config.agent_timeout_s as u64)
-            .with_base_url(format!("http://127.0.0.1:{}", config.proxy_port));
+            .with_base_url(format!("http://127.0.0.1:{}", config.web.proxy_port));
         backends.insert("agent-sdk".into(), Arc::new(sdk_backend));
         info!("agent-sdk backend registered");
     }
 
     // Container backend (provider-agnostic Docker agent)
-    if !config.container_image.is_empty() {
+    if !config.container.image.is_empty() {
         let container_backend =
-            borg_agent::container::ContainerBackend::new(&config.container_image)
+            borg_agent::container::ContainerBackend::new(&config.container.image)
                 .with_timeout(config.agent_timeout_s as u64)
-                .with_resource_limits(config.container_memory_mb, config.container_cpus);
+                .with_resource_limits(config.container.memory_mb, config.container.cpus);
         backends.insert("container".into(), Arc::new(container_backend));
         info!("container backend registered");
     }
@@ -1236,13 +1236,13 @@ fn spawn_post_state_tasks(state: &Arc<AppState>, config: &Arc<Config>, db: &Arc<
         Arc::clone(&state.file_storage),
     );
 
-    if !config.imap_host.is_empty() {
+    if !config.email.imap_host.is_empty() {
         let imap_cfg = borg_core::email::ImapConfig {
-            host: config.imap_host.clone(),
-            port: config.imap_port,
-            user: config.imap_user.clone(),
-            pass: config.imap_pass.clone(),
-            mailbox: config.imap_mailbox.clone(),
+            host: config.email.imap_host.clone(),
+            port: config.email.imap_port,
+            user: config.email.imap_user.clone(),
+            pass: config.email.imap_pass.clone(),
+            mailbox: config.email.imap_mailbox.clone(),
         };
         spawn_imap_poller(
             imap_cfg,
@@ -1577,6 +1577,11 @@ fn build_app_router(state: Arc<AppState>, dashboard_dir: &str) -> Router {
         .route("/api/keys", get(routes::list_api_keys))
         .route("/api/keys", post(routes::store_api_key))
         .route("/api/keys/:id", delete(routes::delete_api_key))
+        // Custom MCP servers
+        .route("/api/mcp/servers", get(routes::list_custom_mcp_servers))
+        .route("/api/mcp/servers", post(routes::upsert_custom_mcp_server))
+        .route("/api/mcp/servers/:id", delete(routes::delete_custom_mcp_server))
+        .route("/api/mcp/servers/:id/toggle", put(routes::toggle_custom_mcp_server))
         // Cache volumes
         .route("/api/cache", get(routes::list_cache_volumes))
         .route("/api/cache/:name", delete(routes::delete_cache_volume))
@@ -1745,8 +1750,8 @@ async fn main() -> anyhow::Result<()> {
     let ingestion_queue = Arc::new(ingestion::IngestionQueue::from_config(&config).await?);
     let search = search::SearchClient::from_config(&config).map(Arc::new);
 
-    if config.search_backend.eq_ignore_ascii_case("vespa") {
-        if config.vespa_url.trim().is_empty() {
+    if config.search.backend.eq_ignore_ascii_case("vespa") {
+        if config.search.vespa_url.trim().is_empty() {
             tracing::warn!(
                 "SEARCH_BACKEND=vespa but VESPA_URL is empty; BorgSearch tools will be unavailable"
             );
@@ -1759,13 +1764,13 @@ async fn main() -> anyhow::Result<()> {
         } else {
             tracing::warn!(
                 "search backend requested for VESPA_URL={} but initialization failed; BorgSearch tools will be unavailable",
-                config.vespa_url
+                config.search.vespa_url
             );
         }
     } else {
         tracing::info!(
             "search backend disabled or non-vespa configuration: {}",
-            config.search_backend
+            config.search.backend
         );
     }
 
@@ -1783,7 +1788,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(std::sync::atomic::AtomicBool::new(false));
     let (sandbox_mode, agent_network_available) = {
         // Quick synchronous detection — fast path for the backends struct
-        let mode = borg_core::sandbox::Sandbox::detect(&config.sandbox_backend).await;
+        let mode = borg_core::sandbox::Sandbox::detect(&config.container.sandbox_backend).await;
         let sm_slot = Arc::clone(&sandbox_mode_slot);
         let an_slot = Arc::clone(&agent_network_slot);
         let mode_clone = mode.clone();
@@ -1824,7 +1829,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Pipeline tick loop — inner spawn catches panics so the loop never dies.
     // If tick panics repeatedly, exit and let systemd restart with a clean process.
-    spawn_pipeline_ticker(Arc::clone(&pipeline), config.pipeline_tick_s);
+    spawn_pipeline_ticker(Arc::clone(&pipeline), config.pipeline.tick_s);
 
     // Cron scheduler
     let cron_cancel = tokio_util::sync::CancellationToken::new();
@@ -1855,7 +1860,7 @@ async fn main() -> anyhow::Result<()> {
 
     let sidecar_slot: Arc<TokioMutex<Option<Arc<Sidecar>>>> = Arc::new(TokioMutex::new(None));
     let wa_status: Arc<std::sync::Mutex<WaStatus>> = Arc::new(std::sync::Mutex::new(WaStatus {
-        disabled: config.wa_disabled,
+        disabled: config.sidecar.wa_disabled,
         ..Default::default()
     }));
     let slack_status: Arc<std::sync::Mutex<SlackStatus>> =
@@ -1874,7 +1879,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(self_repo) = config.watched_repos.iter().find(|r| r.is_self).cloned() {
         spawn_self_repo_watcher(
             self_repo,
-            config.remote_check_interval_s as u64,
+            config.pipeline.remote_check_interval_s as u64,
             Arc::clone(&force_restart),
             config.build_cmd.clone(),
         );
@@ -2013,16 +2018,16 @@ async fn main() -> anyhow::Result<()> {
 
     spawn_post_state_tasks(&state, &config, &db);
 
-    let dashboard_dir = config.dashboard_dist_dir.clone();
+    let dashboard_dir = config.web.dashboard_dist_dir.clone();
     let app = build_app_router(Arc::clone(&state), &dashboard_dir);
 
     let proxy_api_token = state.api_token.clone();
     let proxy_state = Arc::new(proxy::ProxyState::new(Arc::clone(&db), proxy_api_token).await);
     let proxy_app = Router::new().merge(proxy::proxy_routes().with_state(proxy_state));
 
-    let bind = config.web_bind.clone();
-    let addr = format!("{bind}:{}", config.web_port);
-    let proxy_addr = format!("{bind}:{}", config.proxy_port);
+    let bind = config.web.bind.clone();
+    let addr = format!("{bind}:{}", config.web.port);
+    let proxy_addr = format!("{bind}:{}", config.web.proxy_port);
 
     // Use systemd socket activation if available, otherwise bind normally
     let (listener, proxy_listener) = if let Some(fds) = early_fds {

@@ -180,6 +180,21 @@ pub(crate) struct StoreKeyBody {
 }
 
 #[derive(Deserialize)]
+pub(crate) struct UpsertCustomMcpBody {
+    pub name: String,
+    pub label: Option<String>,
+    pub command: String,
+    pub args: Option<Vec<String>>,
+    pub env: Option<serde_json::Map<String, Value>>,
+    pub enabled: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ToggleCustomMcpBody {
+    pub enabled: bool,
+}
+
+#[derive(Deserialize)]
 pub(crate) struct ConversationDumpQuery {
     thread: String,
     #[serde(default = "default_conv_limit")]
@@ -905,7 +920,7 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
         tracing::error!("triage_proposals: no backends configured");
         return Json(json!({ "scored": 0 }));
     };
-    let model = state.config.triage_model.clone();
+    let model = state.config.pipeline.triage_model.clone();
     let oauth = state.config.oauth_token.clone();
 
     let triage_flag = Arc::clone(&state.triage_running);
@@ -978,15 +993,16 @@ pub(crate) async fn triage_proposals(State(state): State<Arc<AppState>>) -> Json
                 agent_network: None,
                 prior_research: Vec::new(),
                 revision_count: 0,
-                experimental_domains: state.config.experimental_domains,
+                experimental_domains: state.config.pipeline.experimental_domains,
                 isolated: true,
-                borg_api_url: format!("http://127.0.0.1:{}", state.config.web_port),
+                borg_api_url: format!("http://127.0.0.1:{}", state.config.web.port),
                 borg_api_token: state.api_token.clone(),
                 chat_context: Vec::new(),
-                github_token: state.config.github_token.clone(),
+                github_token: state.config.git.github_token.clone(),
                 github_token_is_user: false,
                 clarification_resume_reuses_prior_review: false,
                 clarification_resume_question: String::new(),
+                custom_mcp_servers: Vec::new(),
             };
 
             tokio::fs::create_dir_all(&ctx.session_dir).await.ok();
@@ -1923,6 +1939,74 @@ pub(crate) async fn delete_api_key(
     Ok(Json(json!({ "ok": true })))
 }
 
+// ── Custom MCP Servers ──────────────────────────────────────────────────
+
+pub(crate) async fn list_custom_mcp_servers(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+) -> Result<Json<Value>, StatusCode> {
+    let servers = state
+        .db
+        .list_custom_mcp_servers(workspace.id)
+        .map_err(internal)?;
+    Ok(Json(json!({ "servers": servers })))
+}
+
+pub(crate) async fn upsert_custom_mcp_server(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Json(body): Json<UpsertCustomMcpBody>,
+) -> Result<Json<Value>, StatusCode> {
+    let name = body.name.trim();
+    if name.is_empty() || name.len() > 64 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    // Validate name is alphanumeric + hyphens/underscores
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let label = body.label.as_deref().unwrap_or(name);
+    let args = body.args.unwrap_or_default();
+    let args_json = serde_json::to_string(&args).unwrap_or_else(|_| "[]".into());
+    let env = body.env.unwrap_or_default();
+    let env_json = serde_json::to_string(&env).unwrap_or_else(|_| "{}".into());
+    let enabled = body.enabled.unwrap_or(true);
+
+    let id = state
+        .db
+        .upsert_custom_mcp_server(workspace.id, name, label, &body.command, &args_json, &env_json, enabled)
+        .map_err(internal)?;
+    Ok(Json(json!({ "id": id })))
+}
+
+pub(crate) async fn delete_custom_mcp_server(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    state
+        .db
+        .delete_custom_mcp_server(workspace.id, id)
+        .map_err(internal)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub(crate) async fn toggle_custom_mcp_server(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(workspace): axum::Extension<crate::auth::WorkspaceContext>,
+    Path(id): Path<i64>,
+    Json(body): Json<ToggleCustomMcpBody>,
+) -> Result<Json<Value>, StatusCode> {
+    state
+        .db
+        .toggle_custom_mcp_server(workspace.id, id, body.enabled)
+        .map_err(internal)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
 pub(crate) async fn list_cache_volumes(
     State(_state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
@@ -2231,11 +2315,11 @@ pub(crate) async fn email_inbound(
         {
             Ok(reply) if !reply.is_empty() => {
                 let _ = borg_core::email::send_smtp_reply(
-                    &config.smtp_host,
-                    config.smtp_port,
-                    &config.smtp_from,
-                    &config.smtp_user,
-                    &config.smtp_pass,
+                    &config.email.smtp_host,
+                    config.email.smtp_port,
+                    &config.email.smtp_from,
+                    &config.email.smtp_user,
+                    &config.email.smtp_pass,
                     &from_email,
                     &reply_subject,
                     &reply,

@@ -410,6 +410,7 @@ impl AgentBackend for AgentSdkBackend {
                 task.workspace_id,
                 None,
                 &api_keys_vec,
+                &ctx.custom_mcp_servers,
             );
             json!(servers)
         } else {
@@ -568,6 +569,7 @@ impl AgentBackend for AgentSdkBackend {
                 ctx.workspace_id,
                 ctx.chat_thread.as_deref(),
                 &api_keys_vec,
+                &ctx.custom_mcp_servers,
             );
             json!(servers)
         } else {

@@ -71,20 +71,20 @@ struct ProjectUploadBackupRecord {
 
 impl BackupTarget {
     async fn from_config(config: &Config) -> Result<Self> {
-        if !config.backup_backend.trim().eq_ignore_ascii_case("s3") {
+        if !config.backup.backend.trim().eq_ignore_ascii_case("s3") {
             return Ok(Self::Disabled);
         }
-        if config.backup_bucket.trim().is_empty() {
+        if config.backup.bucket.trim().is_empty() {
             return Err(anyhow!(
                 "backup backend selected but BACKUP_BUCKET/backup_bucket is empty"
             ));
         }
         let mut loader = aws_config::defaults(BehaviorVersion::latest())
-            .region(Region::new(config.backup_region.clone()));
-        if !config.backup_access_key.is_empty() && !config.backup_secret_key.is_empty() {
+            .region(Region::new(config.backup.region.clone()));
+        if !config.backup.access_key.is_empty() && !config.backup.secret_key.is_empty() {
             loader = loader.credentials_provider(Credentials::new(
-                config.backup_access_key.clone(),
-                config.backup_secret_key.clone(),
+                config.backup.access_key.clone(),
+                config.backup.secret_key.clone(),
                 None,
                 None,
                 "borg-backup-config",
@@ -92,18 +92,18 @@ impl BackupTarget {
         }
         let shared = loader.load().await;
         let mut s3_builder = aws_sdk_s3::config::Builder::from(&shared);
-        if !config.backup_endpoint.trim().is_empty() {
+        if !config.backup.endpoint.trim().is_empty() {
             s3_builder = s3_builder
-                .endpoint_url(config.backup_endpoint.clone())
+                .endpoint_url(config.backup.endpoint.clone())
                 .force_path_style(true);
         }
         let client = Client::from_conf(s3_builder.build());
-        let mut prefix = config.backup_prefix.trim().to_string();
+        let mut prefix = config.backup.prefix.trim().to_string();
         if !prefix.is_empty() && !prefix.ends_with('/') {
             prefix.push('/');
         }
         Ok(Self::S3 {
-            bucket: config.backup_bucket.clone(),
+            bucket: config.backup.bucket.clone(),
             prefix,
             client,
         })
@@ -208,7 +208,7 @@ pub async fn run_backup_loop(db: Arc<Db>, config: Arc<Config>, storage: Arc<File
         let _ = db.set_config("backup_last_error", &e.to_string());
     }
 
-    let interval_s = config.backup_poll_interval_s.max(30) as u64;
+    let interval_s = config.backup.poll_interval_s.max(30) as u64;
     loop {
         let started_at = chrono::Utc::now();
         let _ = db.set_config("backup_last_started_at", &started_at.to_rfc3339());
@@ -252,19 +252,19 @@ pub async fn backup_status_snapshot(db: &Db, config: &Config) -> serde_json::Val
         .get_config("backup_backend_runtime")
         .ok()
         .flatten()
-        .unwrap_or_else(|| config.backup_backend.clone());
+        .unwrap_or_else(|| config.backup.backend.clone());
     let runtime_target = db
         .get_config("backup_target_runtime")
         .ok()
         .flatten()
         .unwrap_or_default();
     serde_json::json!({
-        "configured_backend": config.backup_backend,
+        "configured_backend": config.backup.backend,
         "runtime_backend": runtime_backend,
         "target": runtime_target,
-        "mode": config.backup_mode,
-        "interval_s": config.backup_poll_interval_s,
-        "enabled": config.backup_backend.eq_ignore_ascii_case("s3"),
+        "mode": config.backup.mode,
+        "interval_s": config.backup.poll_interval_s,
+        "enabled": config.backup.backend.eq_ignore_ascii_case("s3"),
         "last_started_at": last_started,
         "last_success_at": last_success,
         "last_error": last_error,
@@ -278,7 +278,7 @@ async fn backup_once(
     storage: &FileStorage,
     target: &BackupTarget,
 ) -> Result<String> {
-    let include_uploads = config.backup_mode.eq_ignore_ascii_case("include_uploads");
+    let include_uploads = config.backup.mode.eq_ignore_ascii_case("include_uploads");
     let tasks = db
         .list_active_tasks()
         .context("list active tasks for backup")?;
@@ -335,7 +335,7 @@ async fn backup_once(
 
     let manifest = ActiveBackupManifest {
         generated_at: chrono::Utc::now().to_rfc3339(),
-        mode: config.backup_mode.clone(),
+        mode: config.backup.mode.clone(),
         include_uploads,
         notes,
         tasks: task_records,

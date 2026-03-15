@@ -47,7 +47,7 @@ impl Pipeline {
         }
 
         let tasks = self.db.list_active_tasks().context("list_active_tasks")?;
-        let max_agents = self.config.pipeline_max_agents as usize;
+        let max_agents = self.config.pipeline.max_agents as usize;
         let mut dispatched = 0usize;
 
         for task in tasks {
@@ -282,7 +282,7 @@ impl Pipeline {
         // Rate-limit only agent phases (spawns a Claude subprocess).
         // Setup, Validate, LintFix, and Rebase are local ops — no cooldown needed.
         if phase.phase_type == PhaseType::Agent {
-            let cooldown = self.config.pipeline_agent_cooldown_s;
+            let cooldown = self.config.pipeline.agent_cooldown_s;
             if cooldown > 0 {
                 let now = Utc::now().timestamp();
                 let mut map = self.last_agent_dispatch.lock().await;
@@ -354,7 +354,7 @@ impl Pipeline {
     /// Refresh bare mirrors for all watched repos at the configured interval.
     /// Mirrors are mounted read-only into containers to accelerate `git clone`.
     async fn refresh_mirrors(&self) {
-        let interval = self.config.mirror_refresh_interval_s;
+        let interval = self.config.pipeline.mirror_refresh_interval_s;
         if interval <= 0 {
             return;
         }
@@ -417,14 +417,14 @@ impl Pipeline {
 
     pub fn maybe_auto_promote_proposals(&self) {
         let active = self.db.active_task_count();
-        let max = self.config.pipeline_max_backlog as i64;
+        let max = self.config.pipeline.max_backlog as i64;
         if active >= max {
             return;
         }
         let slots = max - active;
         let proposals = match self
             .db
-            .get_top_scored_proposals(self.config.proposal_promote_threshold, slots)
+            .get_top_scored_proposals(self.config.pipeline.proposal_promote_threshold, slots)
         {
             Ok(p) => p,
             Err(e) => {
@@ -542,7 +542,7 @@ impl Pipeline {
         }
 
         let output = self
-            .run_claude_print(&self.config.triage_model, &prompt)
+            .run_claude_print(&self.config.pipeline.triage_model, &prompt)
             .await;
         let output = match output {
             Ok(o) => o,
@@ -689,7 +689,7 @@ impl Pipeline {
                     "Guardrail alert: rebase backlog is high ({rebase_count} tasks in rebase)."
                 );
                 warn!("{msg}");
-                self.notify(&self.config.pipeline_admin_chat, &msg);
+                self.notify(&self.config.pipeline.admin_chat, &msg);
             }
         }
 
@@ -712,7 +712,7 @@ impl Pipeline {
                     "Guardrail alert: {queued_count} queued/merging entries and no merge for {mins} minutes."
                 );
                 warn!("{msg}");
-                self.notify(&self.config.pipeline_admin_chat, &msg);
+                self.notify(&self.config.pipeline.admin_chat, &msg);
             }
         }
 
@@ -725,7 +725,7 @@ impl Pipeline {
                         "Guardrail alert: /tmp inode usage is high ({inode_used_pct:.1}%)."
                     );
                     warn!("{msg}");
-                    self.notify(&self.config.pipeline_admin_chat, &msg);
+                    self.notify(&self.config.pipeline.admin_chat, &msg);
                 }
             }
         }

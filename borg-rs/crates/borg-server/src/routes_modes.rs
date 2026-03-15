@@ -77,7 +77,7 @@ pub(crate) async fn upsert_custom_mode(
     if !valid_mode_name(name) {
         return Err(StatusCode::BAD_REQUEST);
     }
-    if !state.config.experimental_domains && is_experimental_mode(name) {
+    if !state.config.pipeline.experimental_domains && is_experimental_mode(name) {
         return Err(StatusCode::FORBIDDEN);
     }
     if all_modes().iter().any(|m| m.name == name) {

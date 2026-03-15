@@ -150,10 +150,10 @@ fn retain_chunk_hits_for_project(hits: &mut Vec<ChunkSearchHit>, project_id: Opt
 
 impl VespaClient {
     pub fn from_config(config: &Config) -> Option<Self> {
-        if !config.search_backend.eq_ignore_ascii_case("vespa") {
+        if !config.search.backend.eq_ignore_ascii_case("vespa") {
             return None;
         }
-        if config.vespa_url.trim().is_empty() {
+        if config.search.vespa_url.trim().is_empty() {
             return None;
         }
         Some(Self {
@@ -161,9 +161,9 @@ impl VespaClient {
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .ok()?,
-            base_url: config.vespa_url.trim_end_matches('/').to_string(),
-            namespace: config.vespa_namespace.trim().to_string(),
-            document_type: config.vespa_document_type.trim().to_string(),
+            base_url: config.search.vespa_url.trim_end_matches('/').to_string(),
+            namespace: config.search.vespa_namespace.trim().to_string(),
+            document_type: config.search.vespa_document_type.trim().to_string(),
         })
     }
 

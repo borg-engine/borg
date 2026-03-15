@@ -310,6 +310,7 @@ impl AgentBackend for ClaudeBackend {
                 task.workspace_id,
                 None,
                 &api_keys_vec,
+                &ctx.custom_mcp_servers,
             );
             if !mcp_servers.is_empty() {
                 let borg_loaded = mcp_servers.contains_key("borg");

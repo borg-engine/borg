@@ -3171,7 +3171,7 @@ pub(crate) async fn create_upload_session(
         .db
         .total_project_file_bytes(project_id)
         .map_err(internal)?;
-    if current_bytes + body.file_size > state.config.project_max_bytes.max(1) {
+    if current_bytes + body.file_size > state.config.quota.project_max_bytes.max(1) {
         return Err(StatusCode::PAYLOAD_TOO_LARGE);
     }
     let file_name = sanitize_upload_name(&body.file_name);
@@ -3515,7 +3515,7 @@ pub(crate) async fn upload_project_files(
     Query(q): Query<UploadProjectFilesQuery>,
     mut multipart: Multipart,
 ) -> Result<Json<Value>, StatusCode> {
-    let max_project_bytes = state.config.project_max_bytes.max(1);
+    let max_project_bytes = state.config.quota.project_max_bytes.max(1);
     let _project = require_project_access(state.as_ref(), &workspace, id)?;
     if q.privileged && !is_privileged_upload_allowed(state.as_ref(), id) {
         return Err(StatusCode::FORBIDDEN);

@@ -4,6 +4,157 @@ use anyhow::Result;
 
 use crate::{db::Db, types::RepoConfig};
 
+// ── Nested sub-config structs ────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct GitConfig {
+    pub author_name: String,
+    pub author_email: String,
+    pub committer_name: String,
+    pub committer_email: String,
+    /// When false (default), tell agent not to add Co-Authored-By Claude trailers.
+    pub claude_coauthor: bool,
+    /// If set, append Co-Authored-By: <value> to every pipeline commit.
+    pub user_coauthor: String,
+    /// GitHub token for pushing branches and creating PRs.
+    /// Users can override this per-account via the `github_token` user setting.
+    pub github_token: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContainerConfig {
+    pub image: String,
+    pub setup: String,
+    pub memory_mb: u64,
+    /// CPU quota for docker run --cpus (0.0 = no limit).
+    pub cpus: f64,
+    /// "auto" (default), "bwrap", "docker", or "none".
+    pub sandbox_backend: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct WebConfig {
+    pub bind: String,
+    pub port: u16,
+    pub proxy_port: u16,
+    pub dashboard_dist_dir: String,
+    /// Public base URL for OAuth callbacks (e.g. "https://app.example.com").
+    /// Falls back to http://localhost:{port} if unset.
+    pub public_url: String,
+    /// Disable dashboard auth entirely (not recommended).
+    pub disable_auth: bool,
+    /// Auth mode for the dashboard/API.
+    /// "local" uses Borg username/password JWT auth.
+    /// "cloudflare_access" trusts the Cloudflare Access email header.
+    pub auth_mode: String,
+    /// Header name carrying the authenticated email from Cloudflare Access.
+    pub cloudflare_access_email_header: String,
+    /// Emails that should be treated as Borg admins in Cloudflare Access mode.
+    pub cloudflare_admin_emails: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StorageConfig {
+    pub backend: String, // "local" | "s3"
+    pub s3_bucket: String,
+    pub s3_region: String,
+    pub s3_endpoint: String,
+    pub s3_access_key: String,
+    pub s3_secret_key: String,
+    pub s3_prefix: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct BackupConfig {
+    pub backend: String, // "disabled" | "s3"
+    pub mode: String,    // "active_work_only" | "include_uploads"
+    pub bucket: String,
+    pub region: String,
+    pub endpoint: String,
+    pub access_key: String,
+    pub secret_key: String,
+    pub prefix: String,
+    pub poll_interval_s: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct PipelineConfig {
+    pub repo: String,
+    pub test_cmd: String,
+    pub lint_cmd: String,
+    pub backend: String,
+    pub admin_chat: String,
+    pub release_interval_mins: u32,
+    pub continuous_mode: bool,
+    pub max_agents: u32,
+    pub max_backlog: u32,
+    pub seed_cooldown_s: i64,
+    pub proposal_promote_threshold: i64,
+    pub tick_s: u64,
+    pub remote_check_interval_s: i64,
+    /// Seconds between bare-mirror `git fetch` refreshes (default 60).
+    pub mirror_refresh_interval_s: i64,
+    /// Min seconds between automated agent spawns per task (default 120).
+    pub agent_cooldown_s: i64,
+    /// Model for auto-triage (default: "claude-haiku-4-5-20251001").
+    pub triage_model: String,
+    /// Fallback model for Docker/agent phases when ctx.model is empty (default: "claude-sonnet-4-6").
+    pub default_docker_model: String,
+    /// Enable non-core domain modes (health/web/crew/sales/data/chef/build/medwrite).
+    pub experimental_domains: bool,
+    /// Enable post-phase retrieval protocol enforcement for legal tasks.
+    pub enforce_retrieval_protocol: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SearchConfig {
+    pub backend: String, // "vespa"
+    pub vespa_url: String,
+    pub vespa_namespace: String,
+    pub vespa_document_type: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct IngestionConfig {
+    pub queue_backend: String, // "disabled" | "sqs"
+    pub sqs_queue_url: String,
+    pub sqs_region: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct EmailConfig {
+    /// IMAP server for polling inbound emails (leave empty to disable).
+    pub imap_host: String,
+    pub imap_port: u16,
+    pub imap_user: String,
+    pub imap_pass: String,
+    pub imap_mailbox: String,
+    /// SMTP server for sending replies (leave empty to disable replies).
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_from: String,
+    pub smtp_user: String,
+    pub smtp_pass: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SidecarConfig {
+    pub discord_token: String,
+    pub wa_auth_dir: String,
+    pub wa_disabled: bool,
+    pub slack_bot_token: String,
+    pub slack_app_token: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct QuotaConfig {
+    pub project_max_bytes: i64,
+    pub knowledge_max_bytes: i64,
+    pub cloud_import_max_batch_files: i64,
+}
+
+// ── Main Config ──────────────────────────────────────────────────────────────
+
 /// Full application configuration.
 /// Non-sensitive fields are seeded to and loaded from the DB `config` table.
 /// Sensitive fields (tokens, API keys) come from env/.env only.
@@ -14,20 +165,10 @@ pub struct Config {
     pub assistant_name: String,
     pub trigger_pattern: String,
     pub data_dir: String,
-    pub container_image: String,
     pub model: String,
     pub credentials_path: String,
     pub session_max_age_hours: i64,
     pub max_consecutive_errors: u32,
-
-    // Pipeline
-    pub pipeline_repo: String,
-    pub pipeline_test_cmd: String,
-    pub pipeline_lint_cmd: String,
-    pub backend: String,
-    pub pipeline_admin_chat: String,
-    pub release_interval_mins: u32,
-    pub continuous_mode: bool,
 
     // Agent lifecycle
     pub chat_collection_window_ms: i64,
@@ -35,45 +176,6 @@ pub struct Config {
     pub agent_timeout_s: i64,
     pub max_chat_agents: u32,
     pub chat_rate_limit: u32,
-    pub pipeline_max_agents: u32,
-
-    // Web dashboard
-    pub web_bind: String,
-    pub web_port: u16,
-    pub proxy_port: u16,
-    pub dashboard_dist_dir: String,
-
-    // Container / sandbox
-    pub container_setup: String,
-    pub container_memory_mb: u64,
-    /// CPU quota for docker run --cpus (0.0 = no limit).
-    pub container_cpus: f64,
-    /// "auto" (default), "bwrap", "docker", or "none".
-    pub sandbox_backend: String,
-
-    // Pipeline tuning
-    pub pipeline_max_backlog: u32,
-    pub pipeline_seed_cooldown_s: i64,
-    pub proposal_promote_threshold: i64,
-    pub pipeline_tick_s: u64,
-    pub remote_check_interval_s: i64,
-    /// Seconds between bare-mirror `git fetch` refreshes (default 60).
-    pub mirror_refresh_interval_s: i64,
-    /// Min seconds between automated agent spawns per task (default 120).
-    pub pipeline_agent_cooldown_s: i64,
-
-    // Git attribution
-    pub git_author_name: String,
-    pub git_author_email: String,
-    pub git_committer_name: String,
-    pub git_committer_email: String,
-    /// When false (default), tell agent not to add Co-Authored-By Claude trailers.
-    pub git_claude_coauthor: bool,
-    /// If set, append Co-Authored-By: <value> to every pipeline commit.
-    pub git_user_coauthor: String,
-    /// GitHub token for pushing branches and creating PRs.
-    /// Users can override this per-account via the `github_token` user setting.
-    pub github_token: String,
 
     pub watched_repos: Vec<RepoConfig>,
 
@@ -90,108 +192,35 @@ pub struct Config {
     // Gemini
     pub gemini_api_key: String,
 
-    // Sidecar (Discord + WhatsApp + Slack)
-    pub discord_token: String,
-    pub wa_auth_dir: String,
-    pub wa_disabled: bool,
-    pub slack_bot_token: String,
-    pub slack_app_token: String,
-
     // Observer
     pub observer_config: String,
 
-    /// Public base URL for OAuth callbacks (e.g. "https://app.example.com").
-    /// Falls back to http://localhost:{web_port} if unset.
-    pub public_url: String,
     pub database_url: String,
-
-    // File storage backend
-    pub storage_backend: String, // "local" | "s3"
-    pub s3_bucket: String,
-    pub s3_region: String,
-    pub s3_endpoint: String,
-    pub s3_access_key: String,
-    pub s3_secret_key: String,
-    pub s3_prefix: String,
-
-    // Work backup backend
-    pub backup_backend: String, // "disabled" | "s3"
-    pub backup_mode: String,    // "active_work_only" | "include_uploads"
-    pub backup_bucket: String,
-    pub backup_region: String,
-    pub backup_endpoint: String,
-    pub backup_access_key: String,
-    pub backup_secret_key: String,
-    pub backup_prefix: String,
-    pub backup_poll_interval_s: i64,
-
-    // Storage quotas
-    pub project_max_bytes: i64,
-    pub knowledge_max_bytes: i64,
-    pub cloud_import_max_batch_files: i64,
-
-    // Ingestion queue backend
-    pub ingestion_queue_backend: String, // "disabled" | "sqs"
-    pub sqs_queue_url: String,
-    pub sqs_region: String,
-
-    // Search backend
-    pub search_backend: String, // "vespa"
-    pub vespa_url: String,
-    pub vespa_namespace: String,
-    pub vespa_document_type: String,
-
-    // Product focus
-    /// Enable non-core domain modes (health/web/crew/sales/data/chef/build/medwrite).
-    pub experimental_domains: bool,
-
-    /// Disable dashboard auth entirely (not recommended).
-    pub disable_auth: bool,
-
-    /// Auth mode for the dashboard/API.
-    /// "local" uses Borg username/password JWT auth.
-    /// "cloudflare_access" trusts the Cloudflare Access email header.
-    pub auth_mode: String,
-    /// Header name carrying the authenticated email from Cloudflare Access.
-    pub cloudflare_access_email_header: String,
-    /// Emails that should be treated as Borg admins in Cloudflare Access mode.
-    pub cloudflare_admin_emails: Vec<String>,
-
-    // Email ingestion
-    /// IMAP server for polling inbound emails (leave empty to disable).
-    pub imap_host: String,
-    pub imap_port: u16,
-    pub imap_user: String,
-    pub imap_pass: String,
-    pub imap_mailbox: String,
-    /// SMTP server for sending replies (leave empty to disable replies).
-    pub smtp_host: String,
-    pub smtp_port: u16,
-    pub smtp_from: String,
-    pub smtp_user: String,
-    pub smtp_pass: String,
-
-    /// Enable post-phase retrieval protocol enforcement for legal tasks.
-    /// When false, legal tasks still get the retrieval instructions but the
-    /// pipeline won't force-retry if the agent skips coverage checks.
-    pub enforce_retrieval_protocol: bool,
 
     /// Enable at-rest encryption for secrets (API keys, credentials) via ChaCha20-Poly1305.
     /// Set BORG_SECRET_ENCRYPTION=true to enable. Default: false for backwards compat.
     pub secret_encryption: bool,
 
-    /// Model for auto-triage (default: "claude-haiku-4-5-20251001").
-    pub triage_model: String,
-    /// Fallback model for Docker/agent phases when ctx.model is empty (default: "claude-sonnet-4-6").
-    pub default_docker_model: String,
+    // Grouped sub-configs
+    pub pipeline: PipelineConfig,
+    pub git: GitConfig,
+    pub container: ContainerConfig,
+    pub web: WebConfig,
+    pub storage: StorageConfig,
+    pub backup: BackupConfig,
+    pub search: SearchConfig,
+    pub ingestion: IngestionConfig,
+    pub email: EmailConfig,
+    pub sidecar: SidecarConfig,
+    pub quota: QuotaConfig,
 }
 
 impl Config {
     pub fn get_base_url(&self) -> String {
-        if !self.public_url.is_empty() {
-            self.public_url.trim_end_matches('/').to_string()
+        if !self.web.public_url.is_empty() {
+            self.web.public_url.trim_end_matches('/').to_string()
         } else {
-            format!("http://localhost:{}", self.web_port)
+            format!("http://localhost:{}", self.web.port)
         }
     }
 
@@ -201,19 +230,19 @@ impl Config {
             c.data_dir = env_config.data_dir.clone();
         }
         if env_or_dotenv_has("PUBLIC_URL") {
-            c.public_url = env_config.public_url.clone();
+            c.web.public_url = env_config.web.public_url.clone();
         }
         if env_or_dotenv_has("SEARCH_BACKEND") {
-            c.search_backend = env_config.search_backend.clone();
+            c.search.backend = env_config.search.backend.clone();
         }
         if env_or_dotenv_has("VESPA_URL") {
-            c.vespa_url = env_config.vespa_url.clone();
+            c.search.vespa_url = env_config.search.vespa_url.clone();
         }
         if env_or_dotenv_has("VESPA_NAMESPACE") {
-            c.vespa_namespace = env_config.vespa_namespace.clone();
+            c.search.vespa_namespace = env_config.search.vespa_namespace.clone();
         }
         if env_or_dotenv_has("VESPA_DOCUMENT_TYPE") {
-            c.vespa_document_type = env_config.vespa_document_type.clone();
+            c.search.vespa_document_type = env_config.search.vespa_document_type.clone();
         }
         c
     }
@@ -726,7 +755,7 @@ impl Config {
             ("assistant_name", self.assistant_name.clone()),
             ("trigger_pattern", self.trigger_pattern.clone()),
             ("data_dir", self.data_dir.clone()),
-            ("container_image", self.container_image.clone()),
+            ("container_image", self.container.image.clone()),
             ("model", self.model.clone()),
             (
                 "session_max_age_hours",
@@ -736,16 +765,16 @@ impl Config {
                 "max_consecutive_errors",
                 self.max_consecutive_errors.to_string(),
             ),
-            ("pipeline_repo", self.pipeline_repo.clone()),
-            ("pipeline_test_cmd", self.pipeline_test_cmd.clone()),
-            ("pipeline_lint_cmd", self.pipeline_lint_cmd.clone()),
-            ("backend", self.backend.clone()),
-            ("pipeline_admin_chat", self.pipeline_admin_chat.clone()),
+            ("pipeline_repo", self.pipeline.repo.clone()),
+            ("pipeline_test_cmd", self.pipeline.test_cmd.clone()),
+            ("pipeline_lint_cmd", self.pipeline.lint_cmd.clone()),
+            ("backend", self.pipeline.backend.clone()),
+            ("pipeline_admin_chat", self.pipeline.admin_chat.clone()),
             (
                 "release_interval_mins",
-                self.release_interval_mins.to_string(),
+                self.pipeline.release_interval_mins.to_string(),
             ),
-            ("continuous_mode", self.continuous_mode.to_string()),
+            ("continuous_mode", self.pipeline.continuous_mode.to_string()),
             (
                 "chat_collection_window_ms",
                 self.chat_collection_window_ms.to_string(),
@@ -754,77 +783,77 @@ impl Config {
             ("agent_timeout_s", self.agent_timeout_s.to_string()),
             ("max_chat_agents", self.max_chat_agents.to_string()),
             ("chat_rate_limit", self.chat_rate_limit.to_string()),
-            ("pipeline_max_agents", self.pipeline_max_agents.to_string()),
-            ("dashboard_dist_dir", self.dashboard_dist_dir.clone()),
-            ("container_setup", self.container_setup.clone()),
-            ("container_memory_mb", self.container_memory_mb.to_string()),
-            ("container_cpus", format!("{:.2}", self.container_cpus)),
-            ("sandbox_backend", self.sandbox_backend.clone()),
+            ("pipeline_max_agents", self.pipeline.max_agents.to_string()),
+            ("dashboard_dist_dir", self.web.dashboard_dist_dir.clone()),
+            ("container_setup", self.container.setup.clone()),
+            ("container_memory_mb", self.container.memory_mb.to_string()),
+            ("container_cpus", format!("{:.2}", self.container.cpus)),
+            ("sandbox_backend", self.container.sandbox_backend.clone()),
             (
                 "pipeline_max_backlog",
-                self.pipeline_max_backlog.to_string(),
+                self.pipeline.max_backlog.to_string(),
             ),
             (
                 "pipeline_seed_cooldown_s",
-                self.pipeline_seed_cooldown_s.to_string(),
+                self.pipeline.seed_cooldown_s.to_string(),
             ),
             (
                 "proposal_promote_threshold",
-                self.proposal_promote_threshold.to_string(),
+                self.pipeline.proposal_promote_threshold.to_string(),
             ),
-            ("pipeline_tick_s", self.pipeline_tick_s.to_string()),
+            ("pipeline_tick_s", self.pipeline.tick_s.to_string()),
             (
                 "remote_check_interval_s",
-                self.remote_check_interval_s.to_string(),
+                self.pipeline.remote_check_interval_s.to_string(),
             ),
             (
                 "mirror_refresh_interval_s",
-                self.mirror_refresh_interval_s.to_string(),
+                self.pipeline.mirror_refresh_interval_s.to_string(),
             ),
-            ("git_author_name", self.git_author_name.clone()),
-            ("git_author_email", self.git_author_email.clone()),
-            ("git_committer_name", self.git_committer_name.clone()),
-            ("git_committer_email", self.git_committer_email.clone()),
-            ("git_claude_coauthor", self.git_claude_coauthor.to_string()),
-            ("git_user_coauthor", self.git_user_coauthor.clone()),
+            ("git_author_name", self.git.author_name.clone()),
+            ("git_author_email", self.git.author_email.clone()),
+            ("git_committer_name", self.git.committer_name.clone()),
+            ("git_committer_email", self.git.committer_email.clone()),
+            ("git_claude_coauthor", self.git.claude_coauthor.to_string()),
+            ("git_user_coauthor", self.git.user_coauthor.clone()),
             ("build_cmd", "cargo build --release".into()),
             ("self_update_enabled", self.self_update_enabled.to_string()),
             ("observer_config", self.observer_config.clone()),
-            ("wa_disabled", self.wa_disabled.to_string()),
-            ("storage_backend", self.storage_backend.clone()),
-            ("s3_bucket", self.s3_bucket.clone()),
-            ("s3_region", self.s3_region.clone()),
-            ("s3_endpoint", self.s3_endpoint.clone()),
-            ("s3_prefix", self.s3_prefix.clone()),
-            ("backup_backend", self.backup_backend.clone()),
-            ("backup_mode", self.backup_mode.clone()),
-            ("backup_bucket", self.backup_bucket.clone()),
-            ("backup_region", self.backup_region.clone()),
-            ("backup_endpoint", self.backup_endpoint.clone()),
-            ("backup_prefix", self.backup_prefix.clone()),
+            ("wa_disabled", self.sidecar.wa_disabled.to_string()),
+            ("storage_backend", self.storage.backend.clone()),
+            ("s3_bucket", self.storage.s3_bucket.clone()),
+            ("s3_region", self.storage.s3_region.clone()),
+            ("s3_endpoint", self.storage.s3_endpoint.clone()),
+            ("s3_prefix", self.storage.s3_prefix.clone()),
+            ("backup_backend", self.backup.backend.clone()),
+            ("backup_mode", self.backup.mode.clone()),
+            ("backup_bucket", self.backup.bucket.clone()),
+            ("backup_region", self.backup.region.clone()),
+            ("backup_endpoint", self.backup.endpoint.clone()),
+            ("backup_prefix", self.backup.prefix.clone()),
             (
                 "backup_poll_interval_s",
-                self.backup_poll_interval_s.to_string(),
+                self.backup.poll_interval_s.to_string(),
             ),
-            ("project_max_bytes", self.project_max_bytes.to_string()),
-            ("knowledge_max_bytes", self.knowledge_max_bytes.to_string()),
+            ("project_max_bytes", self.quota.project_max_bytes.to_string()),
+            ("knowledge_max_bytes", self.quota.knowledge_max_bytes.to_string()),
             (
                 "cloud_import_max_batch_files",
-                self.cloud_import_max_batch_files.to_string(),
+                self.quota.cloud_import_max_batch_files.to_string(),
             ),
             (
                 "ingestion_queue_backend",
-                self.ingestion_queue_backend.clone(),
+                self.ingestion.queue_backend.clone(),
             ),
-            ("sqs_queue_url", self.sqs_queue_url.clone()),
-            ("sqs_region", self.sqs_region.clone()),
-            ("search_backend", self.search_backend.clone()),
-            ("vespa_url", self.vespa_url.clone()),
-            ("vespa_namespace", self.vespa_namespace.clone()),
-            ("vespa_document_type", self.vespa_document_type.clone()),
+            ("sqs_queue_url", self.ingestion.sqs_queue_url.clone()),
+            ("sqs_region", self.ingestion.sqs_region.clone()),
+            ("search_backend", self.search.backend.clone()),
+            ("vespa_url", self.search.vespa_url.clone()),
+            ("vespa_namespace", self.search.vespa_namespace.clone()),
+            ("vespa_document_type", self.search.vespa_document_type.clone()),
             (
                 "experimental_domains",
-                self.experimental_domains.to_string(),
+                self.pipeline.experimental_domains.to_string(),
             ),
         ];
         for (key, value) in entries {
@@ -875,84 +904,84 @@ impl Config {
         c.assistant_name = get_str("assistant_name", &c.assistant_name);
         c.trigger_pattern = get_str("trigger_pattern", &c.trigger_pattern);
         c.data_dir = get_str_env_wins("data_dir", "DATA_DIR", &c.data_dir);
-        c.container_image = get_str("container_image", &c.container_image);
+        c.container.image = get_str("container_image", &c.container.image);
         c.model = get_str("model", &c.model);
-        c.backend = get_str("backend", &c.backend);
-        c.pipeline_repo = get_str("pipeline_repo", &c.pipeline_repo);
-        c.pipeline_test_cmd = get_str("pipeline_test_cmd", &c.pipeline_test_cmd);
-        c.pipeline_lint_cmd = get_str("pipeline_lint_cmd", &c.pipeline_lint_cmd);
-        c.pipeline_admin_chat = get_str("pipeline_admin_chat", &c.pipeline_admin_chat);
-        c.container_setup = get_str("container_setup", &c.container_setup);
-        c.sandbox_backend = get_str("sandbox_backend", &c.sandbox_backend);
-        c.dashboard_dist_dir = get_str("dashboard_dist_dir", &c.dashboard_dist_dir);
-        c.git_author_name = get_str("git_author_name", &c.git_author_name);
-        c.git_author_email = get_str("git_author_email", &c.git_author_email);
-        c.git_committer_name = get_str("git_committer_name", &c.git_committer_name);
-        c.git_committer_email = get_str("git_committer_email", &c.git_committer_email);
-        c.git_user_coauthor = get_str("git_user_coauthor", &c.git_user_coauthor);
+        c.pipeline.backend = get_str("backend", &c.pipeline.backend);
+        c.pipeline.repo = get_str("pipeline_repo", &c.pipeline.repo);
+        c.pipeline.test_cmd = get_str("pipeline_test_cmd", &c.pipeline.test_cmd);
+        c.pipeline.lint_cmd = get_str("pipeline_lint_cmd", &c.pipeline.lint_cmd);
+        c.pipeline.admin_chat = get_str("pipeline_admin_chat", &c.pipeline.admin_chat);
+        c.container.setup = get_str("container_setup", &c.container.setup);
+        c.container.sandbox_backend = get_str("sandbox_backend", &c.container.sandbox_backend);
+        c.web.dashboard_dist_dir = get_str("dashboard_dist_dir", &c.web.dashboard_dist_dir);
+        c.git.author_name = get_str("git_author_name", &c.git.author_name);
+        c.git.author_email = get_str("git_author_email", &c.git.author_email);
+        c.git.committer_name = get_str("git_committer_name", &c.git.committer_name);
+        c.git.committer_email = get_str("git_committer_email", &c.git.committer_email);
+        c.git.user_coauthor = get_str("git_user_coauthor", &c.git.user_coauthor);
         c.observer_config = get_str("observer_config", &c.observer_config);
-        c.public_url = get_str_env_wins("public_url", "PUBLIC_URL", &c.public_url);
-        c.storage_backend = get_str("storage_backend", &c.storage_backend);
-        c.s3_bucket = get_str("s3_bucket", &c.s3_bucket);
-        c.s3_region = get_str("s3_region", &c.s3_region);
-        c.s3_endpoint = get_str("s3_endpoint", &c.s3_endpoint);
-        c.s3_prefix = get_str("s3_prefix", &c.s3_prefix);
-        c.backup_backend = get_str("backup_backend", &c.backup_backend);
-        c.backup_mode = get_str("backup_mode", &c.backup_mode);
-        c.backup_bucket = get_str("backup_bucket", &c.backup_bucket);
-        c.backup_region = get_str("backup_region", &c.backup_region);
-        c.backup_endpoint = get_str("backup_endpoint", &c.backup_endpoint);
-        c.backup_prefix = get_str("backup_prefix", &c.backup_prefix);
-        load_i64!("backup_poll_interval_s", c.backup_poll_interval_s);
-        load_i64!("project_max_bytes", c.project_max_bytes);
-        load_i64!("knowledge_max_bytes", c.knowledge_max_bytes);
+        c.web.public_url = get_str_env_wins("public_url", "PUBLIC_URL", &c.web.public_url);
+        c.storage.backend = get_str("storage_backend", &c.storage.backend);
+        c.storage.s3_bucket = get_str("s3_bucket", &c.storage.s3_bucket);
+        c.storage.s3_region = get_str("s3_region", &c.storage.s3_region);
+        c.storage.s3_endpoint = get_str("s3_endpoint", &c.storage.s3_endpoint);
+        c.storage.s3_prefix = get_str("s3_prefix", &c.storage.s3_prefix);
+        c.backup.backend = get_str("backup_backend", &c.backup.backend);
+        c.backup.mode = get_str("backup_mode", &c.backup.mode);
+        c.backup.bucket = get_str("backup_bucket", &c.backup.bucket);
+        c.backup.region = get_str("backup_region", &c.backup.region);
+        c.backup.endpoint = get_str("backup_endpoint", &c.backup.endpoint);
+        c.backup.prefix = get_str("backup_prefix", &c.backup.prefix);
+        load_i64!("backup_poll_interval_s", c.backup.poll_interval_s);
+        load_i64!("project_max_bytes", c.quota.project_max_bytes);
+        load_i64!("knowledge_max_bytes", c.quota.knowledge_max_bytes);
         load_i64!(
             "cloud_import_max_batch_files",
-            c.cloud_import_max_batch_files
+            c.quota.cloud_import_max_batch_files
         );
-        c.ingestion_queue_backend = get_str("ingestion_queue_backend", &c.ingestion_queue_backend);
-        c.sqs_queue_url = get_str("sqs_queue_url", &c.sqs_queue_url);
-        c.sqs_region = get_str("sqs_region", &c.sqs_region);
-        c.search_backend = get_str_env_wins("search_backend", "SEARCH_BACKEND", &c.search_backend);
-        c.vespa_url = get_str_env_wins("vespa_url", "VESPA_URL", &c.vespa_url);
-        c.vespa_namespace =
-            get_str_env_wins("vespa_namespace", "VESPA_NAMESPACE", &c.vespa_namespace);
-        c.vespa_document_type = get_str_env_wins(
+        c.ingestion.queue_backend = get_str("ingestion_queue_backend", &c.ingestion.queue_backend);
+        c.ingestion.sqs_queue_url = get_str("sqs_queue_url", &c.ingestion.sqs_queue_url);
+        c.ingestion.sqs_region = get_str("sqs_region", &c.ingestion.sqs_region);
+        c.search.backend = get_str_env_wins("search_backend", "SEARCH_BACKEND", &c.search.backend);
+        c.search.vespa_url = get_str_env_wins("vespa_url", "VESPA_URL", &c.search.vespa_url);
+        c.search.vespa_namespace =
+            get_str_env_wins("vespa_namespace", "VESPA_NAMESPACE", &c.search.vespa_namespace);
+        c.search.vespa_document_type = get_str_env_wins(
             "vespa_document_type",
             "VESPA_DOCUMENT_TYPE",
-            &c.vespa_document_type,
+            &c.search.vespa_document_type,
         );
-        c.experimental_domains = get_bool("experimental_domains", c.experimental_domains);
+        c.pipeline.experimental_domains = get_bool("experimental_domains", c.pipeline.experimental_domains);
         c.build_cmd = get_str("build_cmd", &c.build_cmd);
         c.self_update_enabled = get_bool("self_update_enabled", c.self_update_enabled);
-        c.continuous_mode = get_bool("continuous_mode", c.continuous_mode);
-        c.git_claude_coauthor = get_bool("git_claude_coauthor", c.git_claude_coauthor);
-        c.wa_disabled = get_bool("wa_disabled", c.wa_disabled);
+        c.pipeline.continuous_mode = get_bool("continuous_mode", c.pipeline.continuous_mode);
+        c.git.claude_coauthor = get_bool("git_claude_coauthor", c.git.claude_coauthor);
+        c.sidecar.wa_disabled = get_bool("wa_disabled", c.sidecar.wa_disabled);
         load_i64!("session_max_age_hours", c.session_max_age_hours);
         load_i64!("chat_collection_window_ms", c.chat_collection_window_ms);
         load_i64!("chat_cooldown_ms", c.chat_cooldown_ms);
         load_i64!("agent_timeout_s", c.agent_timeout_s);
-        load_i64!("pipeline_seed_cooldown_s", c.pipeline_seed_cooldown_s);
-        load_i64!("proposal_promote_threshold", c.proposal_promote_threshold);
-        load_i64!("remote_check_interval_s", c.remote_check_interval_s);
+        load_i64!("pipeline_seed_cooldown_s", c.pipeline.seed_cooldown_s);
+        load_i64!("proposal_promote_threshold", c.pipeline.proposal_promote_threshold);
+        load_i64!("remote_check_interval_s", c.pipeline.remote_check_interval_s);
         load_u32!("max_consecutive_errors", c.max_consecutive_errors);
-        load_u32!("release_interval_mins", c.release_interval_mins);
+        load_u32!("release_interval_mins", c.pipeline.release_interval_mins);
         load_u32!("max_chat_agents", c.max_chat_agents);
         load_u32!("chat_rate_limit", c.chat_rate_limit);
-        load_u32!("pipeline_max_agents", c.pipeline_max_agents);
-        load_u32!("pipeline_max_backlog", c.pipeline_max_backlog);
-        load_u64!("container_memory_mb", c.container_memory_mb);
-        load_u64!("pipeline_tick_s", c.pipeline_tick_s);
-        load_i64!("mirror_refresh_interval_s", c.mirror_refresh_interval_s);
+        load_u32!("pipeline_max_agents", c.pipeline.max_agents);
+        load_u32!("pipeline_max_backlog", c.pipeline.max_backlog);
+        load_u64!("container_memory_mb", c.container.memory_mb);
+        load_u64!("pipeline_tick_s", c.pipeline.tick_s);
+        load_i64!("mirror_refresh_interval_s", c.pipeline.mirror_refresh_interval_s);
         if let Some(v) = get("container_cpus").and_then(|s| s.parse::<f64>().ok()) {
-            c.container_cpus = v;
+            c.container.cpus = v;
         }
         // Rebuild watched_repos from the repos table (canonical source for dashboard-managed repos)
         if let Ok(rows) = db.list_repos() {
             if !rows.is_empty() {
                 let mut repos = Vec::new();
                 for row in rows {
-                    let is_self = row.path == c.pipeline_repo;
+                    let is_self = row.path == c.pipeline.repo;
                     repos.push(crate::types::RepoConfig {
                         path: row.path,
                         test_cmd: row.test_cmd,
@@ -1034,133 +1063,155 @@ impl Config {
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or(raw)
             },
-            container_image: get_str("CONTAINER_IMAGE", &dotenv, "borg-agent"),
             model: get_str("MODEL", &dotenv, "claude-sonnet-4-6"),
             credentials_path,
             session_max_age_hours: get_i64("SESSION_MAX_AGE_HOURS", &dotenv, 24),
             max_consecutive_errors: get_u32("MAX_CONSECUTIVE_ERRORS", &dotenv, 3),
-            pipeline_repo,
-            pipeline_test_cmd,
-            pipeline_lint_cmd,
-            backend,
-            pipeline_admin_chat: get_str("PIPELINE_ADMIN_CHAT", &dotenv, ""),
-            release_interval_mins: get_u32("RELEASE_INTERVAL_MINS", &dotenv, 180),
-            continuous_mode: get_bool("CONTINUOUS_MODE", &dotenv, false),
             chat_collection_window_ms: get_i64("CHAT_COLLECTION_WINDOW_MS", &dotenv, 3000),
             chat_cooldown_ms: get_i64("CHAT_COOLDOWN_MS", &dotenv, 5000),
             agent_timeout_s: get_i64("AGENT_TIMEOUT_S", &dotenv, 1000),
             max_chat_agents: get_u32("MAX_CHAT_AGENTS", &dotenv, 4),
             chat_rate_limit: get_u32("CHAT_RATE_LIMIT", &dotenv, 5),
-            pipeline_max_agents: get_u32("PIPELINE_MAX_AGENTS", &dotenv, 2),
-            web_bind: get_str("WEB_BIND", &dotenv, "127.0.0.1"),
-            web_port,
-            proxy_port,
-            dashboard_dist_dir: get_str("DASHBOARD_DIST_DIR", &dotenv, "dashboard/dist"),
-            container_setup: get_str("CONTAINER_SETUP", &dotenv, ""),
-            container_memory_mb: get_u64("CONTAINER_MEMORY_MB", &dotenv, 2048),
-            container_cpus: get("CONTAINER_CPUS", &dotenv)
-                .and_then(|s| s.parse::<f64>().ok())
-                .unwrap_or(2.0),
-            sandbox_backend: get_str("SANDBOX_BACKEND", &dotenv, "auto"),
-            pipeline_max_backlog: get_u32("PIPELINE_MAX_BACKLOG", &dotenv, 5),
-            pipeline_seed_cooldown_s: get_i64("PIPELINE_SEED_COOLDOWN_S", &dotenv, 3600),
-            proposal_promote_threshold: get_i64("PIPELINE_PROPOSAL_THRESHOLD", &dotenv, 8),
-            pipeline_tick_s: get_u64("PIPELINE_TICK_S", &dotenv, 10),
-            remote_check_interval_s: get_i64("REMOTE_CHECK_INTERVAL_S", &dotenv, 300),
-            mirror_refresh_interval_s: get_i64("MIRROR_REFRESH_INTERVAL_S", &dotenv, 60),
-            pipeline_agent_cooldown_s: get_i64("PIPELINE_AGENT_COOLDOWN_S", &dotenv, 120),
-            git_author_name: get_str("GIT_AUTHOR_NAME", &dotenv, ""),
-            git_author_email: get_str("GIT_AUTHOR_EMAIL", &dotenv, ""),
-            git_committer_name: get_str("GIT_COMMITTER_NAME", &dotenv, ""),
-            git_committer_email: get_str("GIT_COMMITTER_EMAIL", &dotenv, ""),
-            git_claude_coauthor: get_bool("GIT_CLAUDE_COAUTHOR", &dotenv, false),
-            git_user_coauthor: get_str("GIT_USER_COAUTHOR", &dotenv, ""),
-            github_token: get("GH_TOKEN", &dotenv)
-                .or_else(|| get("GITHUB_TOKEN", &dotenv))
-                .unwrap_or_default(),
             watched_repos,
             build_cmd: "cargo build --release".into(),
             self_update_enabled: get_bool("SELF_UPDATE_ENABLED", &dotenv, false),
             codex_api_key,
             codex_credentials_path,
             gemini_api_key,
-            discord_token: get_str("DISCORD_TOKEN", &dotenv, ""),
-            wa_auth_dir: get_str("WA_AUTH_DIR", &dotenv, ""),
-            wa_disabled: get_bool("WA_DISABLED", &dotenv, false),
-            slack_bot_token: get_str("SLACK_BOT_TOKEN", &dotenv, ""),
-            slack_app_token: get_str("SLACK_APP_TOKEN", &dotenv, ""),
             observer_config: get_str("OBSERVER_CONFIG", &dotenv, ""),
-            public_url: get_str("PUBLIC_URL", &dotenv, ""),
             database_url: get("DATABASE_URL", &dotenv)
                 .filter(|value| !value.trim().is_empty())
                 .ok_or_else(|| {
                     anyhow::anyhow!("DATABASE_URL is required; SQLite is no longer supported")
                 })?,
-            storage_backend: get_str("STORAGE_BACKEND", &dotenv, "local"),
-            s3_bucket: get_str("S3_BUCKET", &dotenv, ""),
-            s3_region: get_str("AWS_REGION", &dotenv, "us-east-1"),
-            s3_endpoint: get_str("S3_ENDPOINT", &dotenv, ""),
-            s3_access_key: get_str("AWS_ACCESS_KEY_ID", &dotenv, ""),
-            s3_secret_key: get_str("AWS_SECRET_ACCESS_KEY", &dotenv, ""),
-            s3_prefix: get_str("S3_PREFIX", &dotenv, "borg/"),
-            backup_backend: get_str("BACKUP_BACKEND", &dotenv, "disabled"),
-            backup_mode: get_str("BACKUP_MODE", &dotenv, "active_work_only"),
-            backup_bucket: get_str("BACKUP_BUCKET", &dotenv, ""),
-            backup_region: get_str(
-                "BACKUP_REGION",
-                &dotenv,
-                get_str("AWS_REGION", &dotenv, "us-east-1").as_str(),
-            ),
-            backup_endpoint: get_str("BACKUP_ENDPOINT", &dotenv, ""),
-            backup_access_key: get_str(
-                "BACKUP_ACCESS_KEY_ID",
-                &dotenv,
-                get_str("AWS_ACCESS_KEY_ID", &dotenv, "").as_str(),
-            ),
-            backup_secret_key: get_str(
-                "BACKUP_SECRET_ACCESS_KEY",
-                &dotenv,
-                get_str("AWS_SECRET_ACCESS_KEY", &dotenv, "").as_str(),
-            ),
-            backup_prefix: get_str("BACKUP_PREFIX", &dotenv, "borg-backups/"),
-            backup_poll_interval_s: get_i64("BACKUP_POLL_INTERVAL_S", &dotenv, 300),
-            project_max_bytes: get_i64("PROJECT_MAX_BYTES", &dotenv, 200 * 1024 * 1024 * 1024),
-            knowledge_max_bytes: get_i64("KNOWLEDGE_MAX_BYTES", &dotenv, 500 * 1024 * 1024 * 1024),
-            cloud_import_max_batch_files: get_i64("CLOUD_IMPORT_MAX_BATCH_FILES", &dotenv, 1000),
-            ingestion_queue_backend: get_str("INGESTION_QUEUE_BACKEND", &dotenv, "disabled"),
-            sqs_queue_url: get_str("SQS_QUEUE_URL", &dotenv, ""),
-            sqs_region: get_str(
-                "SQS_REGION",
-                &dotenv,
-                get_str("AWS_REGION", &dotenv, "us-east-1").as_str(),
-            ),
-            search_backend: get_str("SEARCH_BACKEND", &dotenv, "vespa"),
-            vespa_url: get_str("VESPA_URL", &dotenv, ""),
-            vespa_namespace: get_str("VESPA_NAMESPACE", &dotenv, "borg"),
-            vespa_document_type: get_str("VESPA_DOCUMENT_TYPE", &dotenv, "project_file"),
-            experimental_domains: get_bool("EXPERIMENTAL_DOMAINS", &dotenv, false),
-            disable_auth: get_bool("DISABLE_AUTH", &dotenv, false),
-            auth_mode: get_str("AUTH_MODE", &dotenv, "local"),
-            cloudflare_access_email_header: get_str(
-                "CLOUDFLARE_ACCESS_EMAIL_HEADER",
-                &dotenv,
-                "cf-access-authenticated-user-email",
-            ),
-            cloudflare_admin_emails: get_csv("CLOUDFLARE_ADMIN_EMAILS", &dotenv),
-            imap_host: get_str("IMAP_HOST", &dotenv, ""),
-            imap_port: get_u16("IMAP_PORT", &dotenv, 993),
-            imap_user: get_str("IMAP_USER", &dotenv, ""),
-            imap_pass: get_str("IMAP_PASS", &dotenv, ""),
-            imap_mailbox: get_str("IMAP_MAILBOX", &dotenv, "INBOX"),
-            smtp_host: get_str("SMTP_HOST", &dotenv, ""),
-            smtp_port: get_u16("SMTP_PORT", &dotenv, 587),
-            smtp_from: get_str("SMTP_FROM", &dotenv, ""),
-            smtp_user: get_str("SMTP_USER", &dotenv, ""),
-            smtp_pass: get_str("SMTP_PASS", &dotenv, ""),
-            enforce_retrieval_protocol: get_bool("ENFORCE_RETRIEVAL_PROTOCOL", &dotenv, true),
             secret_encryption: get_bool("BORG_SECRET_ENCRYPTION", &dotenv, false),
-            triage_model: get_str("BORG_TRIAGE_MODEL", &dotenv, "claude-haiku-4-5-20251001"),
-            default_docker_model: get_str("BORG_DEFAULT_DOCKER_MODEL", &dotenv, "claude-sonnet-4-6"),
+            pipeline: PipelineConfig {
+                repo: pipeline_repo,
+                test_cmd: pipeline_test_cmd,
+                lint_cmd: pipeline_lint_cmd,
+                backend,
+                admin_chat: get_str("PIPELINE_ADMIN_CHAT", &dotenv, ""),
+                release_interval_mins: get_u32("RELEASE_INTERVAL_MINS", &dotenv, 180),
+                continuous_mode: get_bool("CONTINUOUS_MODE", &dotenv, false),
+                max_agents: get_u32("PIPELINE_MAX_AGENTS", &dotenv, 2),
+                max_backlog: get_u32("PIPELINE_MAX_BACKLOG", &dotenv, 5),
+                seed_cooldown_s: get_i64("PIPELINE_SEED_COOLDOWN_S", &dotenv, 3600),
+                proposal_promote_threshold: get_i64("PIPELINE_PROPOSAL_THRESHOLD", &dotenv, 8),
+                tick_s: get_u64("PIPELINE_TICK_S", &dotenv, 10),
+                remote_check_interval_s: get_i64("REMOTE_CHECK_INTERVAL_S", &dotenv, 300),
+                mirror_refresh_interval_s: get_i64("MIRROR_REFRESH_INTERVAL_S", &dotenv, 60),
+                agent_cooldown_s: get_i64("PIPELINE_AGENT_COOLDOWN_S", &dotenv, 120),
+                triage_model: get_str("BORG_TRIAGE_MODEL", &dotenv, "claude-haiku-4-5-20251001"),
+                default_docker_model: get_str("BORG_DEFAULT_DOCKER_MODEL", &dotenv, "claude-sonnet-4-6"),
+                experimental_domains: get_bool("EXPERIMENTAL_DOMAINS", &dotenv, false),
+                enforce_retrieval_protocol: get_bool("ENFORCE_RETRIEVAL_PROTOCOL", &dotenv, true),
+            },
+            git: GitConfig {
+                author_name: get_str("GIT_AUTHOR_NAME", &dotenv, ""),
+                author_email: get_str("GIT_AUTHOR_EMAIL", &dotenv, ""),
+                committer_name: get_str("GIT_COMMITTER_NAME", &dotenv, ""),
+                committer_email: get_str("GIT_COMMITTER_EMAIL", &dotenv, ""),
+                claude_coauthor: get_bool("GIT_CLAUDE_COAUTHOR", &dotenv, false),
+                user_coauthor: get_str("GIT_USER_COAUTHOR", &dotenv, ""),
+                github_token: get("GH_TOKEN", &dotenv)
+                    .or_else(|| get("GITHUB_TOKEN", &dotenv))
+                    .unwrap_or_default(),
+            },
+            container: ContainerConfig {
+                image: get_str("CONTAINER_IMAGE", &dotenv, "borg-agent"),
+                setup: get_str("CONTAINER_SETUP", &dotenv, ""),
+                memory_mb: get_u64("CONTAINER_MEMORY_MB", &dotenv, 2048),
+                cpus: get("CONTAINER_CPUS", &dotenv)
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .unwrap_or(2.0),
+                sandbox_backend: get_str("SANDBOX_BACKEND", &dotenv, "auto"),
+            },
+            web: WebConfig {
+                bind: get_str("WEB_BIND", &dotenv, "127.0.0.1"),
+                port: web_port,
+                proxy_port,
+                dashboard_dist_dir: get_str("DASHBOARD_DIST_DIR", &dotenv, "dashboard/dist"),
+                public_url: get_str("PUBLIC_URL", &dotenv, ""),
+                disable_auth: get_bool("DISABLE_AUTH", &dotenv, false),
+                auth_mode: get_str("AUTH_MODE", &dotenv, "local"),
+                cloudflare_access_email_header: get_str(
+                    "CLOUDFLARE_ACCESS_EMAIL_HEADER",
+                    &dotenv,
+                    "cf-access-authenticated-user-email",
+                ),
+                cloudflare_admin_emails: get_csv("CLOUDFLARE_ADMIN_EMAILS", &dotenv),
+            },
+            storage: StorageConfig {
+                backend: get_str("STORAGE_BACKEND", &dotenv, "local"),
+                s3_bucket: get_str("S3_BUCKET", &dotenv, ""),
+                s3_region: get_str("AWS_REGION", &dotenv, "us-east-1"),
+                s3_endpoint: get_str("S3_ENDPOINT", &dotenv, ""),
+                s3_access_key: get_str("AWS_ACCESS_KEY_ID", &dotenv, ""),
+                s3_secret_key: get_str("AWS_SECRET_ACCESS_KEY", &dotenv, ""),
+                s3_prefix: get_str("S3_PREFIX", &dotenv, "borg/"),
+            },
+            backup: BackupConfig {
+                backend: get_str("BACKUP_BACKEND", &dotenv, "disabled"),
+                mode: get_str("BACKUP_MODE", &dotenv, "active_work_only"),
+                bucket: get_str("BACKUP_BUCKET", &dotenv, ""),
+                region: get_str(
+                    "BACKUP_REGION",
+                    &dotenv,
+                    get_str("AWS_REGION", &dotenv, "us-east-1").as_str(),
+                ),
+                endpoint: get_str("BACKUP_ENDPOINT", &dotenv, ""),
+                access_key: get_str(
+                    "BACKUP_ACCESS_KEY_ID",
+                    &dotenv,
+                    get_str("AWS_ACCESS_KEY_ID", &dotenv, "").as_str(),
+                ),
+                secret_key: get_str(
+                    "BACKUP_SECRET_ACCESS_KEY",
+                    &dotenv,
+                    get_str("AWS_SECRET_ACCESS_KEY", &dotenv, "").as_str(),
+                ),
+                prefix: get_str("BACKUP_PREFIX", &dotenv, "borg-backups/"),
+                poll_interval_s: get_i64("BACKUP_POLL_INTERVAL_S", &dotenv, 300),
+            },
+            search: SearchConfig {
+                backend: get_str("SEARCH_BACKEND", &dotenv, "vespa"),
+                vespa_url: get_str("VESPA_URL", &dotenv, ""),
+                vespa_namespace: get_str("VESPA_NAMESPACE", &dotenv, "borg"),
+                vespa_document_type: get_str("VESPA_DOCUMENT_TYPE", &dotenv, "project_file"),
+            },
+            ingestion: IngestionConfig {
+                queue_backend: get_str("INGESTION_QUEUE_BACKEND", &dotenv, "disabled"),
+                sqs_queue_url: get_str("SQS_QUEUE_URL", &dotenv, ""),
+                sqs_region: get_str(
+                    "SQS_REGION",
+                    &dotenv,
+                    get_str("AWS_REGION", &dotenv, "us-east-1").as_str(),
+                ),
+            },
+            email: EmailConfig {
+                imap_host: get_str("IMAP_HOST", &dotenv, ""),
+                imap_port: get_u16("IMAP_PORT", &dotenv, 993),
+                imap_user: get_str("IMAP_USER", &dotenv, ""),
+                imap_pass: get_str("IMAP_PASS", &dotenv, ""),
+                imap_mailbox: get_str("IMAP_MAILBOX", &dotenv, "INBOX"),
+                smtp_host: get_str("SMTP_HOST", &dotenv, ""),
+                smtp_port: get_u16("SMTP_PORT", &dotenv, 587),
+                smtp_from: get_str("SMTP_FROM", &dotenv, ""),
+                smtp_user: get_str("SMTP_USER", &dotenv, ""),
+                smtp_pass: get_str("SMTP_PASS", &dotenv, ""),
+            },
+            sidecar: SidecarConfig {
+                discord_token: get_str("DISCORD_TOKEN", &dotenv, ""),
+                wa_auth_dir: get_str("WA_AUTH_DIR", &dotenv, ""),
+                wa_disabled: get_bool("WA_DISABLED", &dotenv, false),
+                slack_bot_token: get_str("SLACK_BOT_TOKEN", &dotenv, ""),
+                slack_app_token: get_str("SLACK_APP_TOKEN", &dotenv, ""),
+            },
+            quota: QuotaConfig {
+                project_max_bytes: get_i64("PROJECT_MAX_BYTES", &dotenv, 200 * 1024 * 1024 * 1024),
+                knowledge_max_bytes: get_i64("KNOWLEDGE_MAX_BYTES", &dotenv, 500 * 1024 * 1024 * 1024),
+                cloud_import_max_batch_files: get_i64("CLOUD_IMPORT_MAX_BATCH_FILES", &dotenv, 1000),
+            },
         })
     }
 }

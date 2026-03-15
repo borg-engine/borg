@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
+use borg_core::types::CustomMcpServer;
 use serde_json::{json, Map, Value};
 
 /// Legal provider: (name, env_var, display_label).
@@ -65,6 +67,7 @@ pub fn build_mcp_servers_json(
     workspace_id: i64,
     chat_thread: Option<&str>,
     linked_creds: &[(String, String)],
+    custom_servers: &[CustomMcpServer],
 ) -> Map<String, Value> {
     let mut mcp_servers = Map::new();
 
@@ -123,7 +126,42 @@ pub fn build_mcp_servers_json(
         }
     }
 
+    // Append user-configured custom MCP servers
+    for server in custom_servers {
+        // Don't let custom servers override built-in ones
+        if mcp_servers.contains_key(&server.name) {
+            continue;
+        }
+        let env_map: Map<String, Value> = server
+            .env
+            .iter()
+            .map(|(k, v)| (k.clone(), json!(v)))
+            .collect();
+        mcp_servers.insert(
+            server.name.clone(),
+            json!({
+                "command": server.command,
+                "args": server.args,
+                "env": env_map,
+            }),
+        );
+    }
+
     mcp_servers
+}
+
+/// Load custom MCP servers from DB rows (name, command, args, env) into the agent-side struct.
+pub fn custom_servers_from_db(
+    rows: Vec<(String, String, Vec<String>, HashMap<String, String>)>,
+) -> Vec<CustomMcpServer> {
+    rows.into_iter()
+        .map(|(name, command, args, env)| CustomMcpServer {
+            name,
+            command,
+            args,
+            env,
+        })
+        .collect()
 }
 
 #[cfg(test)]

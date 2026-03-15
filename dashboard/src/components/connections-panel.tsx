@@ -1,15 +1,20 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Github, Plug } from "lucide-react";
+import { Github, Plug, Plus, Power, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import {
   connectDiscordBot,
   connectSlackBot,
   connectTelegramBot,
+  type CustomMcpServer,
+  deleteCustomMcpServer,
   disconnectDiscordBot,
   disconnectSlackBot,
   disconnectTelegramBot,
   logoutWhatsApp,
+  toggleCustomMcpServer,
+  upsertCustomMcpServer,
+  useCustomMcpServers,
   type UserSettings,
   updateUserSettings,
   useUserSettings,
@@ -33,14 +38,17 @@ export function ConnectionsPanel() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-        <div className="mx-auto grid max-w-3xl grid-cols-1 gap-4 md:grid-cols-2">
-          <DiscordCard />
-          <TelegramCard />
-          <WhatsAppCard />
-          <SlackCard />
-          <GitHubCard />
-          <GitLabCard />
-          <CodebergCard />
+        <div className="mx-auto max-w-3xl space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <DiscordCard />
+            <TelegramCard />
+            <WhatsAppCard />
+            <SlackCard />
+            <GitHubCard />
+            <GitLabCard />
+            <CodebergCard />
+          </div>
+          <McpServersSection />
         </div>
       </div>
     </div>
@@ -579,6 +587,352 @@ function CancelButton({ onClick }: { onClick: () => void }) {
     >
       Cancel
     </button>
+  );
+}
+
+// ── MCP Servers ──────────────────────────────────────────────────────────
+
+function McpServersSection() {
+  const queryClient = useQueryClient();
+  const { data: servers, isLoading } = useCustomMcpServers();
+  const [adding, setAdding] = useState(false);
+
+  if (isLoading) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[14px] font-semibold text-[#e8e0d4]">MCP Servers</div>
+          <div className="text-[12px] text-[#6b6459]">Add custom tool servers that agents can use during tasks and chat</div>
+        </div>
+        {!adding && (
+          <button
+            onClick={() => setAdding(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-3 py-1.5 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Server
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <McpServerForm
+          onSave={async (data) => {
+            await upsertCustomMcpServer(data);
+            queryClient.invalidateQueries({ queryKey: ["custom-mcp-servers"] });
+            setAdding(false);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+
+      {servers && servers.length > 0 && (
+        <div className="space-y-3">
+          {servers.map((server) => (
+            <McpServerCard key={server.id} server={server} />
+          ))}
+        </div>
+      )}
+
+      {(!servers || servers.length === 0) && !adding && (
+        <div className="rounded-2xl border border-dashed border-[#2a2520] px-5 py-8 text-center">
+          <div className="text-[13px] text-[#6b6459]">
+            No custom MCP servers configured. Add one to give agents access to external tools like Airtable, Notion, or any MCP-compatible service.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function McpServerCard({ server }: { server: CustomMcpServer }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleToggle() {
+    setToggling(true);
+    try {
+      await toggleCustomMcpServer(server.id, !server.enabled);
+      queryClient.invalidateQueries({ queryKey: ["custom-mcp-servers"] });
+    } finally {
+      setToggling(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteCustomMcpServer(server.id);
+      queryClient.invalidateQueries({ queryKey: ["custom-mcp-servers"] });
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <McpServerForm
+        initial={server}
+        onSave={async (data) => {
+          await upsertCustomMcpServer(data);
+          queryClient.invalidateQueries({ queryKey: ["custom-mcp-servers"] });
+          setEditing(false);
+        }}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#2a2520] bg-[#151412] p-4 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 ring-1 ring-violet-500/20">
+            <McpIcon />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-semibold text-[#e8e0d4]">{server.label || server.name}</span>
+              {server.enabled ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                  <span className="h-1 w-1 rounded-full bg-emerald-400" />
+                  Active
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full border border-[#2a2520] bg-[#1c1a17] px-2 py-0.5 text-[10px] font-medium text-[#6b6459]">
+                  Disabled
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-[#6b6459] font-mono">{server.command} {JSON.parse(server.args_json || "[]").join(" ")}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setEditing(true)}
+            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-2.5 py-1 text-[11px] text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+          >
+            Edit
+          </button>
+          <button
+            onClick={handleToggle}
+            disabled={toggling}
+            className="rounded-lg border border-[#2a2520] bg-[#1c1a17] p-1.5 text-[#9c9486] transition-colors hover:bg-[#232019] hover:text-[#e8e0d4]"
+            title={server.enabled ? "Disable" : "Enable"}
+          >
+            <Power className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="rounded-lg border border-red-500/20 bg-red-500/[0.06] p-1.5 text-red-400/80 transition-colors hover:bg-red-500/[0.12] hover:text-red-400"
+            title="Delete"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+      {server.env_keys.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pl-[42px]">
+          {server.env_keys.map((key) => (
+            <span key={key} className="rounded bg-[#1c1a17] px-2 py-0.5 text-[10px] font-mono text-[#6b6459] ring-1 ring-[#2a2520]">
+              {key}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface McpFormData {
+  name: string;
+  label?: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  enabled?: boolean;
+}
+
+function McpServerForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial?: CustomMcpServer;
+  onSave: (data: McpFormData) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [label, setLabel] = useState(initial?.label ?? "");
+  const [command, setCommand] = useState(initial?.command ?? "npx");
+  const [argsStr, setArgsStr] = useState(
+    initial?.args_json ? JSON.parse(initial.args_json).join(" ") : "-y "
+  );
+  const [envPairs, setEnvPairs] = useState<{ key: string; value: string }[]>(() => {
+    if (initial?.env_keys?.length) {
+      return initial.env_keys.map((k) => ({ key: k, value: "" }));
+    }
+    return [{ key: "", value: "" }];
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    try {
+      const args = argsStr.trim() ? argsStr.trim().split(/\s+/) : [];
+      const env: Record<string, string> = {};
+      for (const pair of envPairs) {
+        const k = pair.key.trim();
+        if (k) env[k] = pair.value;
+      }
+      await onSave({
+        name: name.trim(),
+        label: label.trim() || undefined,
+        command: command.trim(),
+        args,
+        env: Object.keys(env).length > 0 ? env : undefined,
+        enabled: initial?.enabled ?? true,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function addEnvPair() {
+    setEnvPairs([...envPairs, { key: "", value: "" }]);
+  }
+
+  function removeEnvPair(index: number) {
+    setEnvPairs(envPairs.filter((_, i) => i !== index));
+  }
+
+  function updateEnvPair(index: number, field: "key" | "value", value: string) {
+    setEnvPairs(envPairs.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
+  }
+
+  const isValid = name.trim() && command.trim() && /^[a-zA-Z0-9_-]+$/.test(name.trim());
+
+  return (
+    <div className="rounded-2xl border border-amber-500/20 bg-[#151412] p-5 space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-[#9c9486]">Name (unique ID)</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="airtable"
+            disabled={!!initial}
+            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540] disabled:opacity-50"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-[#9c9486]">Label (display name)</label>
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Airtable"
+            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-[#9c9486]">Command</label>
+          <input
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            placeholder="npx"
+            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+          />
+        </div>
+        <div className="col-span-2 space-y-1.5">
+          <label className="text-[11px] font-medium text-[#9c9486]">Arguments</label>
+          <input
+            value={argsStr}
+            onChange={(e) => setArgsStr(e.target.value)}
+            placeholder="-y @airtable/mcp-server"
+            className="w-full rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[13px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-[11px] font-medium text-[#9c9486]">Environment Variables</label>
+          <button
+            onClick={addEnvPair}
+            className="text-[11px] text-amber-400/70 hover:text-amber-300 transition-colors"
+          >
+            + Add variable
+          </button>
+        </div>
+        {envPairs.map((pair, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              value={pair.key}
+              onChange={(e) => updateEnvPair(i, "key", e.target.value)}
+              placeholder="AIRTABLE_API_KEY"
+              className="w-2/5 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+            />
+            <input
+              type="password"
+              value={pair.value}
+              onChange={(e) => updateEnvPair(i, "value", e.target.value)}
+              placeholder={initial && pair.key ? "(unchanged)" : "value"}
+              className="flex-1 rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-1.5 text-[12px] text-[#e8e0d4] font-mono outline-none transition-colors focus:border-amber-500/30 placeholder:text-[#4a4540]"
+            />
+            {envPairs.length > 1 && (
+              <button
+                onClick={() => removeEnvPair(i)}
+                className="shrink-0 rounded-lg p-1.5 text-[#6b6459] hover:text-red-400 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          onClick={handleSave}
+          disabled={saving || !isValid}
+          className={cn(
+            "rounded-lg bg-amber-500/15 px-4 py-2 text-[12px] font-medium text-amber-300 ring-1 ring-inset ring-amber-500/20 transition-colors hover:bg-amber-500/20",
+            (saving || !isValid) && "opacity-40 cursor-not-allowed",
+          )}
+        >
+          {saving ? "Saving..." : initial ? "Update" : "Add Server"}
+        </button>
+        <button
+          onClick={onCancel}
+          className="rounded-lg border border-[#2a2520] bg-[#1c1a17] px-3 py-2 text-[12px] text-[#9c9486] transition-colors hover:text-[#e8e0d4]"
+        >
+          Cancel
+        </button>
+      </div>
+      {error && <div className="text-[12px] text-red-400">{error}</div>}
+    </div>
+  );
+}
+
+function McpIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-violet-400">
+      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+      <path d="M2 17l10 5 10-5" />
+      <path d="M2 12l10 5 10-5" />
+    </svg>
   );
 }
 

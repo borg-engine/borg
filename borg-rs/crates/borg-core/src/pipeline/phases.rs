@@ -184,6 +184,20 @@ impl Pipeline {
             github_token_is_user: gh_resolved.1,
             clarification_resume_reuses_prior_review,
             clarification_resume_question,
+            custom_mcp_servers: {
+                let rows = self
+                    .db
+                    .get_enabled_custom_mcp_servers_resolved(task.workspace_id)
+                    .unwrap_or_default();
+                rows.into_iter()
+                    .map(|(name, command, args, env)| crate::types::CustomMcpServer {
+                        name,
+                        command,
+                        args,
+                        env,
+                    })
+                    .collect()
+            },
         }
     }
 

@@ -56,9 +56,9 @@ pub(crate) async fn request_telemetry_middleware(
         request.headers(),
         &state.jwt_secret,
         &state.api_token,
-        state.config.disable_auth,
-        &state.config.auth_mode,
-        &state.config.cloudflare_access_email_header,
+        state.config.web.disable_auth,
+        &state.config.web.auth_mode,
+        &state.config.web.cloudflare_access_email_header,
     );
 
     let response = next.run(request).await;

@@ -679,6 +679,17 @@ pub struct PhaseContext {
     pub clarification_resume_reuses_prior_review: bool,
     /// Clarification question carried from the prior blocked / guard-failed attempt, when available.
     pub clarification_resume_question: String,
+    /// User-configured custom MCP servers for this workspace.
+    pub custom_mcp_servers: Vec<CustomMcpServer>,
+}
+
+/// A user-configured MCP server ready for injection into the agent config.
+#[derive(Debug, Clone, Default)]
+pub struct CustomMcpServer {
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: std::collections::HashMap<String, String>,
 }
 
 /// A single in-container test/lint/compile result emitted by the entrypoint.

@@ -321,7 +321,7 @@ pub(crate) async fn create_task(
                     Some(p.repo_path.clone())
                 }
             })
-            .unwrap_or_else(|| state.config.pipeline_repo.clone())
+            .unwrap_or_else(|| state.config.pipeline.repo.clone())
     };
     let mode = body.mode.unwrap_or_else(|| {
         project

@@ -307,7 +307,7 @@ pub(crate) async fn run_chat_agent(
         }
     }
 
-    let api_url = format!("http://127.0.0.1:{}", config.web_port);
+    let api_url = format!("http://127.0.0.1:{}", config.web.port);
     let api_token =
         std::fs::read_to_string(format!("{}/.api-token", config.data_dir)).unwrap_or_default();
 
@@ -332,6 +332,12 @@ pub(crate) async fn run_chat_agent(
         .as_ref()
         .map(|p| p.workspace_id)
         .unwrap_or(0);
+    let custom_servers = {
+        let rows = db
+            .get_enabled_custom_mcp_servers_resolved(workspace_id)
+            .unwrap_or_default();
+        borg_agent::mcp::custom_servers_from_db(rows)
+    };
     let mcp_servers = borg_agent::mcp::build_mcp_servers_json(
         &api_url,
         &api_token,
@@ -340,6 +346,7 @@ pub(crate) async fn run_chat_agent(
         workspace_id,
         Some(chat_key),
         &legal_linked_creds,
+        &custom_servers,
     );
 
     if !mcp_servers.is_empty() {

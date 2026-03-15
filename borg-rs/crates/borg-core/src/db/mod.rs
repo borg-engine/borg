@@ -105,6 +105,19 @@ pub struct ApiKeyEntry {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct CustomMcpServerRow {
+    pub id: i64,
+    pub workspace_id: i64,
+    pub name: String,
+    pub label: String,
+    pub command: String,
+    pub args_json: String,
+    pub env_keys: Vec<String>,
+    pub enabled: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct LinkedCredentialEntry {
     pub id: i64,
     pub user_id: i64,

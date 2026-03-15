@@ -60,7 +60,7 @@ impl Pipeline {
             Ok(id) => {
                 info!("Health: created fix task #{id} for {repo_path} {kind} failure");
                 self.notify(
-                    &self.config.pipeline_admin_chat,
+                    &self.config.pipeline.admin_chat,
                     &format!(
                         "Health check: {kind} failing for {repo_path}, created fix task #{id}"
                     ),
@@ -77,7 +77,7 @@ impl Pipeline {
             return;
         }
         let now = chrono::Utc::now().timestamp();
-        if now - self.db.get_ts("last_remote_check_ts") < self.config.remote_check_interval_s {
+        if now - self.db.get_ts("last_remote_check_ts") < self.config.pipeline.remote_check_interval_s {
             return;
         }
         self.db.set_ts("last_remote_check_ts", now);
@@ -216,7 +216,7 @@ impl Pipeline {
             &current[..8.min(current.len())]
         );
         self.notify(
-            &self.config.pipeline_admin_chat,
+            &self.config.pipeline.admin_chat,
             "Self-update: new commits detected, rebuilding...",
         );
 
@@ -243,7 +243,7 @@ impl Pipeline {
             Err(e) => {
                 warn!("Self-update: build spawn failed: {e}");
                 self.notify(
-                    &self.config.pipeline_admin_chat,
+                    &self.config.pipeline.admin_chat,
                     "Self-update: build FAILED (spawn error).",
                 );
             },
@@ -254,7 +254,7 @@ impl Pipeline {
                     &stderr[..stderr.len().min(500)]
                 );
                 self.notify(
-                    &self.config.pipeline_admin_chat,
+                    &self.config.pipeline.admin_chat,
                     "Self-update: build FAILED, continuing with old binary.",
                 );
             },
@@ -265,7 +265,7 @@ impl Pipeline {
                 if mtime_after.is_none() {
                     warn!("Self-update: binary not found at {binary_path} after build");
                     self.notify(
-                        &self.config.pipeline_admin_chat,
+                        &self.config.pipeline.admin_chat,
                         "Self-update: build succeeded but binary missing — not restarting.",
                     );
                     return;
@@ -275,7 +275,7 @@ impl Pipeline {
                 }
                 info!("Self-update: build succeeded, restart scheduled");
                 self.notify(
-                    &self.config.pipeline_admin_chat,
+                    &self.config.pipeline.admin_chat,
                     "Self-update: new build ready. Will restart in 3h or on director command.",
                 );
                 self.last_self_update_secs.store(
@@ -302,7 +302,7 @@ impl Pipeline {
         }
         info!("Self-update: applying restart (forced={forced}, age={age}s)");
         self.notify(
-            &self.config.pipeline_admin_chat,
+            &self.config.pipeline.admin_chat,
             "Self-update: restarting now...",
         );
         // Signal main loop to exit; systemd restarts the process

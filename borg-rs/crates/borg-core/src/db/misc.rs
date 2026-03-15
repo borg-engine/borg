@@ -1452,6 +1452,122 @@ impl Db {
         Ok(())
     }
 
+    // ── Custom MCP Servers ─────────────────────────────────────────────
+
+    pub fn upsert_custom_mcp_server(
+        &self,
+        workspace_id: i64,
+        name: &str,
+        label: &str,
+        command: &str,
+        args_json: &str,
+        env_json: &str,
+        enabled: bool,
+    ) -> Result<i64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let encrypted_env = Self::encrypt_secret(env_json);
+        let enabled_i: i64 = if enabled { 1 } else { 0 };
+        let id = conn.execute_returning_id(
+            "INSERT INTO custom_mcp_servers (workspace_id, name, label, command, args, env, enabled) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+             ON CONFLICT(workspace_id, name) DO UPDATE SET \
+               label=excluded.label, command=excluded.command, args=excluded.args, \
+               env=excluded.env, enabled=excluded.enabled",
+            params![workspace_id, name, label, command, args_json, encrypted_env, enabled_i],
+        )?;
+        Ok(id)
+    }
+
+    pub fn list_custom_mcp_servers(&self, workspace_id: i64) -> Result<Vec<CustomMcpServerRow>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, workspace_id, name, label, command, args, env, enabled, created_at \
+             FROM custom_mcp_servers WHERE workspace_id = ?1 ORDER BY name",
+        )?;
+        let rows = stmt
+            .query_map(params![workspace_id], |row| {
+                let env_encrypted: String = row.get(6)?;
+                let env_json = Db::decrypt_secret(&env_encrypted);
+                let env_keys: Vec<String> = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&env_json)
+                    .map(|m| m.keys().cloned().collect())
+                    .unwrap_or_default();
+                Ok(CustomMcpServerRow {
+                    id: row.get(0)?,
+                    workspace_id: row.get(1)?,
+                    name: row.get(2)?,
+                    label: row.get(3)?,
+                    command: row.get(4)?,
+                    args_json: row.get(5)?,
+                    env_keys,
+                    enabled: row.get::<_, i64>(7)? != 0,
+                    created_at: row.get(8)?,
+                })
+            })?
+            .collect::<pg::Result<Vec<_>>>()
+            .context("list_custom_mcp_servers")?;
+        Ok(rows)
+    }
+
+    pub fn get_enabled_custom_mcp_servers_resolved(
+        &self,
+        workspace_id: i64,
+    ) -> Result<Vec<(String, String, Vec<String>, std::collections::HashMap<String, String>)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let mut stmt = conn.prepare(
+            "SELECT name, command, args, env FROM custom_mcp_servers \
+             WHERE workspace_id = ?1 AND enabled = 1 ORDER BY name",
+        )?;
+        let rows = stmt
+            .query_map(params![workspace_id], |row| {
+                let name: String = row.get(0)?;
+                let command: String = row.get(1)?;
+                let args_json: String = row.get(2)?;
+                let env_encrypted: String = row.get(3)?;
+                let env_json = Db::decrypt_secret(&env_encrypted);
+                let args: Vec<String> = serde_json::from_str(&args_json).unwrap_or_default();
+                let env: std::collections::HashMap<String, String> =
+                    serde_json::from_str(&env_json).unwrap_or_default();
+                Ok((name, command, args, env))
+            })?
+            .collect::<pg::Result<Vec<_>>>()
+            .context("get_enabled_custom_mcp_servers_resolved")?;
+        Ok(rows)
+    }
+
+    pub fn delete_custom_mcp_server(&self, workspace_id: i64, id: i64) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        conn.execute(
+            "DELETE FROM custom_mcp_servers WHERE id = ?1 AND workspace_id = ?2",
+            params![id, workspace_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn toggle_custom_mcp_server(&self, workspace_id: i64, id: i64, enabled: bool) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("db mutex poisoned"))?;
+        let enabled_i: i64 = if enabled { 1 } else { 0 };
+        conn.execute(
+            "UPDATE custom_mcp_servers SET enabled = ?1 WHERE id = ?2 AND workspace_id = ?3",
+            params![enabled_i, id, workspace_id],
+        )?;
+        Ok(())
+    }
+
     pub fn list_user_linked_credentials(&self, user_id: i64) -> Result<Vec<LinkedCredentialEntry>> {
         let conn = self
             .conn

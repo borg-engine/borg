@@ -58,6 +58,7 @@ fn make_ctx() -> PhaseContext {
         knowledge_repo_paths: vec![],
         clarification_resume_reuses_prior_review: false,
         clarification_resume_question: String::new(),
+        custom_mcp_servers: Vec::new(),
     }
 }
 
